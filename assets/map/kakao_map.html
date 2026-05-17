@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Qradar Map</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #F3F4F6; overflow: hidden; }
+  #map { width: 100%; height: 100%; }
+  .qr-marker {
+    position: relative;
+    width: 30px;
+    height: 40px;
+    cursor: pointer;
+    filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.18));
+    transition: width 160ms ease, height 160ms ease, filter 160ms ease;
+  }
+  .qr-marker.selected {
+    width: 36px;
+    height: 48px;
+    filter: drop-shadow(0 2px 12px rgba(15, 23, 42, 0.35));
+  }
+  .qr-marker svg { width: 100%; height: 100%; display: block; }
+  .qr-marker .label {
+    position: absolute;
+    top: 7px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #FFFFFF;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Roboto, sans-serif;
+    pointer-events: none;
+    letter-spacing: 0;
+  }
+  .qr-marker.selected .label { top: 9px; font-size: 12px; }
+  .qr-marker[data-grade="S"] .label { color: #0F172A; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+(function () {
+  var KAKAO_JS_KEY = '__KAKAO_JS_KEY__';
+  var INIT_LAT = parseFloat('__INIT_LAT__');
+  var INIT_LNG = parseFloat('__INIT_LNG__');
+  var INIT_LEVEL = parseInt('__INIT_LEVEL__', 10);
+
+  var mapReady = false;
+  var map = null;
+  var markers = new Map(); // id -> { overlay, el, grade, color, lat, lng }
+  var selectedId = null;
+
+  function bridge(payload) {
+    try {
+      if (window.KakaoMapBridge && window.KakaoMapBridge.postMessage) {
+        window.KakaoMapBridge.postMessage(JSON.stringify(payload));
+      }
+    } catch (e) { /* noop */ }
+  }
+
+  function pinSvg(color) {
+    return '<svg viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">' +
+           '<path d="M15 1 C7.27 1 1 7.27 1 15 C1 22.7 7.5 30 13.5 37.8 C14.2 38.7 15.8 38.7 16.5 37.8 C22.5 30 29 22.7 29 15 C29 7.27 22.73 1 15 1 Z" ' +
+           'fill="' + color + '" stroke="#FFFFFF" stroke-width="2"/></svg>';
+  }
+
+  function buildMarkerEl(store) {
+    var el = document.createElement('div');
+    el.className = 'qr-marker';
+    el.dataset.id = store.id;
+    el.dataset.grade = store.grade;
+    el.innerHTML = pinSvg(store.color) + '<div class="label">' + store.grade + '</div>';
+    el.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      bridge({ type: 'markerTap', id: store.id });
+    });
+    return el;
+  }
+
+  function applySelectionClasses() {
+    markers.forEach(function (m, id) {
+      if (id === selectedId) {
+        m.el.classList.add('selected');
+      } else {
+        m.el.classList.remove('selected');
+      }
+    });
+  }
+
+  function setStores(payload) {
+    if (!mapReady) return;
+    var stores = (payload && Array.isArray(payload.stores)) ? payload.stores : [];
+    var nextIds = new Set();
+    for (var i = 0; i < stores.length; i++) nextIds.add(stores[i].id);
+
+    // 제거
+    markers.forEach(function (m, id) {
+      if (!nextIds.has(id)) {
+        m.overlay.setMap(null);
+        markers.delete(id);
+      }
+    });
+
+    // 추가/갱신
+    for (var j = 0; j < stores.length; j++) {
+      var s = stores[j];
+      var existing = markers.get(s.id);
+      if (existing) {
+        if (existing.color !== s.color || existing.grade !== s.grade) {
+          existing.el.dataset.grade = s.grade;
+          existing.el.innerHTML =
+            pinSvg(s.color) + '<div class="label">' + s.grade + '</div>';
+          existing.el.addEventListener('click', (function (id) {
+            return function (ev) {
+              ev.stopPropagation();
+              bridge({ type: 'markerTap', id: id });
+            };
+          })(s.id));
+          existing.grade = s.grade;
+          existing.color = s.color;
+        }
+        if (existing.lat !== s.lat || existing.lng !== s.lng) {
+          existing.overlay.setPosition(new kakao.maps.LatLng(s.lat, s.lng));
+          existing.lat = s.lat;
+          existing.lng = s.lng;
+        }
+      } else {
+        var el = buildMarkerEl(s);
+        var overlay = new kakao.maps.CustomOverlay({
+          map: map,
+          position: new kakao.maps.LatLng(s.lat, s.lng),
+          content: el,
+          xAnchor: 0.5,
+          yAnchor: 1.0,
+          clickable: true
+        });
+        markers.set(s.id, {
+          overlay: overlay,
+          el: el,
+          grade: s.grade,
+          color: s.color,
+          lat: s.lat,
+          lng: s.lng
+        });
+      }
+    }
+
+    applySelectionClasses();
+  }
+
+  function moveTo(lat, lng) {
+    if (!mapReady || !map) return;
+    map.panTo(new kakao.maps.LatLng(lat, lng));
+  }
+
+  function setSelected(id) {
+    selectedId = (typeof id === 'string') ? id : null;
+    applySelectionClasses();
+  }
+
+  window.flutterMap = {
+    setStores: setStores,
+    moveTo: moveTo,
+    setSelected: setSelected
+  };
+
+  function initMap() {
+    try {
+      kakao.maps.load(function () {
+        var container = document.getElementById('map');
+        map = new kakao.maps.Map(container, {
+          center: new kakao.maps.LatLng(
+            isFinite(INIT_LAT) ? INIT_LAT : 37.5665,
+            isFinite(INIT_LNG) ? INIT_LNG : 126.9780
+          ),
+          level: isFinite(INIT_LEVEL) ? INIT_LEVEL : 5
+        });
+        kakao.maps.event.addListener(map, 'click', function () {
+          bridge({ type: 'mapTap' });
+        });
+        mapReady = true;
+        bridge({ type: 'ready' });
+      });
+    } catch (e) {
+      bridge({ type: 'sdkError', reason: 'init failed' });
+    }
+  }
+
+  window.addEventListener('error', function (ev) {
+    // SDK 로드 또는 init 중 에러만 보고
+    if (!mapReady) {
+      bridge({ type: 'sdkError', reason: String(ev.message || '').slice(0, 160) });
+    }
+  });
+
+  var script = document.createElement('script');
+  script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + KAKAO_JS_KEY + '&autoload=false';
+  script.onload = initMap;
+  script.onerror = function () {
+    bridge({ type: 'sdkError', reason: 'sdk script load failed' });
+  };
+  document.head.appendChild(script);
+})();
+</script>
+</body>
+</html>

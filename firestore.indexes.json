@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "menuItems",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "mainCategory", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "menuItems",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "subCategoryId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
