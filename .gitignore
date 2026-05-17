@@ -10,9 +10,8 @@ env.json
 env.*.json
 
 # Firebase config (public 레포 보안)
-ios/Runner/GoogleService-Info.plist
-ios/Flutter/GoogleService-Info.plist
-android/app/google-services.json
+**/GoogleService-Info*.plist
+**/google-services*.json
 
 # Android signing
 android/key.properties
