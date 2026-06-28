@@ -46,6 +46,7 @@ abstract class PaymentGatewayRepository {
     required int amount,
     required CartEntity cartSnapshot,
     required String uid,
+    required PaymentMethod paymentMethod,
   });
 
   /// Cloud Functions `cancelTossPayment` 호출.

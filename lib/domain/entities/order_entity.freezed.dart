@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$OrderEntity {
 
- String get id; String get userId; String get storeId; String get storeName; String? get brandId; List<OrderItemEntity> get items; int get subtotal; int? get discount; int get totalPrice; OrderStatus get status; PaymentInfoEntity get paymentInfo; RefundRequestEntity? get refundRequest; RefundInfoEntity? get refundInfo; DateTime get createdAt; DateTime get updatedAt; DateTime? get acceptedAt; DateTime? get cancelledAt; DateTime? get refundedAt;
+ String get id; String get userId; String get storeId; String get storeName; String? get brandId; List<OrderItemEntity> get items; int get subtotal; int? get discount; int get totalPrice; OrderStatus get status; PaymentInfoEntity get paymentInfo; RefundRequestEntity? get refundRequest; RefundInfoEntity? get refundInfo; CancelInfoEntity? get cancelInfo; DateTime get createdAt; DateTime get updatedAt; DateTime? get acceptedAt; DateTime? get makingStartedAt; DateTime? get readyAt; DateTime? get completedAt; DateTime? get cancelledAt; DateTime? get refundedAt;
 /// Create a copy of OrderEntity
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $OrderEntityCopyWith<OrderEntity> get copyWith => _$OrderEntityCopyWithImpl<Orde
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is OrderEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.subtotal, subtotal) || other.subtotal == subtotal)&&(identical(other.discount, discount) || other.discount == discount)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.paymentInfo, paymentInfo) || other.paymentInfo == paymentInfo)&&(identical(other.refundRequest, refundRequest) || other.refundRequest == refundRequest)&&(identical(other.refundInfo, refundInfo) || other.refundInfo == refundInfo)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.acceptedAt, acceptedAt) || other.acceptedAt == acceptedAt)&&(identical(other.cancelledAt, cancelledAt) || other.cancelledAt == cancelledAt)&&(identical(other.refundedAt, refundedAt) || other.refundedAt == refundedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OrderEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.subtotal, subtotal) || other.subtotal == subtotal)&&(identical(other.discount, discount) || other.discount == discount)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.paymentInfo, paymentInfo) || other.paymentInfo == paymentInfo)&&(identical(other.refundRequest, refundRequest) || other.refundRequest == refundRequest)&&(identical(other.refundInfo, refundInfo) || other.refundInfo == refundInfo)&&(identical(other.cancelInfo, cancelInfo) || other.cancelInfo == cancelInfo)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.acceptedAt, acceptedAt) || other.acceptedAt == acceptedAt)&&(identical(other.makingStartedAt, makingStartedAt) || other.makingStartedAt == makingStartedAt)&&(identical(other.readyAt, readyAt) || other.readyAt == readyAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt)&&(identical(other.cancelledAt, cancelledAt) || other.cancelledAt == cancelledAt)&&(identical(other.refundedAt, refundedAt) || other.refundedAt == refundedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,storeId,storeName,brandId,const DeepCollectionEquality().hash(items),subtotal,discount,totalPrice,status,paymentInfo,refundRequest,refundInfo,createdAt,updatedAt,acceptedAt,cancelledAt,refundedAt);
+int get hashCode => Object.hashAll([runtimeType,id,userId,storeId,storeName,brandId,const DeepCollectionEquality().hash(items),subtotal,discount,totalPrice,status,paymentInfo,refundRequest,refundInfo,cancelInfo,createdAt,updatedAt,acceptedAt,makingStartedAt,readyAt,completedAt,cancelledAt,refundedAt]);
 
 @override
 String toString() {
-  return 'OrderEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, brandId: $brandId, items: $items, subtotal: $subtotal, discount: $discount, totalPrice: $totalPrice, status: $status, paymentInfo: $paymentInfo, refundRequest: $refundRequest, refundInfo: $refundInfo, createdAt: $createdAt, updatedAt: $updatedAt, acceptedAt: $acceptedAt, cancelledAt: $cancelledAt, refundedAt: $refundedAt)';
+  return 'OrderEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, brandId: $brandId, items: $items, subtotal: $subtotal, discount: $discount, totalPrice: $totalPrice, status: $status, paymentInfo: $paymentInfo, refundRequest: $refundRequest, refundInfo: $refundInfo, cancelInfo: $cancelInfo, createdAt: $createdAt, updatedAt: $updatedAt, acceptedAt: $acceptedAt, makingStartedAt: $makingStartedAt, readyAt: $readyAt, completedAt: $completedAt, cancelledAt: $cancelledAt, refundedAt: $refundedAt)';
 }
 
 
@@ -45,11 +45,11 @@ abstract mixin class $OrderEntityCopyWith<$Res>  {
   factory $OrderEntityCopyWith(OrderEntity value, $Res Function(OrderEntity) _then) = _$OrderEntityCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId, String storeId, String storeName, String? brandId, List<OrderItemEntity> items, int subtotal, int? discount, int totalPrice, OrderStatus status, PaymentInfoEntity paymentInfo, RefundRequestEntity? refundRequest, RefundInfoEntity? refundInfo, DateTime createdAt, DateTime updatedAt, DateTime? acceptedAt, DateTime? cancelledAt, DateTime? refundedAt
+ String id, String userId, String storeId, String storeName, String? brandId, List<OrderItemEntity> items, int subtotal, int? discount, int totalPrice, OrderStatus status, PaymentInfoEntity paymentInfo, RefundRequestEntity? refundRequest, RefundInfoEntity? refundInfo, CancelInfoEntity? cancelInfo, DateTime createdAt, DateTime updatedAt, DateTime? acceptedAt, DateTime? makingStartedAt, DateTime? readyAt, DateTime? completedAt, DateTime? cancelledAt, DateTime? refundedAt
 });
 
 
-$PaymentInfoEntityCopyWith<$Res> get paymentInfo;$RefundRequestEntityCopyWith<$Res>? get refundRequest;$RefundInfoEntityCopyWith<$Res>? get refundInfo;
+$PaymentInfoEntityCopyWith<$Res> get paymentInfo;$RefundRequestEntityCopyWith<$Res>? get refundRequest;$RefundInfoEntityCopyWith<$Res>? get refundInfo;$CancelInfoEntityCopyWith<$Res>? get cancelInfo;
 
 }
 /// @nodoc
@@ -62,7 +62,7 @@ class _$OrderEntityCopyWithImpl<$Res>
 
 /// Create a copy of OrderEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? brandId = freezed,Object? items = null,Object? subtotal = null,Object? discount = freezed,Object? totalPrice = null,Object? status = null,Object? paymentInfo = null,Object? refundRequest = freezed,Object? refundInfo = freezed,Object? createdAt = null,Object? updatedAt = null,Object? acceptedAt = freezed,Object? cancelledAt = freezed,Object? refundedAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? brandId = freezed,Object? items = null,Object? subtotal = null,Object? discount = freezed,Object? totalPrice = null,Object? status = null,Object? paymentInfo = null,Object? refundRequest = freezed,Object? refundInfo = freezed,Object? cancelInfo = freezed,Object? createdAt = null,Object? updatedAt = null,Object? acceptedAt = freezed,Object? makingStartedAt = freezed,Object? readyAt = freezed,Object? completedAt = freezed,Object? cancelledAt = freezed,Object? refundedAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -77,9 +77,13 @@ as int,status: null == status ? _self.status : status // ignore: cast_nullable_t
 as OrderStatus,paymentInfo: null == paymentInfo ? _self.paymentInfo : paymentInfo // ignore: cast_nullable_to_non_nullable
 as PaymentInfoEntity,refundRequest: freezed == refundRequest ? _self.refundRequest : refundRequest // ignore: cast_nullable_to_non_nullable
 as RefundRequestEntity?,refundInfo: freezed == refundInfo ? _self.refundInfo : refundInfo // ignore: cast_nullable_to_non_nullable
-as RefundInfoEntity?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as RefundInfoEntity?,cancelInfo: freezed == cancelInfo ? _self.cancelInfo : cancelInfo // ignore: cast_nullable_to_non_nullable
+as CancelInfoEntity?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,acceptedAt: freezed == acceptedAt ? _self.acceptedAt : acceptedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,makingStartedAt: freezed == makingStartedAt ? _self.makingStartedAt : makingStartedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,readyAt: freezed == readyAt ? _self.readyAt : readyAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,cancelledAt: freezed == cancelledAt ? _self.cancelledAt : cancelledAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,refundedAt: freezed == refundedAt ? _self.refundedAt : refundedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
@@ -117,6 +121,18 @@ $RefundInfoEntityCopyWith<$Res>? get refundInfo {
 
   return $RefundInfoEntityCopyWith<$Res>(_self.refundInfo!, (value) {
     return _then(_self.copyWith(refundInfo: value));
+  });
+}/// Create a copy of OrderEntity
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$CancelInfoEntityCopyWith<$Res>? get cancelInfo {
+    if (_self.cancelInfo == null) {
+    return null;
+  }
+
+  return $CancelInfoEntityCopyWith<$Res>(_self.cancelInfo!, (value) {
+    return _then(_self.copyWith(cancelInfo: value));
   });
 }
 }
@@ -200,10 +216,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  String? brandId,  List<OrderItemEntity> items,  int subtotal,  int? discount,  int totalPrice,  OrderStatus status,  PaymentInfoEntity paymentInfo,  RefundRequestEntity? refundRequest,  RefundInfoEntity? refundInfo,  DateTime createdAt,  DateTime updatedAt,  DateTime? acceptedAt,  DateTime? cancelledAt,  DateTime? refundedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  String? brandId,  List<OrderItemEntity> items,  int subtotal,  int? discount,  int totalPrice,  OrderStatus status,  PaymentInfoEntity paymentInfo,  RefundRequestEntity? refundRequest,  RefundInfoEntity? refundInfo,  CancelInfoEntity? cancelInfo,  DateTime createdAt,  DateTime updatedAt,  DateTime? acceptedAt,  DateTime? makingStartedAt,  DateTime? readyAt,  DateTime? completedAt,  DateTime? cancelledAt,  DateTime? refundedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _OrderEntity() when $default != null:
-return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandId,_that.items,_that.subtotal,_that.discount,_that.totalPrice,_that.status,_that.paymentInfo,_that.refundRequest,_that.refundInfo,_that.createdAt,_that.updatedAt,_that.acceptedAt,_that.cancelledAt,_that.refundedAt);case _:
+return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandId,_that.items,_that.subtotal,_that.discount,_that.totalPrice,_that.status,_that.paymentInfo,_that.refundRequest,_that.refundInfo,_that.cancelInfo,_that.createdAt,_that.updatedAt,_that.acceptedAt,_that.makingStartedAt,_that.readyAt,_that.completedAt,_that.cancelledAt,_that.refundedAt);case _:
   return orElse();
 
 }
@@ -221,10 +237,10 @@ return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandI
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  String? brandId,  List<OrderItemEntity> items,  int subtotal,  int? discount,  int totalPrice,  OrderStatus status,  PaymentInfoEntity paymentInfo,  RefundRequestEntity? refundRequest,  RefundInfoEntity? refundInfo,  DateTime createdAt,  DateTime updatedAt,  DateTime? acceptedAt,  DateTime? cancelledAt,  DateTime? refundedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  String? brandId,  List<OrderItemEntity> items,  int subtotal,  int? discount,  int totalPrice,  OrderStatus status,  PaymentInfoEntity paymentInfo,  RefundRequestEntity? refundRequest,  RefundInfoEntity? refundInfo,  CancelInfoEntity? cancelInfo,  DateTime createdAt,  DateTime updatedAt,  DateTime? acceptedAt,  DateTime? makingStartedAt,  DateTime? readyAt,  DateTime? completedAt,  DateTime? cancelledAt,  DateTime? refundedAt)  $default,) {final _that = this;
 switch (_that) {
 case _OrderEntity():
-return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandId,_that.items,_that.subtotal,_that.discount,_that.totalPrice,_that.status,_that.paymentInfo,_that.refundRequest,_that.refundInfo,_that.createdAt,_that.updatedAt,_that.acceptedAt,_that.cancelledAt,_that.refundedAt);case _:
+return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandId,_that.items,_that.subtotal,_that.discount,_that.totalPrice,_that.status,_that.paymentInfo,_that.refundRequest,_that.refundInfo,_that.cancelInfo,_that.createdAt,_that.updatedAt,_that.acceptedAt,_that.makingStartedAt,_that.readyAt,_that.completedAt,_that.cancelledAt,_that.refundedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -241,10 +257,10 @@ return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandI
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String storeId,  String storeName,  String? brandId,  List<OrderItemEntity> items,  int subtotal,  int? discount,  int totalPrice,  OrderStatus status,  PaymentInfoEntity paymentInfo,  RefundRequestEntity? refundRequest,  RefundInfoEntity? refundInfo,  DateTime createdAt,  DateTime updatedAt,  DateTime? acceptedAt,  DateTime? cancelledAt,  DateTime? refundedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String storeId,  String storeName,  String? brandId,  List<OrderItemEntity> items,  int subtotal,  int? discount,  int totalPrice,  OrderStatus status,  PaymentInfoEntity paymentInfo,  RefundRequestEntity? refundRequest,  RefundInfoEntity? refundInfo,  CancelInfoEntity? cancelInfo,  DateTime createdAt,  DateTime updatedAt,  DateTime? acceptedAt,  DateTime? makingStartedAt,  DateTime? readyAt,  DateTime? completedAt,  DateTime? cancelledAt,  DateTime? refundedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _OrderEntity() when $default != null:
-return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandId,_that.items,_that.subtotal,_that.discount,_that.totalPrice,_that.status,_that.paymentInfo,_that.refundRequest,_that.refundInfo,_that.createdAt,_that.updatedAt,_that.acceptedAt,_that.cancelledAt,_that.refundedAt);case _:
+return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandId,_that.items,_that.subtotal,_that.discount,_that.totalPrice,_that.status,_that.paymentInfo,_that.refundRequest,_that.refundInfo,_that.cancelInfo,_that.createdAt,_that.updatedAt,_that.acceptedAt,_that.makingStartedAt,_that.readyAt,_that.completedAt,_that.cancelledAt,_that.refundedAt);case _:
   return null;
 
 }
@@ -256,7 +272,7 @@ return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.brandI
 
 
 class _OrderEntity implements OrderEntity {
-  const _OrderEntity({required this.id, required this.userId, required this.storeId, required this.storeName, this.brandId, final  List<OrderItemEntity> items = const <OrderItemEntity>[], required this.subtotal, this.discount, required this.totalPrice, required this.status, required this.paymentInfo, this.refundRequest, this.refundInfo, required this.createdAt, required this.updatedAt, this.acceptedAt, this.cancelledAt, this.refundedAt}): _items = items;
+  const _OrderEntity({required this.id, required this.userId, required this.storeId, required this.storeName, this.brandId, final  List<OrderItemEntity> items = const <OrderItemEntity>[], required this.subtotal, this.discount, required this.totalPrice, required this.status, required this.paymentInfo, this.refundRequest, this.refundInfo, this.cancelInfo, required this.createdAt, required this.updatedAt, this.acceptedAt, this.makingStartedAt, this.readyAt, this.completedAt, this.cancelledAt, this.refundedAt}): _items = items;
   
 
 @override final  String id;
@@ -278,9 +294,13 @@ class _OrderEntity implements OrderEntity {
 @override final  PaymentInfoEntity paymentInfo;
 @override final  RefundRequestEntity? refundRequest;
 @override final  RefundInfoEntity? refundInfo;
+@override final  CancelInfoEntity? cancelInfo;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
 @override final  DateTime? acceptedAt;
+@override final  DateTime? makingStartedAt;
+@override final  DateTime? readyAt;
+@override final  DateTime? completedAt;
 @override final  DateTime? cancelledAt;
 @override final  DateTime? refundedAt;
 
@@ -294,16 +314,16 @@ _$OrderEntityCopyWith<_OrderEntity> get copyWith => __$OrderEntityCopyWithImpl<_
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OrderEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.subtotal, subtotal) || other.subtotal == subtotal)&&(identical(other.discount, discount) || other.discount == discount)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.paymentInfo, paymentInfo) || other.paymentInfo == paymentInfo)&&(identical(other.refundRequest, refundRequest) || other.refundRequest == refundRequest)&&(identical(other.refundInfo, refundInfo) || other.refundInfo == refundInfo)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.acceptedAt, acceptedAt) || other.acceptedAt == acceptedAt)&&(identical(other.cancelledAt, cancelledAt) || other.cancelledAt == cancelledAt)&&(identical(other.refundedAt, refundedAt) || other.refundedAt == refundedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OrderEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.subtotal, subtotal) || other.subtotal == subtotal)&&(identical(other.discount, discount) || other.discount == discount)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.paymentInfo, paymentInfo) || other.paymentInfo == paymentInfo)&&(identical(other.refundRequest, refundRequest) || other.refundRequest == refundRequest)&&(identical(other.refundInfo, refundInfo) || other.refundInfo == refundInfo)&&(identical(other.cancelInfo, cancelInfo) || other.cancelInfo == cancelInfo)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.acceptedAt, acceptedAt) || other.acceptedAt == acceptedAt)&&(identical(other.makingStartedAt, makingStartedAt) || other.makingStartedAt == makingStartedAt)&&(identical(other.readyAt, readyAt) || other.readyAt == readyAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt)&&(identical(other.cancelledAt, cancelledAt) || other.cancelledAt == cancelledAt)&&(identical(other.refundedAt, refundedAt) || other.refundedAt == refundedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,storeId,storeName,brandId,const DeepCollectionEquality().hash(_items),subtotal,discount,totalPrice,status,paymentInfo,refundRequest,refundInfo,createdAt,updatedAt,acceptedAt,cancelledAt,refundedAt);
+int get hashCode => Object.hashAll([runtimeType,id,userId,storeId,storeName,brandId,const DeepCollectionEquality().hash(_items),subtotal,discount,totalPrice,status,paymentInfo,refundRequest,refundInfo,cancelInfo,createdAt,updatedAt,acceptedAt,makingStartedAt,readyAt,completedAt,cancelledAt,refundedAt]);
 
 @override
 String toString() {
-  return 'OrderEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, brandId: $brandId, items: $items, subtotal: $subtotal, discount: $discount, totalPrice: $totalPrice, status: $status, paymentInfo: $paymentInfo, refundRequest: $refundRequest, refundInfo: $refundInfo, createdAt: $createdAt, updatedAt: $updatedAt, acceptedAt: $acceptedAt, cancelledAt: $cancelledAt, refundedAt: $refundedAt)';
+  return 'OrderEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, brandId: $brandId, items: $items, subtotal: $subtotal, discount: $discount, totalPrice: $totalPrice, status: $status, paymentInfo: $paymentInfo, refundRequest: $refundRequest, refundInfo: $refundInfo, cancelInfo: $cancelInfo, createdAt: $createdAt, updatedAt: $updatedAt, acceptedAt: $acceptedAt, makingStartedAt: $makingStartedAt, readyAt: $readyAt, completedAt: $completedAt, cancelledAt: $cancelledAt, refundedAt: $refundedAt)';
 }
 
 
@@ -314,11 +334,11 @@ abstract mixin class _$OrderEntityCopyWith<$Res> implements $OrderEntityCopyWith
   factory _$OrderEntityCopyWith(_OrderEntity value, $Res Function(_OrderEntity) _then) = __$OrderEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId, String storeId, String storeName, String? brandId, List<OrderItemEntity> items, int subtotal, int? discount, int totalPrice, OrderStatus status, PaymentInfoEntity paymentInfo, RefundRequestEntity? refundRequest, RefundInfoEntity? refundInfo, DateTime createdAt, DateTime updatedAt, DateTime? acceptedAt, DateTime? cancelledAt, DateTime? refundedAt
+ String id, String userId, String storeId, String storeName, String? brandId, List<OrderItemEntity> items, int subtotal, int? discount, int totalPrice, OrderStatus status, PaymentInfoEntity paymentInfo, RefundRequestEntity? refundRequest, RefundInfoEntity? refundInfo, CancelInfoEntity? cancelInfo, DateTime createdAt, DateTime updatedAt, DateTime? acceptedAt, DateTime? makingStartedAt, DateTime? readyAt, DateTime? completedAt, DateTime? cancelledAt, DateTime? refundedAt
 });
 
 
-@override $PaymentInfoEntityCopyWith<$Res> get paymentInfo;@override $RefundRequestEntityCopyWith<$Res>? get refundRequest;@override $RefundInfoEntityCopyWith<$Res>? get refundInfo;
+@override $PaymentInfoEntityCopyWith<$Res> get paymentInfo;@override $RefundRequestEntityCopyWith<$Res>? get refundRequest;@override $RefundInfoEntityCopyWith<$Res>? get refundInfo;@override $CancelInfoEntityCopyWith<$Res>? get cancelInfo;
 
 }
 /// @nodoc
@@ -331,7 +351,7 @@ class __$OrderEntityCopyWithImpl<$Res>
 
 /// Create a copy of OrderEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? brandId = freezed,Object? items = null,Object? subtotal = null,Object? discount = freezed,Object? totalPrice = null,Object? status = null,Object? paymentInfo = null,Object? refundRequest = freezed,Object? refundInfo = freezed,Object? createdAt = null,Object? updatedAt = null,Object? acceptedAt = freezed,Object? cancelledAt = freezed,Object? refundedAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? brandId = freezed,Object? items = null,Object? subtotal = null,Object? discount = freezed,Object? totalPrice = null,Object? status = null,Object? paymentInfo = null,Object? refundRequest = freezed,Object? refundInfo = freezed,Object? cancelInfo = freezed,Object? createdAt = null,Object? updatedAt = null,Object? acceptedAt = freezed,Object? makingStartedAt = freezed,Object? readyAt = freezed,Object? completedAt = freezed,Object? cancelledAt = freezed,Object? refundedAt = freezed,}) {
   return _then(_OrderEntity(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -346,9 +366,13 @@ as int,status: null == status ? _self.status : status // ignore: cast_nullable_t
 as OrderStatus,paymentInfo: null == paymentInfo ? _self.paymentInfo : paymentInfo // ignore: cast_nullable_to_non_nullable
 as PaymentInfoEntity,refundRequest: freezed == refundRequest ? _self.refundRequest : refundRequest // ignore: cast_nullable_to_non_nullable
 as RefundRequestEntity?,refundInfo: freezed == refundInfo ? _self.refundInfo : refundInfo // ignore: cast_nullable_to_non_nullable
-as RefundInfoEntity?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as RefundInfoEntity?,cancelInfo: freezed == cancelInfo ? _self.cancelInfo : cancelInfo // ignore: cast_nullable_to_non_nullable
+as CancelInfoEntity?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,acceptedAt: freezed == acceptedAt ? _self.acceptedAt : acceptedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,makingStartedAt: freezed == makingStartedAt ? _self.makingStartedAt : makingStartedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,readyAt: freezed == readyAt ? _self.readyAt : readyAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,cancelledAt: freezed == cancelledAt ? _self.cancelledAt : cancelledAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,refundedAt: freezed == refundedAt ? _self.refundedAt : refundedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
@@ -387,6 +411,18 @@ $RefundInfoEntityCopyWith<$Res>? get refundInfo {
 
   return $RefundInfoEntityCopyWith<$Res>(_self.refundInfo!, (value) {
     return _then(_self.copyWith(refundInfo: value));
+  });
+}/// Create a copy of OrderEntity
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$CancelInfoEntityCopyWith<$Res>? get cancelInfo {
+    if (_self.cancelInfo == null) {
+    return null;
+  }
+
+  return $CancelInfoEntityCopyWith<$Res>(_self.cancelInfo!, (value) {
+    return _then(_self.copyWith(cancelInfo: value));
   });
 }
 }

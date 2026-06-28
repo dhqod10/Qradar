@@ -86,4 +86,34 @@ class OrderRepositoryImpl implements OrderRepository {
       'updatedAt': Timestamp.fromDate(now),
     });
   }
+
+  @override
+  Future<void> startMakingOrder(String orderId) async {
+    final now = DateTime.now();
+    await _ds.update(orderId, <String, dynamic>{
+      'status': OrderStatus.making.name,
+      'makingStartedAt': Timestamp.fromDate(now),
+      'updatedAt': Timestamp.fromDate(now),
+    });
+  }
+
+  @override
+  Future<void> markOrderReady(String orderId) async {
+    final now = DateTime.now();
+    await _ds.update(orderId, <String, dynamic>{
+      'status': OrderStatus.ready.name,
+      'readyAt': Timestamp.fromDate(now),
+      'updatedAt': Timestamp.fromDate(now),
+    });
+  }
+
+  @override
+  Future<void> markOrderCompleted(String orderId) async {
+    final now = DateTime.now();
+    await _ds.update(orderId, <String, dynamic>{
+      'status': OrderStatus.completed.name,
+      'completedAt': Timestamp.fromDate(now),
+      'updatedAt': Timestamp.fromDate(now),
+    });
+  }
 }

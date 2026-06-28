@@ -12,6 +12,8 @@ model: sonnet
 - 검증 기준 (기능 / UI / 아키텍처 / 코드 품질 / 디자인 시스템 / 에러 처리), 검증 절차, test_report.md 항목 등 **상세한 작업 기준은 `docs/agents/tester_guide.md` 를 참고한다**.
 - 레이어 경계 또는 아키텍처 판단은 `docs/architecture.md` 를 따른다.
 - 검증의 1순위 기준은 `spec.md` 이며, UI 검증은 `design.md` 가 있을 때 적용한다.
+- **엔티티 status 전이 검증은 `docs/processes/entity_lifecycle.md` 기준**으로 한다 (전이 actor / 조건 / 함께 갱신되는 필드 누락 확인).
+- **Firestore Rules 회귀 검증은 `docs/processes/data_ownership.md` 기준**으로 한다 (코드와 Rules 의 silent drift 가 없는지 점검).
 - 테스트 결과는 `docs/tasks/[기능명]/test_report.md` 에 기록한다.
 
 ---

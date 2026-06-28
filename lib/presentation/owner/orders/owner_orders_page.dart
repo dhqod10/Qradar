@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/domain/entities/notification_permission_status.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
+import 'package:qradar/presentation/common/notification/providers/notification_providers.dart';
+import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
+import 'package:qradar/presentation/owner/orders/owner_order_detail_page.dart';
+import 'package:qradar/presentation/owner/orders/widgets/notification_denied_banner.dart';
+import 'package:qradar/presentation/owner/orders/widgets/owner_in_progress_order_tile.dart';
 import 'package:qradar/presentation/owner/orders/widgets/owner_new_order_tile.dart';
+import 'package:qradar/presentation/owner/orders/widgets/owner_order_action_dialogs.dart';
 import 'package:qradar/presentation/owner/orders/widgets/owner_refund_request_tile.dart';
 import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 
-/// 점주 주문 접수 페이지 (Phase 3a 최소 구현).
+/// 점주 주문 접수 페이지 (Phase 3c-1 확장).
 ///
 /// 탭 1: 신규(paid) 주문 — 주문 받기 / 거절
-/// 탭 2: 환불 요청 — 승인 / 거절
+/// 탭 2: 조리 중(making/ready) 주문 — 준비 완료 / 픽업 완료
+/// 탭 3: 환불 요청 — 승인 / 거절
 class OwnerOrdersPage extends ConsumerStatefulWidget {
   const OwnerOrdersPage({super.key});
 
@@ -21,22 +29,62 @@ class OwnerOrdersPage extends ConsumerStatefulWidget {
 }
 
 class _OwnerOrdersPageState extends ConsumerState<OwnerOrdersPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tabController;
 
   // 처리 중인 주문 ID 세트 (버튼 중복 탭 방지)
   final Set<String> _processingOrderIds = {};
 
+  // 알림 권한 거부 배너 표시 여부
+  bool _showNotificationDeniedBanner = false;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshNotificationBanner();
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// 앱이 포그라운드로 돌아왔을 때 권한 재확인 (설정 화면 복귀 대응).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshNotificationBanner();
+    }
+  }
+
+  Future<void> _refreshNotificationBanner() async {
+    final uid = ref.read(authProvider).asData?.value?.uid;
+    if (uid == null) return;
+
+    // prompted == true 인 경우에만 배너 노출 후보
+    final prompted = await ref
+        .read(userRepositoryProvider)
+        .getNotificationPermissionPrompted(uid);
+    if (!prompted) {
+      if (mounted) setState(() => _showNotificationDeniedBanner = false);
+      return;
+    }
+
+    final status = await ref
+        .read(pushNotificationRepositoryProvider)
+        .getPermissionStatus();
+
+    if (!mounted) return;
+    setState(() {
+      _showNotificationDeniedBanner =
+          status == NotificationPermissionStatus.denied;
+    });
   }
 
   // ── 신규 주문 처리 ────────────────────────────────────────────────────────
@@ -82,6 +130,67 @@ class _OwnerOrdersPageState extends ConsumerState<OwnerOrdersPage>
       );
     } finally {
       if (mounted) setState(() => _processingOrderIds.remove(order.id));
+    }
+  }
+
+  // ── 조리 중 탭 처리 ──────────────────────────────────────────────────────
+
+  Future<void> _startMaking(String orderId) async {
+    if (_processingOrderIds.contains(orderId)) return;
+    setState(() => _processingOrderIds.add(orderId));
+    try {
+      await ref.read(startMakingOrderUseCaseProvider).call(orderId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('조리를 시작했습니다')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('오류가 발생했습니다: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _processingOrderIds.remove(orderId));
+    }
+  }
+
+  Future<void> _markReady(String orderId) async {
+    if (_processingOrderIds.contains(orderId)) return;
+    setState(() => _processingOrderIds.add(orderId));
+    try {
+      await ref.read(markOrderReadyUseCaseProvider).call(orderId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('준비를 완료했어요')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('오류가 발생했습니다: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _processingOrderIds.remove(orderId));
+    }
+  }
+
+  Future<void> _completePickupWithDialog(String orderId) async {
+    final confirmed = await OwnerOrderActionDialogs.showCompletePickup(context);
+    if (confirmed != true) return;
+    if (_processingOrderIds.contains(orderId)) return;
+    setState(() => _processingOrderIds.add(orderId));
+    try {
+      await ref.read(markOrderCompletedUseCaseProvider).call(orderId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('픽업 완료로 표시했어요')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('오류가 발생했습니다: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _processingOrderIds.remove(orderId));
     }
   }
 
@@ -138,185 +247,19 @@ class _OwnerOrdersPageState extends ConsumerState<OwnerOrdersPage>
   // ── 다이얼로그 ────────────────────────────────────────────────────────────
 
   /// D8: 주문 거절 사유 다이얼로그. null 반환 시 취소.
-  Future<String?> _showRejectOrderDialog() async {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          '주문을 거절하시겠어요?',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textHeading,
-          ),
-        ),
-        content: TextField(
-          controller: controller,
-          minLines: 2,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: '거절 사유 (선택 입력)',
-            hintStyle: const TextStyle(color: AppColors.textMuted),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.primary),
-            ),
-          ),
-          style: const TextStyle(
-            fontSize: 14,
-            color: AppColors.textBody,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(
-              '아니요',
-              style: TextStyle(color: AppColors.textBody),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: AppColors.onPrimary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text('거절'),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<String?> _showRejectOrderDialog() =>
+      OwnerOrderActionDialogs.showRejectOrder(context);
 
   /// D6: 환불 승인 확인 다이얼로그. true 반환 시 승인.
-  Future<bool?> _showApproveRefundDialog(OrderEntity order) async {
-    final fmt = NumberFormat('#,###원', 'ko_KR');
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          '환불을 승인하시겠어요?',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textHeading,
-          ),
-        ),
-        content: Text(
-          '전액 ${fmt.format(order.totalPrice)}이 환불됩니다.',
-          style: const TextStyle(
-            fontSize: 14,
-            color: AppColors.textBody,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
-              '취소',
-              style: TextStyle(color: AppColors.textBody),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text('환불 승인'),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<bool?> _showApproveRefundDialog(OrderEntity order) =>
+      OwnerOrderActionDialogs.showApproveRefund(
+        context,
+        totalPrice: order.totalPrice,
+      );
 
   /// D7: 환불 거절 사유 다이얼로그. null 반환 시 취소.
-  Future<String?> _showDenyRefundDialog() async {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          '환불 요청 거절',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textHeading,
-          ),
-        ),
-        content: TextField(
-          controller: controller,
-          minLines: 2,
-          maxLines: 4,
-          decoration: InputDecoration(
-            hintText: '거절 사유를 입력해주세요',
-            hintStyle: const TextStyle(color: AppColors.textMuted),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.primary),
-            ),
-          ),
-          style: const TextStyle(
-            fontSize: 14,
-            color: AppColors.textBody,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(
-              '취소',
-              style: TextStyle(color: AppColors.textBody),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: AppColors.onPrimary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text('거절'),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<String?> _showDenyRefundDialog() =>
+      OwnerOrderActionDialogs.showDenyRefund(context);
 
   // ── 빌드 ─────────────────────────────────────────────────────────────────
 
@@ -349,6 +292,7 @@ class _OwnerOrdersPageState extends ConsumerState<OwnerOrdersPage>
           ),
           tabs: const [
             Tab(text: '신규'),
+            Tab(text: '조리 중'),
             Tab(text: '환불 요청'),
           ],
         ),
@@ -357,23 +301,43 @@ class _OwnerOrdersPageState extends ConsumerState<OwnerOrdersPage>
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
-        error: (e, _) => _buildStoreError(),
+        error: (e, _) {
+          debugPrint('[OwnerOrdersPage] myStore error: $e');
+          return _buildStoreError();
+        },
         data: (store) {
+          debugPrint(
+              '[OwnerOrdersPage] myStore data: id=${store?.id} name=${store?.name}');
           if (store == null) return _buildNoStore();
-          return TabBarView(
-            controller: _tabController,
+          return Column(
             children: [
-              _NewOrdersTab(
-                storeId: store.id,
-                processingIds: _processingOrderIds,
-                onAccept: _acceptOrder,
-                onReject: _rejectOrder,
-              ),
-              _RefundRequestsTab(
-                storeId: store.id,
-                processingIds: _processingOrderIds,
-                onApprove: _approveRefund,
-                onDeny: _denyRefund,
+              if (_showNotificationDeniedBanner)
+                const NotificationDeniedBanner(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _NewOrdersTab(
+                      storeId: store.id,
+                      processingIds: _processingOrderIds,
+                      onAccept: _acceptOrder,
+                      onReject: _rejectOrder,
+                    ),
+                    _InProgressOrdersTab(
+                      storeId: store.id,
+                      processingIds: _processingOrderIds,
+                      onStartMaking: _startMaking,
+                      onMarkReady: _markReady,
+                      onCompletePickup: _completePickupWithDialog,
+                    ),
+                    _RefundRequestsTab(
+                      storeId: store.id,
+                      processingIds: _processingOrderIds,
+                      onApprove: _approveRefund,
+                      onDeny: _denyRefund,
+                    ),
+                  ],
+                ),
               ),
             ],
           );
@@ -429,19 +393,20 @@ class _NewOrdersTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ordersAsync = ref.watch(
-      StreamProvider((r) => r
-          .read(watchStoreOrdersUseCaseProvider)
-          .call(storeId, statusFilter: {OrderStatus.paid})),
-    );
+    final ordersAsync = ref.watch(newOrdersByStoreProvider(storeId));
 
     return ordersAsync.when(
       loading: () => _buildShimmer(),
-      error: (e, _) => _buildError(),
+      error: (e, _) {
+        debugPrint('[OwnerOrdersPage] new orders error: $e');
+        return _buildError();
+      },
       data: (orders) {
+        debugPrint(
+            '[OwnerOrdersPage] new orders received: count=${orders.length} storeId=$storeId');
         if (orders.isEmpty) return _buildEmpty();
         return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.only(top: 8, bottom: 110),
           itemCount: orders.length,
           itemBuilder: (_, i) {
             final order = orders[i];
@@ -450,6 +415,12 @@ class _NewOrdersTab extends ConsumerWidget {
               isLoading: processingIds.contains(order.id),
               onAccept: () => onAccept(order.id),
               onReject: () => onReject(order),
+              onTapDetail: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      OwnerOrderDetailPage(orderId: order.id),
+                ),
+              ),
             );
           },
         );
@@ -459,7 +430,7 @@ class _NewOrdersTab extends ConsumerWidget {
 
   Widget _buildShimmer() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 110),
       itemCount: 3,
       itemBuilder: (_, _) => Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -517,6 +488,117 @@ class _NewOrdersTab extends ConsumerWidget {
   }
 }
 
+// ── 조리 중 탭 ───────────────────────────────────────────────────────────────
+
+class _InProgressOrdersTab extends ConsumerWidget {
+  const _InProgressOrdersTab({
+    required this.storeId,
+    required this.processingIds,
+    required this.onStartMaking,
+    required this.onMarkReady,
+    required this.onCompletePickup,
+  });
+
+  final String storeId;
+  final Set<String> processingIds;
+  final Future<void> Function(String orderId) onStartMaking;
+  final Future<void> Function(String orderId) onMarkReady;
+  final Future<void> Function(String orderId) onCompletePickup;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ordersAsync = ref.watch(inProgressOrdersByStoreProvider(storeId));
+
+    return ordersAsync.when(
+      loading: () => _buildShimmer(),
+      error: (e, _) {
+        debugPrint('[OwnerOrdersPage] in-progress orders error: $e');
+        return _buildError();
+      },
+      data: (orders) {
+        if (orders.isEmpty) return _buildEmpty();
+        return ListView.builder(
+          padding: const EdgeInsets.only(top: 8, bottom: 110),
+          itemCount: orders.length,
+          itemBuilder: (_, i) {
+            final order = orders[i];
+            return OwnerInProgressOrderTile(
+              order: order,
+              isLoading: processingIds.contains(order.id),
+              onAction: switch (order.status) {
+                OrderStatus.accepted => () => onStartMaking(order.id),
+                OrderStatus.making => () => onMarkReady(order.id),
+                _ => () => onCompletePickup(order.id),
+              },
+              onTapDetail: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => OwnerOrderDetailPage(orderId: order.id),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildShimmer() {
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 8, bottom: 110),
+      itemCount: 3,
+      itemBuilder: (_, _) => Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        height: 110,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildError() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 56, color: AppColors.error),
+          SizedBox(height: 12),
+          Text(
+            '불러오는 데 실패했어요',
+            style: TextStyle(fontSize: 16, color: AppColors.textHeading),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmpty() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.hourglass_empty_rounded,
+            size: 56,
+            color: AppColors.textMuted,
+          ),
+          SizedBox(height: 12),
+          Text(
+            '조리 중인 주문이 없어요',
+            style: TextStyle(fontSize: 15, color: AppColors.textHeading),
+          ),
+          SizedBox(height: 4),
+          Text(
+            '신규 주문을 받으면 여기에 표시됩니다',
+            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── 환불 요청 탭 ─────────────────────────────────────────────────────────────
 
 class _RefundRequestsTab extends ConsumerWidget {
@@ -534,19 +616,20 @@ class _RefundRequestsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ordersAsync = ref.watch(
-      StreamProvider((r) => r
-          .read(watchStoreRefundRequestsUseCaseProvider)
-          .call(storeId)),
-    );
+    final ordersAsync = ref.watch(refundRequestsByStoreProvider(storeId));
 
     return ordersAsync.when(
       loading: () => _buildShimmer(),
-      error: (e, _) => _buildError(),
+      error: (e, _) {
+        debugPrint('[OwnerOrdersPage] refund requests error: $e');
+        return _buildError();
+      },
       data: (orders) {
+        debugPrint(
+            '[OwnerOrdersPage] refund requests received: count=${orders.length} storeId=$storeId');
         if (orders.isEmpty) return _buildEmpty();
         return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.only(top: 8, bottom: 110),
           itemCount: orders.length,
           itemBuilder: (_, i) {
             final order = orders[i];
@@ -555,6 +638,12 @@ class _RefundRequestsTab extends ConsumerWidget {
               isLoading: processingIds.contains(order.id),
               onApprove: () => onApprove(order),
               onDeny: () => onDeny(order),
+              onTapDetail: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      OwnerOrderDetailPage(orderId: order.id),
+                ),
+              ),
             );
           },
         );
@@ -564,7 +653,7 @@ class _RefundRequestsTab extends ConsumerWidget {
 
   Widget _buildShimmer() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 110),
       itemCount: 3,
       itemBuilder: (_, _) => Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),

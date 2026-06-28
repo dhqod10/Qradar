@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/presentation/customer/checkout/widgets/receipt_web_view.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
@@ -48,7 +48,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
         ),
       ),
       body: orderAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => _OrderDetailShimmer(),
         error: (e, _) => _ErrorBody(
           message: e.toString(),
           onRetry: () => ref.invalidate(currentOrderProvider(widget.orderId)),
@@ -146,6 +146,29 @@ class _OrderDetailBody extends StatelessWidget {
   final VoidCallback onRefundRequest;
 
   static final _dateFormat = DateFormat('yyyy.MM.dd HH:mm', 'ko');
+  static final _timeFormat = DateFormat('HH:mm');
+
+  /// 진행 인디케이터 노출 조건 — cancelled / refunded 가 아닌 모든 status.
+  static bool _showProgressIndicator(OrderStatus status) {
+    return status != OrderStatus.cancelled && status != OrderStatus.refunded;
+  }
+
+  /// 환불 요청이 "진행 중" 인지 (요청 존재 + 거절되지 않음 + 아직 환불 완료 안됨).
+  static bool _isRefundRequestActive(OrderEntity order) {
+    final req = order.refundRequest;
+    if (req == null) return false;
+    if (req.deniedAt != null) return false;
+    if (order.status == OrderStatus.refunded) return false;
+    return true;
+  }
+
+  /// 환불 요청이 점주에게 거절된 상태인지.
+  static bool _isRefundRequestDenied(OrderEntity order) {
+    final req = order.refundRequest;
+    if (req == null) return false;
+    if (order.status == OrderStatus.refunded) return false;
+    return req.deniedAt != null;
+  }
 
   String get _shortOrderId {
     final id = order.id;
@@ -162,6 +185,22 @@ class _OrderDetailBody extends StatelessWidget {
         children: [
           _StatusSection(order: order, shortId: _shortOrderId, dateFormat: _dateFormat),
           const SizedBox(height: 16),
+          if (_showProgressIndicator(order.status)) ...[
+            _OrderProgressIndicator(order: order, timeFormat: _timeFormat),
+            const SizedBox(height: 16),
+          ],
+          if (order.status == OrderStatus.cancelled && order.cancelInfo != null) ...[
+            _CancelInfoSection(order: order, dateFormat: _dateFormat),
+            const SizedBox(height: 16),
+          ],
+          if (_isRefundRequestActive(order)) ...[
+            _RefundRequestStatusSection(order: order, dateFormat: _dateFormat),
+            const SizedBox(height: 16),
+          ],
+          if (_isRefundRequestDenied(order)) ...[
+            _RefundDeniedSection(order: order, dateFormat: _dateFormat),
+            const SizedBox(height: 16),
+          ],
           _StoreSection(storeName: order.storeName),
           const SizedBox(height: 16),
           _ItemsSection(order: order),
@@ -373,11 +412,11 @@ class _PaymentInfoSection extends StatelessWidget {
           if (info.receiptUrl != null && info.receiptUrl!.isNotEmpty) ...[
             const SizedBox(height: 8),
             GestureDetector(
-              onTap: () async {
-                final uri = Uri.tryParse(info.receiptUrl!);
-                if (uri != null && await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) =>
+                      ReceiptWebView(receiptUrl: info.receiptUrl!),
+                ));
               },
               child: const Text(
                 '영수증 보기',
@@ -444,17 +483,15 @@ class _ActionSection extends StatelessWidget {
       case OrderStatus.paid:
         return SizedBox(
           width: double.infinity,
-          height: 54,
-          child: ElevatedButton(
+          height: 48,
+          child: OutlinedButton(
             onPressed: isLoading ? null : onCancelOrder,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: AppColors.onPrimary,
-              disabledBackgroundColor: AppColors.surface,
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: AppColors.error),
+              foregroundColor: AppColors.error,
               disabledForegroundColor: AppColors.textMuted,
-              elevation: 0,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(10)),
             ),
             child: isLoading
                 ? const SizedBox(
@@ -462,7 +499,7 @@ class _ActionSection extends StatelessWidget {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: AppColors.onPrimary,
+                      color: AppColors.error,
                     ),
                   )
                 : const Text(
@@ -474,8 +511,27 @@ class _ActionSection extends StatelessWidget {
         );
 
       case OrderStatus.accepted:
-      case OrderStatus.making:
-      case OrderStatus.ready:
+        final req = order.refundRequest;
+        final hasActiveRefundRequest = req != null && req.deniedAt == null;
+        final isRefundDenied = req != null && req.deniedAt != null;
+        if (hasActiveRefundRequest || isRefundDenied) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Text(
+              hasActiveRefundRequest
+                  ? '환불 요청 중입니다'
+                  : '환불이 거절되어 더 이상 요청할 수 없어요',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: AppColors.textMuted),
+            ),
+          );
+        }
         return SizedBox(
           width: double.infinity,
           height: 54,
@@ -504,6 +560,58 @@ class _ActionSection extends StatelessWidget {
                     style: TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w700),
                   ),
+          ),
+        );
+
+      // U7: 조리 시작 후 환불 요청 불가 안내 카드
+      case OrderStatus.making:
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline_rounded,
+                  size: 18, color: AppColors.info),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '조리가 시작되어 환불 요청이 어려워요',
+                  style: TextStyle(fontSize: 14, color: AppColors.textMuted),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      // U7: 음료 준비 완료 후 환불 요청 불가 안내 카드
+      case OrderStatus.ready:
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline_rounded,
+                  size: 18, color: AppColors.info),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '음료 준비가 완료되어 환불 요청이 어려워요',
+                  style: TextStyle(fontSize: 14, color: AppColors.textMuted),
+                ),
+              ),
+            ],
           ),
         );
 
@@ -608,6 +716,467 @@ class _CancelOrderDialog extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+// ── Cancel Info Section ───────────────────────────────────────────────────────
+
+class _CancelInfoSection extends StatelessWidget {
+  const _CancelInfoSection({required this.order, required this.dateFormat});
+
+  final OrderEntity order;
+  final DateFormat dateFormat;
+
+  String get _approvedByLabel {
+    switch (order.cancelInfo?.approvedBy) {
+      case 'customer':
+        return '고객 직접 취소';
+      case 'owner':
+        return '매장 거절';
+      default:
+        return '취소됨';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final info = order.cancelInfo!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.error),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.cancel_rounded,
+                  size: 18, color: AppColors.error),
+              const SizedBox(width: 6),
+              Text(
+                _approvedByLabel,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.error,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '사유',
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            info.reason,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textBody,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            dateFormat.format(info.cancelledAt),
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Refund Denied Section ─────────────────────────────────────────────────────
+
+class _RefundDeniedSection extends StatelessWidget {
+  const _RefundDeniedSection({
+    required this.order,
+    required this.dateFormat,
+  });
+
+  final OrderEntity order;
+  final DateFormat dateFormat;
+
+  @override
+  Widget build(BuildContext context) {
+    final req = order.refundRequest!;
+    final deniedReason = req.deniedReason;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.error),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.do_not_disturb_on_rounded,
+                  size: 18, color: AppColors.error),
+              const SizedBox(width: 6),
+              const Text(
+                '환불 요청이 거절되었어요',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.error,
+                ),
+              ),
+            ],
+          ),
+          if (deniedReason != null && deniedReason.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text(
+              '매장 답변',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              deniedReason,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textBody,
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (req.deniedAt != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              '거절 ${dateFormat.format(req.deniedAt!)}',
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Refund Request Status Section ─────────────────────────────────────────────
+
+class _RefundRequestStatusSection extends StatelessWidget {
+  const _RefundRequestStatusSection({
+    required this.order,
+    required this.dateFormat,
+  });
+
+  final OrderEntity order;
+  final DateFormat dateFormat;
+
+  @override
+  Widget build(BuildContext context) {
+    final req = order.refundRequest!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hourglass_top_rounded,
+                  size: 18, color: AppColors.primary),
+              const SizedBox(width: 6),
+              const Text(
+                '환불 요청 중',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '요청 사유',
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            req.reason,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textBody,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '요청 ${dateFormat.format(req.requestedAt)}',
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '매장 승인 후 환불이 진행됩니다',
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Detail Shimmer ────────────────────────────────────────────────────────────
+
+class _OrderDetailShimmer extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 상태 뱃지 + 주문번호 섹션
+          _shimmerBox(height: 100, radius: 16),
+          const SizedBox(height: 16),
+          // 진행 인디케이터 placeholder
+          _shimmerBox(height: 88, radius: 16),
+          const SizedBox(height: 16),
+          // 매장명 섹션
+          _shimmerBox(height: 72, radius: 16),
+          const SizedBox(height: 16),
+          // 아이템 행 3개
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _shimmerBox(height: 15, width: 60, radius: 6),
+                const SizedBox(height: 14),
+                _shimmerBox(height: 13, radius: 6),
+                const SizedBox(height: 10),
+                _shimmerBox(height: 13, radius: 6),
+                const SizedBox(height: 10),
+                _shimmerBox(height: 13, radius: 6),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 가격 요약
+          _shimmerBox(height: 80, radius: 16),
+        ],
+      ),
+    );
+  }
+
+  static Widget _shimmerBox({
+    required double height,
+    double? width,
+    double radius = 8,
+  }) {
+    return Container(
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: AppColors.border),
+      ),
+    );
+  }
+}
+
+// ── Order Progress Indicator ──────────────────────────────────────────────────
+
+enum _StepState { completed, current, upcoming }
+
+class _OrderProgressIndicator extends StatelessWidget {
+  const _OrderProgressIndicator({
+    required this.order,
+    required this.timeFormat,
+  });
+
+  final OrderEntity order;
+  final DateFormat timeFormat;
+
+  static const _labels = ['접수', '조리', '준비', '픽업'];
+  static const _icons = [
+    Icons.receipt_long_rounded,
+    Icons.local_fire_department_rounded,
+    Icons.check_circle_outline_rounded,
+    Icons.shopping_bag_outlined,
+  ];
+
+  _StepState _stepState(int index) {
+    final timestamps = [
+      order.acceptedAt,
+      order.makingStartedAt,
+      order.readyAt,
+      order.completedAt,
+    ];
+    if (timestamps[index] != null) return _StepState.completed;
+    // paid 상태에서 단계 0 은 "현재(예고)" — 나머지 모두 upcoming
+    if (index == 0) return _StepState.current;
+    if (timestamps[index - 1] != null) return _StepState.current;
+    return _StepState.upcoming;
+  }
+
+  bool _lineCompleted(int lineIndex) {
+    final timestamps = [order.acceptedAt, order.makingStartedAt, order.readyAt];
+    return timestamps[lineIndex] != null;
+  }
+
+  DateTime? _timestamp(int index) {
+    return [
+      order.acceptedAt,
+      order.makingStartedAt,
+      order.readyAt,
+      order.completedAt,
+    ][index];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '주문 진행',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textHeading,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // 스테퍼 Row — 아이콘 + 연결선
+          Row(
+            children: [
+              _buildStepNode(0),
+              Expanded(child: _buildStepLine(0)),
+              _buildStepNode(1),
+              Expanded(child: _buildStepLine(1)),
+              _buildStepNode(2),
+              Expanded(child: _buildStepLine(2)),
+              _buildStepNode(3),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 라벨 + 타임스탬프 Row
+          Row(
+            children: [
+              SizedBox(width: 40, child: _buildStepLabel(0)),
+              const Spacer(),
+              SizedBox(width: 40, child: _buildStepLabel(1)),
+              const Spacer(),
+              SizedBox(width: 40, child: _buildStepLabel(2)),
+              const Spacer(),
+              SizedBox(width: 40, child: _buildStepLabel(3)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepNode(int index) {
+    final state = _stepState(index);
+    final Color bgColor;
+    final Color? borderColor;
+    final IconData icon;
+    final Color iconColor;
+    final double iconSize;
+
+    switch (state) {
+      case _StepState.completed:
+        bgColor = AppColors.success;
+        borderColor = null;
+        icon = Icons.check_rounded;
+        iconColor = AppColors.onPrimary;
+        iconSize = 16;
+      case _StepState.current:
+        bgColor = AppColors.primary;
+        borderColor = null;
+        icon = _icons[index];
+        iconColor = AppColors.onPrimary;
+        iconSize = 16;
+      case _StepState.upcoming:
+        bgColor = AppColors.surface;
+        borderColor = AppColors.border;
+        icon = _icons[index];
+        iconColor = AppColors.textMuted;
+        iconSize = 14;
+    }
+
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: bgColor,
+        border: borderColor != null
+            ? Border.all(color: borderColor, width: 1.5)
+            : null,
+      ),
+      child: Icon(icon, size: iconSize, color: iconColor),
+    );
+  }
+
+  Widget _buildStepLine(int lineIndex) {
+    return Container(
+      height: 2,
+      color: _lineCompleted(lineIndex) ? AppColors.success : AppColors.border,
+    );
+  }
+
+  Widget _buildStepLabel(int index) {
+    final state = _stepState(index);
+    final ts = _timestamp(index);
+    final isActive = state == _StepState.completed || state == _StepState.current;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          _labels[index],
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            color: isActive ? AppColors.textHeading : AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          ts != null ? timeFormat.format(ts) : '-',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 11,
+            color: ts != null ? AppColors.textMuted : AppColors.border,
+          ),
         ),
       ],
     );

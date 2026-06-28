@@ -88,14 +88,31 @@ export const cancelTossPayment = onCall(
       }
     }
 
-    // 5. Toss cancel API
+    // 5. Toss cancel API (또는 Mock 분기 — docs 공개 키 사용 시)
     const paymentInfo = order["paymentInfo"] as Record<string, unknown>;
     const paymentKey = paymentInfo["paymentKey"] as string;
 
-    const tossResponse = await cancelPayment(tossSecretKey.value(), {
-      paymentKey,
-      cancelReason: data.reason,
-    });
+    const secretKey = tossSecretKey.value();
+    const isMockMode = secretKey.startsWith("test_gsk_docs_");
+    const tossResponse = isMockMode
+      ? {
+          paymentKey,
+          orderId: data.orderId,
+          status: "CANCELED",
+          cancels: [{
+            transactionKey: "mock-tx-" + Date.now(),
+            cancelReason: data.reason,
+            canceledAt: new Date().toISOString(),
+            cancelAmount: (paymentInfo["amount"] as number) ?? 0,
+          }],
+        }
+      : await cancelPayment(secretKey, {
+          paymentKey,
+          cancelReason: data.reason,
+        });
+    if (isMockMode) {
+      console.log("[cancelTossPayment] MOCK MODE — Toss cancel SKIP");
+    }
 
     // cancels 배열에서 첫 번째 항목 추출
     const cancelEntry = tossResponse.cancels?.[0];

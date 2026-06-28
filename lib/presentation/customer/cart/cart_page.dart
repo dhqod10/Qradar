@@ -3,7 +3,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/cart_entity.dart';
-import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
+import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/auth/login_page.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/cart/widgets/cart_line_tile.dart';
 import 'package:qradar/presentation/customer/checkout/checkout_page.dart';
@@ -290,20 +291,19 @@ class _CheckoutBar extends ConsumerWidget {
               height: 52,
               child: ElevatedButton(
                 onPressed: () {
-                  final profile = ref.read(currentUserProfileProvider).value;
-                  if (profile == null) {
-                    showDialog<void>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('로그인이 필요합니다'),
-                        content: const Text('결제를 진행하려면 먼저 로그인해 주세요.'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('확인'),
-                          ),
-                        ],
+                  // F1: Firebase Auth 세션 직접 확인 (세션 만료 / 강제 로그아웃 /
+                  // 계정 삭제 등 비정상 상태 방어)
+                  final authUser = ref.read(authProvider).asData?.value;
+                  if (authUser == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('로그인 후 이용해주세요.'),
+                        duration: Duration(seconds: 2),
                       ),
+                    );
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginPage()),
+                      (route) => false,
                     );
                     return;
                   }

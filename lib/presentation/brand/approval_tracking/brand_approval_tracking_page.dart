@@ -2,21 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
+import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/menu_override_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
+import 'package:qradar/presentation/brand/providers/brand_master_menu_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_store_management_providers.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
 
 /// 브랜드 사용자가 제출한 항목의 검토 현황 트래킹.
 ///
-/// 현재 phase: 매장 + 가격 오버라이드.
-/// (점포 한정 메뉴 트래킹은 후속 phase 예정)
+/// 트래킹 대상: 마스터 메뉴 + 매장 + 가격 오버라이드.
 class BrandApprovalTrackingPage extends ConsumerWidget {
   const BrandApprovalTrackingPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final storesAsync = ref.watch(brandStoresProvider);
+    final masterMenusAsync = ref.watch(myMasterMenuItemsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -38,7 +40,16 @@ class BrandApprovalTrackingPage extends ConsumerWidget {
         error: (e, _) => _ErrorView(
           onRetry: () => ref.invalidate(brandStoresProvider),
         ),
-        data: (stores) => _TrackingBody(stores: stores),
+        data: (stores) => masterMenusAsync.when(
+          loading: () => const _LoadingView(),
+          error: (e, _) => _ErrorView(
+            onRetry: () => ref.invalidate(myMasterMenuItemsProvider),
+          ),
+          data: (masterMenus) => _TrackingBody(
+            stores: stores,
+            masterMenus: masterMenus,
+          ),
+        ),
       ),
     );
   }
@@ -48,8 +59,12 @@ class BrandApprovalTrackingPage extends ConsumerWidget {
 
 class _TrackingBody extends ConsumerWidget {
   final List<StoreEntity> stores;
+  final List<MenuItemEntity> masterMenus;
 
-  const _TrackingBody({required this.stores});
+  const _TrackingBody({
+    required this.stores,
+    required this.masterMenus,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -65,14 +80,22 @@ class _TrackingBody extends ConsumerWidget {
     // 통합 트래킹 항목 수집
     final items = <_TrackingItem>[];
 
-    // 1) 매장 항목 (status != approved 인 것만 — pending/rejected 노출)
+    // 1) 마스터 메뉴 항목 (status != approved 인 것만 — pending/rejected 노출)
+    for (final menu in masterMenus) {
+      if (menu.status != null &&
+          menu.status != EntityApprovalStatus.approved) {
+        items.add(_TrackingItem.fromMasterMenu(menu));
+      }
+    }
+
+    // 2) 매장 항목 (status != approved 인 것만 — pending/rejected 노출)
     for (final store in stores) {
       if (store.status != EntityApprovalStatus.approved) {
         items.add(_TrackingItem.fromStore(store));
       }
     }
 
-    // 2) 가격 오버라이드 항목 (status != approved 인 것만)
+    // 3) 가격 오버라이드 항목 (status != approved 인 것만)
     for (var i = 0; i < stores.length; i++) {
       final overrideAsync = overrideAsyncList[i];
       final overrides = overrideAsync.asData?.value ?? [];
@@ -110,7 +133,7 @@ class _TrackingBody extends ConsumerWidget {
 
 // ── 트래킹 데이터 모델 ────────────────────────────────────────────────────────
 
-enum _ItemType { store, priceOverride }
+enum _ItemType { masterMenu, store, priceOverride }
 
 class _TrackingItem {
   final _ItemType type;
@@ -141,6 +164,19 @@ class _TrackingItem {
       rejectedReason: store.rejectedReason,
       isRevision: store.approvedAt != null &&
           store.status == EntityApprovalStatus.pending,
+    );
+  }
+
+  factory _TrackingItem.fromMasterMenu(MenuItemEntity menu) {
+    return _TrackingItem(
+      type: _ItemType.masterMenu,
+      title: menu.name,
+      storeName: '마스터 메뉴',
+      status: menu.status ?? EntityApprovalStatus.pending,
+      submittedAt: menu.submittedAt,
+      rejectedReason: menu.rejectedReason,
+      isRevision: menu.approvedAt != null &&
+          menu.status == EntityApprovalStatus.pending,
     );
   }
 
@@ -287,6 +323,7 @@ class _TypeBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, label) = switch (type) {
+      _ItemType.masterMenu => (AppColors.primary, '메뉴'),
       _ItemType.store => (AppColors.info, '매장'),
       _ItemType.priceOverride => (AppColors.accent, '가격'),
     };

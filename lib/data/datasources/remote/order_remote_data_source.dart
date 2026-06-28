@@ -69,9 +69,9 @@ class OrderRemoteDataSource {
 
   /// 특정 매장의 환불 요청 주문 stream.
   ///
-  /// 조건: `refundRequest` 필드가 존재 + status != refunded.
+  /// 조건: `refundRequest` 필드가 존재 + status != refunded + 아직 거절되지 않음.
   /// Firestore 는 null 비교 불가하므로 `refundRequest` 존재 여부로 필터링.
-  /// 클라이언트에서 status == refunded 제외.
+  /// 클라이언트에서 status == refunded 와 deniedAt != null 제외.
   Stream<List<OrderModel>> streamRefundRequestsByStore(String storeId) {
     return _orders
         .where('storeId', isEqualTo: storeId)
@@ -82,7 +82,9 @@ class OrderRemoteDataSource {
       final all =
           snap.docs.map(OrderModel.fromFirestore).toList(growable: false);
       return all
-          .where((m) => m.status != OrderStatus.refunded)
+          .where((m) =>
+              m.status != OrderStatus.refunded &&
+              m.refundRequest?.deniedAt == null)
           .toList(growable: false);
     });
   }

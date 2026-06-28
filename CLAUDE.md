@@ -64,6 +64,9 @@
    - 코드 컨벤션 / freezed / Provider / 에러 처리: [docs/agents/developer_guide.md](docs/agents/developer_guide.md)
    - 제품 범위 / 사용자 역할 / 기능 명세: [docs/product_scope.md](docs/product_scope.md)
    - 기술 스택 / 패키지 / 빌드 명령어 / Firebase 설정 / 환경 변수: [docs/operations.md](docs/operations.md)
+   - 역할별 흐름 (customer / owner / brand / admin 진입·액션·전이): [docs/processes/role_flows.md](docs/processes/role_flows.md)
+   - 엔티티 status 전이 다이어그램 (order / store / brand / menuItem / refund): [docs/processes/entity_lifecycle.md](docs/processes/entity_lifecycle.md)
+   - Firestore 컬렉션별 데이터 소유권 / 권한 매트릭스 / Cloud Function 전담 작업: [docs/processes/data_ownership.md](docs/processes/data_ownership.md)
 
 같은 규칙이 여러 곳에 보인다면 위 표의 단일 진실원을 따른다.
 

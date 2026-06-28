@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Naver Login SDK -->
+    <string name="naver_client_id">Wx2r9oenYgjylKOo1yXw</string>
+    <string name="naver_client_secret">Kr5sXsouYt</string>
+    <string name="naver_client_name">S-Grade</string>
+</resources>

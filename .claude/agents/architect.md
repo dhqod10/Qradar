@@ -11,6 +11,8 @@ model: opus
 - `CLAUDE.md`를 따른다.
 - 설계 기준 / spec.md 항목 / 작업 분배 기준 / 아키텍처 규칙 등 **상세한 작업 기준은 `docs/agents/architect_guide.md` 를 참고한다**.
 - 레이어 경계 또는 파일 위치 판단은 `docs/architecture.md` 를 따른다.
+- **신규 기능 spec 작성 전 `docs/processes/role_flows.md` 와 `docs/processes/entity_lifecycle.md` 를 반드시 확인**한다. 새 기능이 어느 역할의 어느 흐름에 끼어드는지, 영향받는 엔티티의 status 전이가 어떻게 변하는지 spec.md 에 명시한다.
+- **Firestore 권한 / Cloud Function 분리 결정이 필요하면 `docs/processes/data_ownership.md` 를 확인**한다.
 - 설계 결과는 `docs/tasks/[기능명]/spec.md` 에 기록한다.
 - 불명확한 요구사항은 추측하지 말고 사용자에게 확인한다.
 

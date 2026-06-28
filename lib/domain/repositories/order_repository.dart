@@ -32,4 +32,13 @@ abstract class OrderRepository {
     String orderId,
     String deniedReason,
   );
+
+  /// 점주가 조리 시작 → status: accepted → making.
+  Future<void> startMakingOrder(String orderId);
+
+  /// 점주가 준비 완료 → status: making → ready.
+  Future<void> markOrderReady(String orderId);
+
+  /// 점주가 픽업 완료 → status: ready → completed.
+  Future<void> markOrderCompleted(String orderId);
 }

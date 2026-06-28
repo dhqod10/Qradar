@@ -13,4 +13,15 @@ abstract class UserRepository {
 
   /// 현재 사용자 프로필 실시간 감시.
   Stream<UserEntity?> watchCurrent(String uid);
+
+  // ── FCM 토큰 관련 (Phase 3b) ──────────────────────────────────────────
+
+  /// FCM 토큰을 업데이트한다. null 전달 시 토큰 필드를 제거한다.
+  Future<void> updateFcmToken(String uid, String? token);
+
+  /// 알림 권한 다이얼로그 노출 이력 플래그를 true 로 설정한다.
+  Future<void> markNotificationPermissionPrompted(String uid);
+
+  /// 알림 권한 다이얼로그 노출 이력을 조회한다.
+  Future<bool> getNotificationPermissionPrompted(String uid);
 }

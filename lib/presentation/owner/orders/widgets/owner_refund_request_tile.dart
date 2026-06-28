@@ -4,6 +4,9 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 
 /// 환불 요청 카드 타일.
+///
+/// [onTapDetail] 이 null 이 아니면 카드 영역 탭 시 상세 페이지로 이동한다.
+/// 버튼 탭은 Flutter hit test 가 자식 우선 처리하므로 자동으로 카드 onTap 과 분리된다.
 class OwnerRefundRequestTile extends StatelessWidget {
   const OwnerRefundRequestTile({
     super.key,
@@ -11,12 +14,16 @@ class OwnerRefundRequestTile extends StatelessWidget {
     required this.onApprove,
     required this.onDeny,
     this.isLoading = false,
+    this.onTapDetail,
   });
 
   final OrderEntity order;
   final VoidCallback onApprove;
   final VoidCallback onDeny;
   final bool isLoading;
+
+  /// 카드 전체 탭 콜백 (버튼 영역 제외). null 이면 탭 비활성.
+  final VoidCallback? onTapDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +32,15 @@ class OwnerRefundRequestTile extends StatelessWidget {
     final refundRequest = order.refundRequest;
     final itemSummary = _buildItemSummary();
 
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTapDetail,
+        splashColor: AppColors.primary.withValues(alpha: 0.04),
+        highlightColor: AppColors.primary.withValues(alpha: 0.02),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.surfaceElevated,
@@ -147,6 +162,8 @@ class OwnerRefundRequestTile extends StatelessWidget {
             ],
           ),
         ],
+      ),
+        ),
       ),
     );
   }

@@ -22,6 +22,15 @@ abstract class UserModel with _$UserModel {
     DateTime? createdAt,
     /// role='brand' 일 때만 존재. Firestore 콘솔에서 수동 발급.
     String? brandId,
+    /// FCM 디바이스 토큰 (Phase 3b). JSON 직렬화 제외 (Firestore 전용 필드).
+    @JsonKey(includeFromJson: false, includeToJson: false) String? fcmToken,
+    /// 마지막 FCM 토큰 갱신 시각 (Phase 3b). JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false)
+    DateTime? fcmTokenUpdatedAt,
+    /// 알림 권한 다이얼로그 노출 이력 (Phase 3b). JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false)
+    @Default(false)
+    bool notificationPermissionPrompted,
   }) = _UserModel;
 
   factory UserModel.fromJson(Map<String, dynamic> json) =>
@@ -38,6 +47,9 @@ extension UserModelX on UserModel {
         role: UserRole.fromString(role),
         createdAt: createdAt,
         brandId: brandId,
+        fcmToken: fcmToken,
+        fcmTokenUpdatedAt: fcmTokenUpdatedAt,
+        notificationPermissionPrompted: notificationPermissionPrompted,
       );
 }
 
@@ -63,6 +75,7 @@ class UserModelFactory {
   ) {
     final data = doc.data() ?? const <String, dynamic>{};
     final createdAtTs = data['createdAt'];
+    final fcmTokenUpdatedAtTs = data['fcmTokenUpdatedAt'];
     return UserModel(
       uid: doc.id,
       email: data['email'] as String?,
@@ -72,6 +85,12 @@ class UserModelFactory {
       role: (data['role'] as String?) ?? 'customer',
       createdAt: createdAtTs is Timestamp ? createdAtTs.toDate() : null,
       brandId: data['brandId'] as String?,
+      fcmToken: data['fcmToken'] as String?,
+      fcmTokenUpdatedAt: fcmTokenUpdatedAtTs is Timestamp
+          ? fcmTokenUpdatedAtTs.toDate()
+          : null,
+      notificationPermissionPrompted:
+          (data['notificationPermissionPrompted'] as bool?) ?? false,
     );
   }
 

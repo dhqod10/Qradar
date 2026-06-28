@@ -36,4 +36,33 @@ class UserRemoteDataSource {
       return UserModelFactory.fromFirestore(doc);
     });
   }
+
+  // ── FCM 토큰 관련 (Phase 3b) ──────────────────────────────────────────────
+
+  /// FCM 토큰을 업데이트한다.
+  /// [token] 이 null 이면 Firestore 에서 해당 필드를 제거한다.
+  /// 허용 필드: `fcmToken`, `fcmTokenUpdatedAt`, `updatedAt` (Rules 화이트리스트).
+  Future<void> updateFcmToken(String uid, String? token) async {
+    await _doc(uid).update({
+      'fcmToken': token,
+      'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// `notificationPermissionPrompted` 플래그를 true 로 설정한다.
+  Future<void> markNotificationPermissionPrompted(String uid) async {
+    await _doc(uid).update({
+      'notificationPermissionPrompted': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// `notificationPermissionPrompted` 값을 조회한다 (없으면 false).
+  Future<bool> getNotificationPermissionPrompted(String uid) async {
+    final snapshot = await _doc(uid).get();
+    if (!snapshot.exists) return false;
+    final data = snapshot.data() ?? {};
+    return (data['notificationPermissionPrompted'] as bool?) ?? false;
+  }
 }

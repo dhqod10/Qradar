@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:qradar/domain/entities/cancel_info_entity.dart';
 import 'package:qradar/domain/entities/order_item_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/domain/entities/payment_info_entity.dart';
@@ -26,9 +27,13 @@ abstract class OrderEntity with _$OrderEntity {
     required PaymentInfoEntity paymentInfo,
     RefundRequestEntity? refundRequest,
     RefundInfoEntity? refundInfo,
+    CancelInfoEntity? cancelInfo,
     required DateTime createdAt,
     required DateTime updatedAt,
     DateTime? acceptedAt,
+    DateTime? makingStartedAt,
+    DateTime? readyAt,
+    DateTime? completedAt,
     DateTime? cancelledAt,
     DateTime? refundedAt,
   }) = _OrderEntity;

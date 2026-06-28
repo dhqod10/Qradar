@@ -29,4 +29,18 @@ class UserRepositoryImpl implements UserRepository {
   Stream<UserEntity?> watchCurrent(String uid) {
     return _dataSource.watch(uid).map((model) => model?.toEntity());
   }
+
+  // ── FCM 토큰 관련 (Phase 3b) ──────────────────────────────────────────────
+
+  @override
+  Future<void> updateFcmToken(String uid, String? token) =>
+      _dataSource.updateFcmToken(uid, token);
+
+  @override
+  Future<void> markNotificationPermissionPrompted(String uid) =>
+      _dataSource.markNotificationPermissionPrompted(uid);
+
+  @override
+  Future<bool> getNotificationPermissionPrompted(String uid) =>
+      _dataSource.getNotificationPermissionPrompted(uid);
 }

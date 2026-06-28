@@ -91,6 +91,7 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
     required int amount,
     required CartEntity cartSnapshot,
     required String uid,
+    required PaymentMethod paymentMethod,
   }) async {
     await _functionsDs.verifyTossPayment(
       paymentKey: paymentKey,
@@ -98,6 +99,7 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
       amount: amount,
       idempotencyKey: orderId,
       cartSnapshot: _cartToMap(cartSnapshot),
+      paymentMethod: paymentMethod.name,
     );
 
     // Functions 완료 후 Firestore 에서 생성된 주문 조회.
@@ -175,6 +177,8 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
       'storeId': cart.storeId,
       'storeName': cart.storeName,
       'subtotal': cart.subtotal,
+      'discount': null,
+      'totalPrice': cart.subtotal,
       'items': cart.items
           .map((item) => _cartItemToMap(item))
           .toList(growable: false),

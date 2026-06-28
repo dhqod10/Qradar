@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_naver_login/flutter_naver_login.dart';
 import 'package:flutter_naver_login/interface/types/naver_login_status.dart';
@@ -53,10 +54,30 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await kakao.UserApi.instance.loginWithKakaoAccount();
     }
 
+    // Kakao access token 취득
+    final oauthToken =
+        await kakao.TokenManagerProvider.instance.manager.getToken();
+    if (oauthToken == null) {
+      throw Exception('Kakao access token을 가져올 수 없습니다.');
+    }
+
+    // Cloud Function 으로 custom token 발급
+    final callable = FirebaseFunctions.instanceFor(region: 'asia-northeast3')
+        .httpsCallable('verifyKakaoToken');
+    final response = await callable.call<Map<String, dynamic>>({
+      'accessToken': oauthToken.accessToken,
+    });
+    final customToken = response.data['customToken'] as String;
+
+    // Firebase Auth 세션 생성
+    final credential = await _firebaseAuth.signInWithCustomToken(customToken);
+    final user = credential.user!;
+
+    // 프로필 정보는 Kakao SDK 에서 별도 조회
     final kakaoUser = await kakao.UserApi.instance.me();
 
     return UserModel(
-      uid: 'kakao_${kakaoUser.id}',
+      uid: user.uid,
       email: kakaoUser.kakaoAccount?.email,
       displayName: kakaoUser.kakaoAccount?.profile?.nickname,
       photoUrl: kakaoUser.kakaoAccount?.profile?.profileImageUrl,
@@ -68,8 +89,13 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   @override
   Future<UserModel> signInWithNaver() async {
-    final result = await FlutterNaverLogin.logIn();
+    // Naver SDK 의 잔존 OAuth state 정리 (state mismatch 회피).
+    // 이미 로그아웃 상태면 no-op.
+    try {
+      await FlutterNaverLogin.logOut();
+    } catch (_) {}
 
+    final result = await FlutterNaverLogin.logIn();
     if (result.status != NaverLoginStatus.loggedIn) {
       throw Exception('네이버 로그인이 취소되었습니다.');
     }
@@ -77,8 +103,27 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     final account = result.account;
     if (account == null) throw Exception('네이버 계정 정보를 가져올 수 없습니다.');
 
+    // flutter_naver_login plugin Android 측은 logIn() 결과의 accessToken 자리에
+    // 항상 null 을 넘긴다. token 은 별도 getCurrentAccessToken() 으로 가져옴.
+    final naverToken = await FlutterNaverLogin.getCurrentAccessToken();
+    if (naverToken.accessToken.isEmpty) {
+      throw Exception('Naver access token을 가져올 수 없습니다.');
+    }
+
+    // Cloud Function 으로 custom token 발급
+    final callable = FirebaseFunctions.instanceFor(region: 'asia-northeast3')
+        .httpsCallable('verifyNaverToken');
+    final response = await callable.call<Map<String, dynamic>>({
+      'accessToken': naverToken.accessToken,
+    });
+    final customToken = response.data['customToken'] as String;
+
+    // Firebase Auth 세션 생성
+    final credential = await _firebaseAuth.signInWithCustomToken(customToken);
+    final user = credential.user!;
+
     return UserModel(
-      uid: 'naver_${account.id}',
+      uid: user.uid,
       email: account.email,
       displayName: account.name,
       photoUrl: account.profileImage,

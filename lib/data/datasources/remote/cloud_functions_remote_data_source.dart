@@ -21,6 +21,7 @@ class CloudFunctionsRemoteDataSource {
     required int amount,
     required String idempotencyKey,
     required Map<String, dynamic> cartSnapshot,
+    required String paymentMethod,
   }) async {
     try {
       final callable = _functions.httpsCallable('verifyTossPayment');
@@ -30,6 +31,7 @@ class CloudFunctionsRemoteDataSource {
         'amount': amount,
         'idempotencyKey': idempotencyKey,
         'cart': cartSnapshot,
+        'paymentMethod': paymentMethod,
       });
       final data = result.data;
       if (data is Map) {

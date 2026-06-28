@@ -33,12 +33,18 @@ class _LoginPageState extends ConsumerState<LoginPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 외부 SNS 앱(카톡 등) 인증 중 사용자가 강제 종료 후 우리 앱으로 복귀하는
-    // 경우 SDK 응답이 누락되어 무한 로딩이 발생. resumed 후 grace period(3초)
-    // 안에 정상 응답이 오지 않으면 silent cancel 처리한다.
+    // 경우 SDK 응답이 누락되어 무한 로딩이 발생. resumed 후 grace period 안에
+    // 정상 응답이 오지 않으면 silent cancel 처리한다.
+    //
+    // grace period = 30초 — Cloud Function cold start + 외부 API verify 시간
+    // 까지 충분히 흡수. 정상 응답 도착 시 ref.listen 에서 _externalAuthInProgress
+    // 를 false 로 set 하므로 아래 delayed cancel 은 무력화된다 (state 가 이미
+    // not-loading).
     if (state == AppLifecycleState.resumed && _externalAuthInProgress) {
-      _externalAuthInProgress = false;
-      Future<void>.delayed(const Duration(seconds: 3), () {
+      Future<void>.delayed(const Duration(seconds: 30), () {
         if (!mounted) return;
+        if (!_externalAuthInProgress) return; // 정상 응답 도착 시 skip
+        _externalAuthInProgress = false;
         ref.read(authProvider.notifier).cancelSignIn();
       });
     }
@@ -64,6 +70,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
     final authState = ref.watch(authProvider);
 
     ref.listen(authProvider, (prev, next) {
+      // 외부 인증 흐름이 끝나는 모든 케이스 (성공/실패/취소) 에서 lifecycle
+      // 기반 silent cancel 무력화. AsyncLoading → 다른 상태 전이가 바로 그 신호.
+      final wasLoading = prev?.isLoading ?? false;
+      if (wasLoading && !next.isLoading) {
+        _externalAuthInProgress = false;
+      }
       next.whenOrNull(
         data: (user) {
           if (user != null) {

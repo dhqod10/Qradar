@@ -1,5 +1,6 @@
 import 'package:qradar/domain/entities/cart_entity.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
+import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/domain/repositories/payment_gateway_repository.dart';
 
 class VerifyAndCreateOrderUseCase {
@@ -12,6 +13,7 @@ class VerifyAndCreateOrderUseCase {
     required int amount,
     required CartEntity cartSnapshot,
     required String uid,
+    required PaymentMethod paymentMethod,
   }) {
     return _repo.verifyAndCreateOrder(
       paymentKey: paymentKey,
@@ -19,6 +21,7 @@ class VerifyAndCreateOrderUseCase {
       amount: amount,
       cartSnapshot: cartSnapshot,
       uid: uid,
+      paymentMethod: paymentMethod,
     );
   }
 }

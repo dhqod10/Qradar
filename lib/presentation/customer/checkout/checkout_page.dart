@@ -113,6 +113,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
               amount: amount,
               cartSnapshot: cart,
               uid: profile.uid,
+              paymentMethod: method,
             );
 
         if (!mounted) return;

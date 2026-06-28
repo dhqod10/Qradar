@@ -248,7 +248,10 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('검토 요청을 보냈어요')),
       );
-      Navigator.pop(context);
+      // 수정 모드: push로 진입했으므로 pop.
+      // 신규 등록 모드: BrandScaffold가 profile stream(brandId) 갱신을 감지해
+      //   자동으로 BottomNav로 전환하므로 pop 하지 않는다.
+      if (_isEditMode) Navigator.pop(context);
     } on ArgumentError catch (e) {
       setState(() => _imageError = e.message);
     } catch (_) {

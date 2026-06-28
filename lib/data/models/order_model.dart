@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qradar/data/models/cancel_info_model.dart';
 import 'package:qradar/data/models/order_item_model.dart';
 import 'package:qradar/data/models/payment_info_model.dart';
 import 'package:qradar/data/models/refund_info_model.dart';
@@ -23,9 +24,13 @@ class OrderModel {
   final PaymentInfoModel paymentInfo;
   final RefundRequestModel? refundRequest;
   final RefundInfoModel? refundInfo;
+  final CancelInfoModel? cancelInfo;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? acceptedAt;
+  final DateTime? makingStartedAt;
+  final DateTime? readyAt;
+  final DateTime? completedAt;
   final DateTime? cancelledAt;
   final DateTime? refundedAt;
 
@@ -43,9 +48,13 @@ class OrderModel {
     required this.paymentInfo,
     this.refundRequest,
     this.refundInfo,
+    this.cancelInfo,
     required this.createdAt,
     required this.updatedAt,
     this.acceptedAt,
+    this.makingStartedAt,
+    this.readyAt,
+    this.completedAt,
     this.cancelledAt,
     this.refundedAt,
   });
@@ -68,6 +77,8 @@ class OrderModel {
         data['refundRequest'] as Map<String, dynamic>?;
     final rawRefundInfo =
         data['refundInfo'] as Map<String, dynamic>?;
+    final rawCancelInfo =
+        data['cancelInfo'] as Map<String, dynamic>?;
 
     return OrderModel(
       id: id,
@@ -89,9 +100,14 @@ class OrderModel {
           : null,
       refundInfo:
           rawRefundInfo != null ? RefundInfoModel.fromMap(rawRefundInfo) : null,
+      cancelInfo:
+          rawCancelInfo != null ? CancelInfoModel.fromMap(rawCancelInfo) : null,
       createdAt: toDate(data['createdAt']) ?? DateTime.now(),
       updatedAt: toDate(data['updatedAt']) ?? DateTime.now(),
       acceptedAt: toDate(data['acceptedAt']),
+      makingStartedAt: toDate(data['makingStartedAt']),
+      readyAt: toDate(data['readyAt']),
+      completedAt: toDate(data['completedAt']),
       cancelledAt: toDate(data['cancelledAt']),
       refundedAt: toDate(data['refundedAt']),
     );
@@ -112,9 +128,13 @@ class OrderModel {
       paymentInfo: paymentInfo.toEntity(),
       refundRequest: refundRequest?.toEntity(),
       refundInfo: refundInfo?.toEntity(),
+      cancelInfo: cancelInfo?.toEntity(),
       createdAt: createdAt,
       updatedAt: updatedAt,
       acceptedAt: acceptedAt,
+      makingStartedAt: makingStartedAt,
+      readyAt: readyAt,
+      completedAt: completedAt,
       cancelledAt: cancelledAt,
       refundedAt: refundedAt,
     );
@@ -133,9 +153,15 @@ class OrderModel {
         'paymentInfo': paymentInfo.toMap(),
         if (refundRequest != null) 'refundRequest': refundRequest!.toMap(),
         if (refundInfo != null) 'refundInfo': refundInfo!.toMap(),
+        if (cancelInfo != null) 'cancelInfo': cancelInfo!.toMap(),
         'createdAt': Timestamp.fromDate(createdAt),
         'updatedAt': Timestamp.fromDate(updatedAt),
         if (acceptedAt != null) 'acceptedAt': Timestamp.fromDate(acceptedAt!),
+        if (makingStartedAt != null)
+          'makingStartedAt': Timestamp.fromDate(makingStartedAt!),
+        if (readyAt != null) 'readyAt': Timestamp.fromDate(readyAt!),
+        if (completedAt != null)
+          'completedAt': Timestamp.fromDate(completedAt!),
         if (cancelledAt != null)
           'cancelledAt': Timestamp.fromDate(cancelledAt!),
         if (refundedAt != null) 'refundedAt': Timestamp.fromDate(refundedAt!),

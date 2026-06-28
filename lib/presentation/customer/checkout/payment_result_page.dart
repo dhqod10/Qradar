@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/presentation/common/scaffold_with_nav.dart';
 import 'package:qradar/presentation/customer/order/orders/order_detail_page.dart';
 
 enum PaymentResultVariant { success, fail, cancelled }
 
-class PaymentResultPage extends StatelessWidget {
+class PaymentResultPage extends ConsumerWidget {
   const PaymentResultPage({
     super.key,
     required this.variant,
@@ -51,14 +53,20 @@ class PaymentResultPage extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return PopScope(
       canPop: false,
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(
           child: switch (variant) {
-            PaymentResultVariant.success => _SuccessBody(orderId: orderId),
+            PaymentResultVariant.success => _SuccessBody(
+                orderId: orderId,
+                onGoToLog: () {
+                  ref.read(selectedTabIndexProvider.notifier).set(3);
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                },
+              ),
             PaymentResultVariant.fail => _FailBody(
                 message: _mapErrorCode(errorCode, errorMessage),
               ),
@@ -73,8 +81,9 @@ class PaymentResultPage extends StatelessWidget {
 // ── Success ───────────────────────────────────────────────────────────────────
 
 class _SuccessBody extends StatelessWidget {
-  const _SuccessBody({this.orderId});
+  const _SuccessBody({this.orderId, required this.onGoToLog});
   final String? orderId;
+  final VoidCallback onGoToLog;
 
   String get _shortId {
     final id = orderId ?? '';
@@ -151,9 +160,7 @@ class _SuccessBody extends StatelessWidget {
           SizedBox(
             height: 54,
             child: OutlinedButton(
-              onPressed: () {
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              },
+              onPressed: onGoToLog,
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.textBody,
                 side: const BorderSide(color: AppColors.border),

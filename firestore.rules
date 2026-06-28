@@ -1,0 +1,506 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // helper functions
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // 로그인 여부 확인
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // 현재 요청자 uid
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // 현재 사용자의 Firestore doc 데이터
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(uid())).data;
+    }
+
+    // 현재 사용자 role.
+    // users/{uid} 문서가 없거나 role 필드가 없으면 'customer' 로 간주 (legacy account 대응).
+    function userRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(uid()))
+        ? userDoc().get('role', 'customer')
+        : 'customer';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userRole() == 'admin';
+    }
+
+    function isOwner() {
+      return isSignedIn() && userRole() == 'owner';
+    }
+
+    function isBrand() {
+      return isSignedIn() && userRole() == 'brand';
+    }
+
+    // 특정 storeId 의 점주인지 확인
+    function isStoreOwner(storeId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/stores/$(storeId)).data.ownerId == uid();
+    }
+
+    // 특정 brandId 의 브랜드 보유자인지 확인.
+    // users/{uid}.role == 'brand' && users/{uid}.brandId == brandId
+    function isBrandHolder(brandId) {
+      return isBrand() && userDoc().get('brandId', '') == brandId;
+    }
+
+    // update 시 허용된 필드만 변경되었는지 검증 (top-level 기준)
+    function onlyChangedFields(allowedFields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // users/{uid}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // 본인 또는 admin 만 read
+      allow read: if isAdmin() || (isSignedIn() && uid() == userId);
+
+      // 가입 직후 self-create.
+      // uid 가 자기 자신이고 role='customer' 인 doc 만 허용.
+      // brandId 를 가입 시점에 임의 set 하는 것 차단.
+      allow create: if isSignedIn()
+                    && uid() == userId
+                    && request.resource.data.get('role', 'customer') == 'customer'
+                    && !('brandId' in request.resource.data);
+
+      // delete 는 admin 만
+      allow delete: if isAdmin();
+
+      // update: admin 전권 또는 본인의 제한된 self 업데이트
+      allow update: if isAdmin()
+                    || isSelfProfileUpdate(userId);
+
+      // ── 내부 함수: 본인 프로필 update ───────────────────────────────────────
+      // 변경 가능 필드: role (허용된 전이만), displayName, photoUrl, fcmToken, brandId
+      // brandId: 최초 1회만 설정 가능 (empty → value). 이미 설정된 brandId 변경 불가.
+      // immutable 필드: uid, createdAt, provider — 본인이 수정 불가
+      function isSelfProfileUpdate(userId) {
+        return isSignedIn()
+          && uid() == userId
+          && onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'updatedAt', 'brandId'])
+          && (
+            // role 변경 없음 (다른 필드만 업데이트)
+            request.resource.data.get('role', 'customer') == resource.data.get('role', 'customer')
+            // role 변경 있음 — 허용된 전이만
+            || isAllowedSelfRoleChange(
+                resource.data.get('role', 'customer'),
+                request.resource.data.get('role', 'customer')
+              )
+          )
+          // brandId: 현재 비어있을 때만 설정 허용. 임의 변경 차단.
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['brandId'])
+            || resource.data.get('brandId', '') == ''
+          );
+      }
+
+      // 허용된 본인 role 전이.
+      // customer ↔ owner ↔ brand 본인 신청 모두 자유.
+      // brand 는 단순 신청자 단계이며, 실제 권한은 brands.status='approved' 후에만 부여.
+      // 어떤 경우에도 admin 으로의 자가 승격은 차단.
+      function isAllowedSelfRoleChange(from, to) {
+        return (from == 'customer' && to == 'owner')
+            || (from == 'owner' && to == 'customer')
+            || (from == 'customer' && to == 'brand')
+            || (from == 'owner' && to == 'brand')
+            || (from == 'brand' && to == 'customer')
+            || (from == 'brand' && to == 'owner');
+      }
+
+      // ── users/{uid}/orderLogs/{logId} ──────────────────────────────────────
+      // 모든 생성/수정 은 Cloud Function (verifyTossPayment) 이 Admin SDK 로 수행.
+      // 클라이언트는 read 만 허용.
+      match /orderLogs/{logId} {
+        allow read: if isAdmin() || (isSignedIn() && uid() == userId);
+        allow create: if false; // Cloud Function (Admin SDK) 만 가능
+        allow update: if false; // Cloud Function (Admin SDK) 만 가능
+        allow delete: if isAdmin();
+      }
+
+      // ── users/{uid}/favoriteStores/{storeId} ──────────────────────────────
+      match /favoriteStores/{storeId} {
+        allow read, create, update, delete: if isSignedIn() && uid() == userId;
+      }
+
+      // ── users/{uid}/favoriteMenuItems/{compositeId} ───────────────────────
+      match /favoriteMenuItems/{compositeId} {
+        allow read, create, update, delete: if isSignedIn() && uid() == userId;
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // orders/{orderId}
+    // 생성은 Cloud Function (verifyTossPayment, Admin SDK) 만 가능.
+    // update 는 actor 별 4개 분기.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /orders/{orderId} {
+      // read: 본인(주문자), 해당 매장 점주, admin
+      allow read: if isAdmin()
+                  || (isSignedIn() && resource.data.userId == uid())
+                  || (isSignedIn() && isStoreOwner(resource.data.storeId));
+
+      // create: 클라이언트 직접 생성 차단. verifyTossPayment Cloud Function 만.
+      allow create: if false;
+
+      // delete: admin 만
+      allow delete: if isAdmin();
+
+      // update: actor 별 분기
+      allow update: if isAdmin()                          // O4: admin 전권
+                    || isOwnerAcceptUpdate()               // O1: 점주가 paid→accepted
+                    || isCustomerRefundRequest()           // O2: 고객이 환불 요청 (accepted 만)
+                    || isOwnerDenyRefund()                 // O3: 점주가 환불 거절
+                    || isOwnerStartMakingUpdate()          // O5: 점주가 accepted→making
+                    || isOwnerMarkReadyUpdate()            // O6: 점주가 making→ready
+                    || isOwnerCompletePickupUpdate();      // O7: 점주가 ready→completed
+
+      // O1: 점주가 paid → accepted 전이
+      // 허용 필드: status, acceptedAt, updatedAt
+      function isOwnerAcceptUpdate() {
+        return isStoreOwner(resource.data.storeId)
+          && resource.data.status == 'paid'
+          && request.resource.data.status == 'accepted'
+          && onlyChangedFields(['status', 'acceptedAt', 'updatedAt']);
+      }
+
+      // O2: 고객이 환불 요청 추가
+      // 조건: 주문자 본인, status 가 'accepted' 일 때만 허용 (결정 F / Q7 축소).
+      //       making/ready/completed 는 차단 — 조리 시작 후 환불 요청 불가 (카페 픽업 도메인 표준).
+      //       refundRequest 가 null 이거나 아직 denied 안 됨 (재환불 차단),
+      //       변경 필드: refundRequest, updatedAt
+      //       refundRequest 내부는 reason, requestedAt 만 허용
+      function isCustomerRefundRequest() {
+        return isSignedIn()
+          && resource.data.userId == uid()
+          && resource.data.status == 'accepted'  // 결정 F: 'accepted' 만 허용 (축소)
+          // 이미 deniedAt 이 있는 경우 재요청 차단 (우회 경로 차단)
+          && (resource.data.refundRequest == null
+              || resource.data.get('refundRequest.deniedAt', null) == null)
+          && onlyChangedFields(['refundRequest', 'updatedAt'])
+          // refundRequest 내부 핵심 필드 변조 방지: reason, requestedAt 만 허용
+          && request.resource.data.refundRequest.keys().hasOnly(['reason', 'requestedAt']);
+      }
+
+      // O3: 점주가 환불 요청 거절
+      // 조건: 해당 매장 점주, refundRequest 가 있고 아직 deny 안 됨,
+      //       변경 필드: refundRequest, updatedAt
+      //       거절 후 refundRequest 는 reason, requestedAt, deniedAt, deniedReason 만 허용
+      function isOwnerDenyRefund() {
+        return isStoreOwner(resource.data.storeId)
+          && resource.data.refundRequest != null
+          && resource.data.get('refundRequest.deniedAt', null) == null
+          && onlyChangedFields(['refundRequest', 'updatedAt'])
+          // 거절 후 refundRequest 내부 필드 검증
+          && request.resource.data.refundRequest.keys()
+              .hasOnly(['reason', 'requestedAt', 'deniedAt', 'deniedReason']);
+      }
+
+      // O5: 점주가 accepted → making 전이 (조리 시작)
+      // 화이트리스트: status, makingStartedAt, updatedAt (3개만)
+      function isOwnerStartMakingUpdate() {
+        return isStoreOwner(resource.data.storeId)
+          && resource.data.status == 'accepted'
+          && request.resource.data.status == 'making'
+          && onlyChangedFields(['status', 'makingStartedAt', 'updatedAt']);
+      }
+
+      // O6: 점주가 making → ready 전이 (준비 완료)
+      // 화이트리스트: status, readyAt, updatedAt (3개만)
+      function isOwnerMarkReadyUpdate() {
+        return isStoreOwner(resource.data.storeId)
+          && resource.data.status == 'making'
+          && request.resource.data.status == 'ready'
+          && onlyChangedFields(['status', 'readyAt', 'updatedAt']);
+      }
+
+      // O7: 점주가 ready → completed 전이 (픽업 완료)
+      // 화이트리스트: status, completedAt, updatedAt (3개만)
+      function isOwnerCompletePickupUpdate() {
+        return isStoreOwner(resource.data.storeId)
+          && resource.data.status == 'ready'
+          && request.resource.data.status == 'completed'
+          && onlyChangedFields(['status', 'completedAt', 'updatedAt']);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // stores/{storeId}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /stores/{storeId} {
+      // read: 인증된 사용자 누구나
+      allow read: if isSignedIn();
+
+      // create: owner role 사용자가 본인 ownerId 로 등록. status 는 'pending' 으로 시작.
+      allow create: if isOwner()
+                    && request.resource.data.ownerId == uid()
+                    && request.resource.data.get('status', 'pending') == 'pending';
+
+      // delete: 점주 본인 또는 admin
+      allow delete: if isAdmin() || isStoreOwner(storeId);
+
+      // update: admin 전권, 점주 운영 필드, brand 운영 필드 (status/ownerId/brandId 제외)
+      allow update: if isAdmin()
+                    || isStoreOwnerFieldUpdate(storeId)
+                    || isStoreOwnerBrandUpdate();
+
+      // 점주가 자기 매장 핵심/운영 필드 업데이트.
+      // - 핵심 필드 수정(updateStoreCoreFields): status=pending 회귀 + submittedBy/At 갱신 허용.
+      // - 재제출(T3): approvedBy/approvedAt/rejectedReason null 클리어 허용.
+      // - ownerId / brandId 는 immutable (화이트리스트에서 제외).
+      // - status 자기 승격 차단: 'pending' 으로만 set 가능.
+      // - approvedBy / approvedAt 는 본인이 직접 승격 불가 (재제출 null 클리어만 허용).
+      function isStoreOwnerFieldUpdate(storeId) {
+        return isStoreOwner(storeId)
+          && onlyChangedFields([
+            // 운영 필드
+            'name', 'imageUrl', 'location', 'phone', 'address',
+            'description', 'menuCategories', 'businessHours',
+            'isOpen', 'updatedAt', 'notice', 'tags',
+            'temporaryClosed', 'closedDates', 'imageUrls',
+            // 핵심 필드 수정 시 승인 메타 회귀
+            'status', 'submittedBy', 'submittedAt',
+            'businessRegistrationNumber',
+            // T3 재제출: null 클리어 허용
+            'approvedBy', 'approvedAt', 'rejectedReason'
+          ])
+          // status 자기 승격 차단: 'pending' 으로만 set 가능
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
+            || request.resource.data.get('status', '') == 'pending'
+          )
+          // approvedBy/approvedAt 는 null 클리어(재제출)만 허용, 값 설정 불가
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedBy'])
+            || request.resource.data.get('approvedBy', null) == null
+          )
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedAt'])
+            || request.resource.data.get('approvedAt', null) == null
+          );
+      }
+
+      // brand 가 자기 가맹점 매장의 운영 필드 업데이트 (U-3 결정 반영).
+      // 동일하게 status 자기 승격 차단 + approvedBy/approvedAt 보호 적용.
+      function isStoreOwnerBrandUpdate() {
+        return isBrandHolder(resource.data.get('brandId', ''))
+          && onlyChangedFields([
+            'name', 'imageUrl', 'location', 'phone', 'address',
+            'description', 'menuCategories', 'businessHours',
+            'isOpen', 'updatedAt', 'notice', 'tags',
+            'temporaryClosed', 'closedDates', 'imageUrls',
+            'status', 'submittedBy', 'submittedAt',
+            'businessRegistrationNumber',
+            'approvedBy', 'approvedAt', 'rejectedReason'
+          ])
+          // status 자기 승격 차단
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
+            || request.resource.data.get('status', '') == 'pending'
+          )
+          // approvedBy/approvedAt 는 null 클리어만 허용
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedBy'])
+            || request.resource.data.get('approvedBy', null) == null
+          )
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedAt'])
+            || request.resource.data.get('approvedAt', null) == null
+          );
+      }
+
+      // ── stores/{storeId}/subCategories/{id} ───────────────────────────────
+      match /subCategories/{subCategoryId} {
+        allow read: if isSignedIn();
+        allow create, update, delete:
+          if isAdmin()
+          || isStoreOwner(storeId)
+          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
+      }
+
+      // ── stores/{storeId}/menuItems/{id} ───────────────────────────────────
+      // 점포 한정 메뉴. status='pending' 포함 read 허용 (클라이언트가 approved 필터링).
+      match /menuItems/{menuItemId} {
+        allow read: if isSignedIn();
+        allow create, update, delete:
+          if isAdmin()
+          || isStoreOwner(storeId)
+          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
+      }
+
+      // ── stores/{storeId}/menuOverrides/{masterMenuItemId} ─────────────────
+      match /menuOverrides/{masterMenuItemId} {
+        allow read: if isSignedIn();
+        allow create, update, delete:
+          if isAdmin()
+          || isStoreOwner(storeId)
+          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
+      }
+
+      // ── stores/{storeId}/optionGroups/{id} ────────────────────────────────
+      match /optionGroups/{optionGroupId} {
+        allow read: if isSignedIn();
+        allow create, update, delete:
+          if isAdmin()
+          || isStoreOwner(storeId)
+          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // brands/{brandId}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /brands/{brandId} {
+      // read: 인증된 사용자 누구나
+      allow read: if isSignedIn();
+
+      // create: admin 전권 또는 brand 유저 자기 신청.
+      // brand 유저 조건: 본인 uid 가 submittedBy, status=pending, brandKey='' (승인 전 미발급).
+      allow create: if isAdmin()
+                    || (isBrand()
+                        && request.resource.data.get('submittedBy', '') == uid()
+                        && request.resource.data.get('status', '') == 'pending'
+                        && request.resource.data.get('brandKey', '') == '');
+
+      // delete: admin 만
+      allow delete: if isAdmin();
+
+      // update: admin 전권, brand 본인은 운영 필드만 (status/brandKey 는 admin 전용)
+      allow update: if isAdmin()
+                    || isBrandSelfUpdate(brandId);
+
+      // brand 본인 운영 필드 업데이트.
+      // - 운영 필드 + 승인 메타 회귀 필드(status→pending, submittedBy, submittedAt, rejectedReason) 허용.
+      // - brandKey / approvedBy / approvedAt / createdAt 는 본인 변경 불가 (명시적 차단).
+      // - status 는 'pending' 으로만 set 가능 (자기 승격 차단).
+      function isBrandSelfUpdate(brandId) {
+        return isBrandHolder(brandId)
+          && onlyChangedFields([
+            'name', 'logoUrl', 'description', 'phone', 'address',
+            'businessHours', 'updatedAt', 'tags',
+            // 승인 메타 회귀 필드 (핵심 필드 수정 시 status=pending 회귀)
+            'status', 'submittedBy', 'submittedAt', 'rejectedReason',
+            // BrandEntity 추가 필드
+            'companyName', 'businessRegistrationNumber',
+            'contactName', 'contactPhone', 'headOfficeAddress', 'representativeName'
+          ])
+          // status 자기 승격 차단: 'pending' 으로만 set 가능
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
+            || request.resource.data.get('status', '') == 'pending'
+          )
+          // brandKey / approvedBy / approvedAt / createdAt 는 본인 변경 불가
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+            ['brandKey', 'approvedBy', 'approvedAt', 'createdAt']
+          );
+      }
+
+      // ── brands/{brandId}/menuItems/{id} ───────────────────────────────────
+      match /menuItems/{menuItemId} {
+        allow read: if isSignedIn();
+        allow create, update, delete:
+          if isAdmin() || isBrandHolder(brandId);
+      }
+
+      // ── brands/{brandId}/subCategories/{id} ───────────────────────────────
+      match /subCategories/{subCategoryId} {
+        allow read: if isSignedIn();
+        allow create, update, delete:
+          if isAdmin() || isBrandHolder(brandId);
+      }
+
+      // ── brands/{brandId}/optionGroups/{id} ────────────────────────────────
+      match /optionGroups/{optionGroupId} {
+        allow read: if isSignedIn();
+        allow create, update, delete:
+          if isAdmin() || isBrandHolder(brandId);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // mainCategories/{id} — 마스터 데이터. admin 만 write.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /mainCategories/{categoryId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // subCategories/{id} — legacy global. admin 만 write.
+    // brand/store nested subCategories 와 구분 (상위 match 에서 처리됨).
+    // ─────────────────────────────────────────────────────────────────────────
+    match /subCategories/{subCategoryId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // optionGroups/{id} — master global. admin 만 write.
+    // brand/store nested optionGroups 와 구분 (상위 match 에서 처리됨).
+    // ─────────────────────────────────────────────────────────────────────────
+    match /optionGroups/{optionGroupId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // reviews/{reviewId} — 현재 사용 예정 컬렉션. 안전한 기본값 부여 (U-4 결정).
+    // 실제 리뷰 기능 도입 시 별 task 에서 보강.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /reviews/{reviewId} {
+      // read: 인증된 사용자
+      allow read: if isSignedIn();
+
+      // create: 작성자 == 요청자
+      allow create: if isSignedIn()
+                    && request.resource.data.get('userId', '') == uid();
+
+      // update: 본인(작성자) 만
+      allow update: if isSignedIn()
+                    && resource.data.get('userId', '') == uid();
+
+      // delete: 본인 또는 admin
+      allow delete: if isAdmin()
+                    || (isSignedIn() && resource.data.get('userId', '') == uid());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CollectionGroup query 지원 ({path=**} wildcard 필수).
+    //
+    // Rules v2 에서 collectionGroup query 는 path-specific nested rule 만으로는
+    // 작동하지 않고, 반드시 별도의 {path=**} wildcard match 가 있어야 한다.
+    // 아래 wildcard 는 read 만 허용 (admin 승인 큐 등). create/update/delete 는
+    // path-specific nested rule (brands/{brandId}/menuItems 등) 이 그대로 담당.
+    //
+    // 영향 query (예시):
+    //   - MasterMenuItemRemoteDataSource.streamPending — brands/*/menuItems
+    //   - MenuItemRemoteDataSource.streamPending — stores/*/menuItems (store-only)
+    //   - MenuOverrideRemoteDataSource.streamPending — stores/*/menuOverrides
+    //   - OptionGroup / MainCategory / SubCategory 의 reverse lookup
+    // ─────────────────────────────────────────────────────────────────────────
+    match /{path=**}/menuItems/{menuItemId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/menuOverrides/{menuOverrideId} {
+      allow read: if isSignedIn();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // fallback deny — 명시적으로 정의되지 않은 모든 경로 거부
+    // ─────────────────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+  }
+}

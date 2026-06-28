@@ -11,6 +11,8 @@ model: sonnet
 - `CLAUDE.md`를 따른다.
 - 구현 기준 / 구현 순서 / 레이어별 파일 위치 / Provider·에러·UI 구현 / 네이밍 / implementation.md 항목 등 **상세한 작업 기준은 `docs/agents/developer_guide.md` 를 참고한다**.
 - 레이어 경계 또는 아키텍처 판단은 `docs/architecture.md` 를 따른다.
+- **Firestore write (create / update / set / batch / transaction) 코드 작성 전 `docs/processes/data_ownership.md` 의 해당 컬렉션 권한을 반드시 확인한다.** Security Rules 의 허용 필드 / 허용 status 전이 / Cloud Function 전담 작업과 불일치하면 silent fail 한다 (방금 발생한 brand 등록 / status 회귀 drift 사례 참조).
+- **엔티티 status 변경 코드 작성 전 `docs/processes/entity_lifecycle.md` 의 해당 전이 actor / 조건을 확인**한다.
 - 구현 결과는 `docs/tasks/[기능명]/implementation.md` 에 기록한다.
 
 ---

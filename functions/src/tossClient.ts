@@ -21,16 +21,26 @@ function buildAuthHeader(secretKey: string): string {
 
 /** Toss 응답에서 에러 처리 후 throw. */
 function handleTossError(error: unknown): never {
-  if (error instanceof AxiosError && error.response) {
-    const { code, message } = error.response.data as {
-      code?: string;
-      message?: string;
-    };
+  if (error instanceof AxiosError) {
+    console.error("[Toss API Error] status:", error.response?.status);
+    console.error("[Toss API Error] data:", JSON.stringify(error.response?.data));
+    console.error("[Toss API Error] message:", error.message);
+    if (error.response) {
+      const { code, message } = error.response.data as {
+        code?: string;
+        message?: string;
+      };
+      throw new HttpsError(
+        "internal",
+        `Toss API 오류 [${code ?? "UNKNOWN"}]: ${message ?? error.message ?? "알 수 없는 오류"}`
+      );
+    }
     throw new HttpsError(
       "internal",
-      `Toss API 오류 [${code ?? "UNKNOWN"}]: ${message ?? "알 수 없는 오류"}`
+      `Toss 네트워크 오류: ${error.message}`
     );
   }
+  console.error("[Toss API Error] unknown:", error);
   throw new HttpsError("internal", "Toss API 호출에 실패했습니다.");
 }
 

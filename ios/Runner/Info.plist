@@ -33,9 +33,9 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.835847199015-61us1evjkc336seg7dol7vemvr6bb4ld</string>
+				<string>com.googleusercontent.apps.835847199015-1sc2jd87q30c8bj26vdutpbt4n4umgj9</string>
 				<string>kakaof55c641ec30d25ae3c5f426305cc7a9a</string>
-				<string>com.orderapp.sgrade</string>
+				<string>com.qradar.app</string>
 				<!-- Toss Payments / KakaoPay deep link redirect -->
 				<string>qradar</string>
 			</array>
@@ -44,7 +44,7 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>GIDClientID</key>
-	<string>835847199015-61us1evjkc336seg7dol7vemvr6bb4ld.apps.googleusercontent.com</string>
+	<string>835847199015-1sc2jd87q30c8bj26vdutpbt4n4umgj9.apps.googleusercontent.com</string>
 	<!-- Naver Sign-In -->
 	<key>NidClientID</key>
 	<string>Wx2r9oenYgjylKOo1yXw</string>
@@ -53,7 +53,7 @@
 	<key>NidAppName</key>
 	<string>S-Grade</string>
 	<key>NidUrlScheme</key>
-	<string>com.orderapp.sgrade</string>
+	<string>com.qradar.app</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>kakaokompassauth</string>
@@ -69,6 +69,11 @@
 		<!-- Toss Payments 결제 -->
 		<string>supertoss</string>
 		<string>tossapp</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>

@@ -12,6 +12,7 @@ model: sonnet
 - 디자인 기준 / 색상 토큰 / design.md 항목 / 상태 UI(loading/error/empty) 처리 등 **상세한 작업 기준은 `docs/agents/designer_guide.md` 를 참고한다**.
 - 화면별 Figma 이미지나 코드 메모는 `docs/design/screens/[화면명]/` 에서 확인한다.
 - 공통 컴포넌트 참조는 `docs/design/components/` 를 사용한다.
+- **신규 화면 entry point / 네비게이션 흐름 결정 전 `docs/processes/role_flows.md` 를 반드시 확인**한다. 어느 역할의 어느 스캐폴드/탭/페이지에서 진입하는지가 design.md 에 명시되어야 한다.
 - 디자인 결과는 `docs/tasks/[기능명]/design.md` 에 기록한다.
 
 ---

@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/domain/entities/notification_permission_status.dart';
+import 'package:qradar/presentation/common/notification/notification_permission_dialog.dart';
+import 'package:qradar/presentation/common/notification/providers/notification_providers.dart';
+import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/owner/more/owner_more_page.dart';
 import 'package:qradar/presentation/owner/my_store/my_store_page.dart';
 import 'package:qradar/presentation/owner/orders/owner_orders_page.dart';
@@ -19,12 +24,67 @@ class _OwnerTabNotifier extends Notifier<int> {
 /// 점주(owner) 역할 사용자의 메인 Scaffold.
 ///
 /// 탭 구성: 내 매장 / 주문 접수 / 매출 / 더보기
-/// MVP 범위: "내 매장" 탭만 실구현, 나머지 두 탭은 placeholder.
-class OwnerScaffold extends ConsumerWidget {
+/// - 첫 진입 시 알림 권한 다이얼로그를 노출한다 (결정 A).
+class OwnerScaffold extends ConsumerStatefulWidget {
   const OwnerScaffold({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OwnerScaffold> createState() => _OwnerScaffoldState();
+}
+
+class _OwnerScaffoldState extends ConsumerState<OwnerScaffold> {
+  @override
+  void initState() {
+    super.initState();
+    // 빌드 사이클 방해 없이 첫 프레임 이후에 권한 체크
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndRequestNotificationPermission();
+    });
+  }
+
+  Future<void> _checkAndRequestNotificationPermission() async {
+    final authState = ref.read(authProvider);
+    final uid = authState.asData?.value?.uid;
+    if (uid == null) return;
+
+    // notificationPermissionPrompted 플래그 조회
+    final prompted = await ref
+        .read(userRepositoryProvider)
+        .getNotificationPermissionPrompted(uid);
+    if (prompted) return; // 이미 노출됨 → 재노출 안 함
+
+    if (!mounted) return;
+
+    // 다이얼로그 노출
+    final result = await showNotificationPermissionDialog(
+      context,
+      audience: NotificationDialogAudience.owner,
+    );
+
+    if (!mounted) return;
+
+    // 결과 처리
+    if (result == 'allow') {
+      // OS 권한 요청
+      final status = await ref
+          .read(requestNotificationPermissionUseCaseProvider)
+          .call();
+
+      // 권한 허용 시 토큰 등록
+      if (status == NotificationPermissionStatus.authorized ||
+          status == NotificationPermissionStatus.provisional) {
+        await ref.read(registerFcmTokenUseCaseProvider).call(uid);
+      }
+    }
+
+    // 결과와 무관하게 플래그 set (재노출 방지)
+    await ref
+        .read(userRepositoryProvider)
+        .markNotificationPermissionPrompted(uid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final selected = ref.watch(ownerTabIndexProvider);
 
     return Scaffold(

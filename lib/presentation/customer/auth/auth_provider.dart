@@ -1,9 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_naver_login/flutter_naver_login.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import 'package:qradar/data/datasources/remote/auth_remote_data_source.dart';
 import 'package:qradar/data/repositories/auth_repository_impl.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
@@ -14,6 +12,7 @@ import 'package:qradar/domain/usecases/sign_in_with_kakao_use_case.dart';
 import 'package:qradar/domain/usecases/sign_in_with_naver_use_case.dart';
 import 'package:qradar/domain/usecases/sign_out_use_case.dart';
 import 'package:qradar/domain/usecases/sign_up_with_email_use_case.dart';
+import 'package:qradar/presentation/common/notification/providers/notification_providers.dart';
 
 // ── 인프라 Provider ────────────────────────────────────────────────────────
 
@@ -56,51 +55,22 @@ final signUpWithEmailUseCaseProvider = Provider<SignUpWithEmailUseCase>((ref) {
 class AuthNotifier extends AsyncNotifier<UserEntity?> {
   @override
   Future<UserEntity?> build() async {
-    // Firebase Auth 세션 확인 (Google, Email)
+    // Firebase Auth 세션 확인
+    // Naver/Kakao 로그인도 Custom Token을 통해 Firebase Auth 세션으로 통합되므로
+    // FirebaseAuth.currentUser 하나만 확인하면 된다.
     final firebaseUser = FirebaseAuth.instance.currentUser;
-    if (firebaseUser != null) {
-      final provider = firebaseUser.providerData.isNotEmpty
-          ? firebaseUser.providerData.first.providerId
-          : 'unknown';
-      return UserEntity(
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        displayName: firebaseUser.displayName,
-        photoUrl: firebaseUser.photoURL,
-        provider: provider,
-      );
-    }
+    if (firebaseUser == null) return null;
 
-    // 카카오 토큰 확인
-    try {
-      if (await kakao.AuthApi.instance.hasToken()) {
-        final kakaoUser = await kakao.UserApi.instance.me();
-        return UserEntity(
-          uid: 'kakao_${kakaoUser.id}',
-          email: kakaoUser.kakaoAccount?.email,
-          displayName: kakaoUser.kakaoAccount?.profile?.nickname,
-          photoUrl: kakaoUser.kakaoAccount?.profile?.profileImageUrl,
-          provider: 'kakao',
-        );
-      }
-    } catch (_) {}
-
-    // 네이버 토큰 확인
-    try {
-      final isNaverLoggedIn = await FlutterNaverLogin.isLoggedIn();
-      if (isNaverLoggedIn) {
-        final account = await FlutterNaverLogin.getCurrentAccount();
-        return UserEntity(
-          uid: 'naver_${account.id}',
-          email: account.email,
-          displayName: account.name,
-          photoUrl: account.profileImage,
-          provider: 'naver',
-        );
-      }
-    } catch (_) {}
-
-    return null;
+    final provider = firebaseUser.providerData.isNotEmpty
+        ? firebaseUser.providerData.first.providerId
+        : 'unknown';
+    return UserEntity(
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      displayName: firebaseUser.displayName,
+      photoUrl: firebaseUser.photoURL,
+      provider: provider,
+    );
   }
 
   Future<void> signInWithGoogle() async {
@@ -108,6 +78,7 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
     state = await AsyncValue.guard(
       () => ref.read(signInWithGoogleUseCaseProvider).call(),
     );
+    await _onSignInSuccess();
   }
 
   Future<void> signInWithKakao() async {
@@ -123,6 +94,7 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
         throw Exception('카카오 로그인이 취소되었습니다. (timeout)');
       }
     });
+    await _onSignInSuccess();
   }
 
   /// SNS 로그인 진행 중 사용자가 외부 앱(카톡 등)을 강제 종료한 뒤 우리 앱으로
@@ -139,6 +111,7 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
     state = await AsyncValue.guard(
       () => ref.read(signInWithNaverUseCaseProvider).call(),
     );
+    await _onSignInSuccess();
   }
 
   Future<void> signInWithEmail({required String email, required String password}) async {
@@ -146,6 +119,7 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
     state = await AsyncValue.guard(
       () => ref.read(signInWithEmailUseCaseProvider).call(email: email, password: password),
     );
+    await _onSignInSuccess();
   }
 
   Future<void> signUpWithEmail({required String email, required String password}) async {
@@ -153,12 +127,25 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
     state = await AsyncValue.guard(
       () => ref.read(signUpWithEmailUseCaseProvider).call(email: email, password: password),
     );
+    await _onSignInSuccess();
   }
 
   Future<void> signOut() async {
     state = const AsyncLoading();
+    // FCM 토큰 정리 (Auth 끊기 전에 수행 — Rules: 본인 self-update 통과)
+    final uid = state.asData?.value?.uid ?? FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      await ref.read(clearFcmTokenUseCaseProvider).call(uid);
+    }
     await ref.read(signOutUseCaseProvider).call();
     state = const AsyncData(null);
+  }
+
+  /// 로그인 성공 후 FCM 토큰 자동 등록 (silent — 실패해도 로그인 영향 없음).
+  Future<void> _onSignInSuccess() async {
+    final uid = state.asData?.value?.uid;
+    if (uid == null) return;
+    await ref.read(registerFcmTokenUseCaseProvider).call(uid);
   }
 }
 

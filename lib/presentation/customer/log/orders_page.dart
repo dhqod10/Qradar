@@ -8,6 +8,84 @@ import 'package:qradar/presentation/customer/order/widgets/order_card.dart';
 class OrdersPage extends ConsumerWidget {
   const OrdersPage({super.key});
 
+  Widget _buildShimmer() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: 4,
+      itemBuilder: (_, _) => Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // storeName + status badge row
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 15,
+                    width: 120,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+                Container(
+                  height: 22,
+                  width: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // menu summary + price row
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 13,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Container(
+                  height: 15,
+                  width: 60,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // 시간 placeholder
+            Container(
+              height: 12,
+              width: 40,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ordersAsync = ref.watch(myOrdersProvider);
@@ -27,7 +105,7 @@ class OrdersPage extends ConsumerWidget {
         ),
       ),
       body: ordersAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => _buildShimmer(),
         error: (e, _) => _ErrorBody(
           message: e.toString(),
           onRetry: () => ref.invalidate(myOrdersProvider),

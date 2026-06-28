@@ -59,10 +59,12 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAKes98guUWCSuY9WFWgNIyOG1MmtoI73c',
-    appId: '1:835847199015:ios:8a816d0d85fe8e01327102',
+    appId: '1:835847199015:ios:619084d9ebce6d66327102',
     messagingSenderId: '835847199015',
     projectId: 'order-app-5957e',
     storageBucket: 'order-app-5957e.firebasestorage.app',
+    iosClientId: '835847199015-kesc8f4mt4dbsjhfeojn05lnv0c89l60.apps.googleusercontent.com',
     iosBundleId: 'com.orderapp.orderApp',
   );
+
 }

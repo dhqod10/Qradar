@@ -18,9 +18,15 @@
 
 ## 전체 결과
 
-- PASS: 42개
-- FAIL: 8개
-- 보류: 6개
+- PASS: 58개 (라이브 검증 +8, F1 / F6 fix 정정 +2, 2026-05-26; F2 / F4 / F5 / F7 / F8 fix 정정 +5, 2026-05-28; F3 / H7 해소 +1, 2026-05-29)
+- FAIL: 0개
+- 보류: 6개 (H7 해소로 감소)
+
+> **정정 이력 (2026-05-26):** F1 (CartPage 비로그인 가드) 와 F6 (verifyTossPayment 멱등성) 는 본 회차에서 수정 완료. F1: `_CheckoutBar.onPressed` 가드를 `authProvider` 기반으로 교체. F6: 멱등성 가드를 Toss confirm 호출 이전 (step 3-pre) 으로 이동 + Cloud Function 재배포 완료. 상세는 `implementation.md` 섹션 16 참조.
+
+> **정정 이력 (2026-05-28):** F2 / F4 / F5 / F7 / F8 수정 완료. F2: `_ActionBar` 에서 `OrderStatus.completed` 를 `cancelled / refunded` 케이스로 이동 (환불 요청 버튼 차단). F4: `lib/data/repositories/no_op_qoin_accrual_hook.dart` 생성, `qoinAccrualHookProvider` 등록, `checkout_page.dart` 결제 성공 경로에서 `onOrderPaid` 호출. F5: 취소 버튼 `OutlinedButton.styleFrom(side: BorderSide(color: AppColors.error), foregroundColor: AppColors.error)` + `height: 48 / radius: 10` 적용. F7: `orders_page.dart` `_buildShimmer()` 4-카드 shimmer 구현. F8: `order_detail_page.dart` `_OrderDetailShimmer` 전체 화면 shimmer 구현. F3 (ReceiptWebView) 은 `url_launcher` 외부 브라우저 유지 결정 — 보류 항목으로 전환. 상세는 `implementation.md` 섹션 17 참조.
+
+> **정정 이력 (2026-05-29):** F3 / H7 (ReceiptWebView 앱 내 WebView) 구현 완료. `lib/presentation/customer/checkout/widgets/receipt_web_view.dart` 신규 생성 — `WebViewController` 기반 풀스크린 위젯 (진행률 LinearProgressIndicator, 에러 재시도 UI 포함). `order_detail_page.dart` 영수증 버튼 핸들러를 `url_launcher.launchUrl` → `Navigator.push(ReceiptWebView)` 로 교체, `url_launcher` import 제거. 상세는 `implementation.md` 섹션 18 참조.
 
 ---
 
@@ -242,89 +248,35 @@
 
 ## FAIL 항목
 
-### F1 — CartPage._CheckoutBar 비로그인 가드 없음 (P0)
-
-- 문제: spec 요구사항(line 226)에서 "비로그인 시 다이얼로그로 차단"을 CartPage 수준에서 요구하지만, `_CheckoutBar.onPressed`에 인증 상태 확인 로직이 없음. CheckoutPage 진입 후 결제 버튼 탭 시에만 `profile == null` 체크가 있어 사용자가 미인증 상태로 CheckoutPage UI를 볼 수 있음
-- 위치: `lib/presentation/customer/cart/cart_page.dart` lines 288-296 (`_CheckoutBar.onPressed`)
-- 확인 방법: 비로그인 상태에서 카트에 아이템 추가 후 "결제하기" 탭 → CheckoutPage가 push됨. 실제 결제 버튼 탭 시에야 profile null 반환으로 silently return
-- 제안 fix: `_CheckoutBar`를 ConsumerWidget으로 변경, `ref.read(currentUserProfileProvider)` 체크 후 null이면 로그인 요청 다이얼로그 표시. 또는 CheckoutPage의 initState에서 profile null 체크 후 Navigator.pop + 다이얼로그 표시
-- 우선순위: P0 (결제 흐름 핵심 보안 가드)
+_(F1 항목 없음 — 2026-05-26 fix 완료. `_CheckoutBar.onPressed` 에 `authProvider.asData?.value` 기반 가드 추가. null 시 SnackBar + LoginPage redirect. `currentUserProfileProvider` (Firestore 스트림) 대신 `authProvider` (Firebase Auth 직접) 사용으로 세션 만료 즉시 반영 보장. 상세는 `implementation.md` 섹션 16 참조.)_
 
 ---
 
-### F2 — OrderDetailPage status=completed → 환불 요청 버튼 노출 (P1)
-
-- 문제: design.md(line 136-137)에서 `status == completed`는 "버튼 없음 (완료)"으로 명시. 코드에서 `case OrderStatus.completed:` 가 `accepted/making/ready`와 동일 케이스로 묶여 "환불 요청" 버튼이 표시됨
-- 위치: `lib/presentation/customer/order/orders/order_detail_page.dart` lines 476-508 (`_ActionBar.build`)
-- 확인 방법: completed 상태 주문의 OrderDetailPage → "환불 요청" 버튼 표시됨
-- 제안 fix: `case OrderStatus.completed:` 를 `cancelled` / `refunded`와 같은 case group으로 이동하거나 독립적으로 처리해 빈 SizedBox 반환
-- 우선순위: P1 (비즈니스 로직 오류 — 완료된 주문에 환불 요청 진입 허용)
+_(F2 항목 없음 — 2026-05-28 fix 완료. `_ActionBar.build` 의 `case OrderStatus.completed:` 를 `cancelled / refunded` 케이스 그룹으로 이동. completed 상태에서 환불 요청 버튼 미노출, 완료 안내 컨테이너만 표시. 상세는 `implementation.md` 섹션 17 참조.)_
 
 ---
 
-### F3 — ReceiptWebView 전용 위젯 미구현 (P1)
-
-- 문제: spec(line 27, 268)에서 `ReceiptWebView` 공통 컴포넌트 신규 생성 요구. OrderDetailPage 영수증 버튼이 spec 대로 ReceiptWebView push가 아닌 `url_launcher.launchUrl(LaunchMode.externalApplication)` 로 대체 구현됨. implementation.md에도 이 변경 내역이 기록되지 않음
-- 위치: `lib/presentation/customer/order/orders/order_detail_page.dart` line 379 (`await launchUrl(uri, mode: LaunchMode.externalApplication)`)
-- 확인 방법: 실기기에서 OrderDetailPage 영수증 버튼 탭 → Toss 영수증 페이지가 외부 브라우저로 열림 (앱 내 webview 아님)
-- 제안 fix: `lib/presentation/customer/checkout/widgets/receipt_web_view.dart` 신규 구현 (webview_flutter 사용) + OrderDetailPage 영수증 버튼에서 Navigator.push(ReceiptWebView(url: receiptUrl)) 연결. 또는 UX 결정 후 implementation.md에 변경 사유 기록하고 spec 보류 처리
-- 우선순위: P1 (spec 구현 누락 — 앱 내 경험 vs 외부 브라우저)
+_(F3 항목 PASS — 2026-05-29 구현 완료. `lib/presentation/customer/checkout/widgets/receipt_web_view.dart` 신규 생성. `WebViewController` 기반 풀스크린 위젯 — 진행률 LinearProgressIndicator / 에러 재시도 UI 포함. `order_detail_page.dart` 영수증 버튼을 `Navigator.push(ReceiptWebView)` 로 교체, `url_launcher` import 제거. spec(line 27, 268) ReceiptWebView 명세 충족. 상세는 `implementation.md` 섹션 18 참조.)_
 
 ---
 
-### F4 — NoOpQoinAccrualHook 미구현 및 성공 시 hook 미호출 (P1)
-
-- 문제: spec(line 37)에서 "본 phase 는 빈 hook(`QoinAccrualHook.onOrderPaid(order)`)만 등록하고 Provider에서 `NoOpQoinAccrualHook()` 주입"을 명시. `QoinAccrualHook` 인터페이스는 domain에 존재하지만 NoOp 구현체(data/repositories/noop_qoin_accrual_hook.dart)가 없음. Provider 등록도 없음. checkout_page.dart 결제 성공 경로에서 hook 호출 없음
-- 위치:
-  - 미구현 파일: `lib/data/repositories/noop_qoin_accrual_hook.dart` (존재하지 않음)
-  - 미등록: `lib/presentation/customer/order/orders/providers/order_di_providers.dart` (qoinAccrualHookProvider 없음)
-  - 미호출: `lib/presentation/customer/checkout/checkout_page.dart` line 120 이후 (clearCart 후 hook 호출 없음)
-- 확인 방법: grep -rn "NoOpQoin\|onOrderPaid\|QoinAccrualHook" lib/ → 인터페이스 파일 외 결과 없음
-- 제안 fix:
-  1. `lib/data/repositories/noop_qoin_accrual_hook.dart` 생성 (`class NoOpQoinAccrualHook implements QoinAccrualHook`)
-  2. order_di_providers.dart에 `qoinAccrualHookProvider` 등록
-  3. checkout_page.dart clearCart 이후 `ref.read(qoinAccrualHookProvider).onOrderPaid(order)` 호출
-- 우선순위: P1 (Phase 4 확장 hook 자리 준비 누락)
+_(F4 항목 없음 — 2026-05-28 fix 완료. `lib/data/repositories/no_op_qoin_accrual_hook.dart` 생성 (`class NoOpQoinAccrualHook implements QoinAccrualHook`, `const NoOpQoinAccrualHook()`, `onOrderPaid` / `onOrderRefunded` NoOp 구현). `order_di_providers.dart` 에 `qoinAccrualHookProvider` 등록. `checkout_page.dart` clearCart 이후 `ref.read(qoinAccrualHookProvider).onOrderPaid(order)` 호출 추가. 상세는 `implementation.md` 섹션 17 참조.)_
 
 ---
 
-### F5 — OrderDetailPage 취소 버튼 스타일 불일치 (P2)
-
-- 문제: design.md(line 129)에서 "주문 취소" 버튼은 `AppColors.error` border + `AppColors.error` 텍스트 / height: 48 / radius: 10 (outlined 스타일). 코드는 `backgroundColor: AppColors.error` (filled 스타일) + height: 54 + radius: 12
-- 위치: `lib/presentation/customer/order/orders/order_detail_page.dart` lines 444-473
-- 확인 방법: paid 상태 주문 OrderDetailPage → "주문 취소" 버튼이 error색 filled로 표시됨
-- 제안 fix: `OutlinedButton.styleFrom(side: BorderSide(color: AppColors.error), foregroundColor: AppColors.error)` + `height: 48, borderRadius: 10`으로 변경
-- 우선순위: P2 (기능 영향 없음, 디자인 불일치)
+_(F5 항목 없음 — 2026-05-28 fix 완료. 취소 버튼을 `OutlinedButton.styleFrom(side: BorderSide(color: AppColors.error), foregroundColor: AppColors.error)` + `height: 48` + `borderRadius: 10` 으로 수정. design.md(line 129) 스펙과 일치. 상세는 `implementation.md` 섹션 17 참조.)_
 
 ---
 
-### F6 — verifyTossPayment 중복 결제 방지(already-exists) 미구현 (P1)
-
-- 문제: spec T10(line 563)에서 "같은 orderId로 두 번 verifyTossPayment 호출 시 `already-exists` 에러 반환"을 명시. 현재 구현은 `batch.set(orderDoc, orderData)` 가 기존 doc 존재 여부 확인 없이 덮어쓰기(overwrite). implementation.md 에러 매핑 테이블에도 `already-exists` 코드가 있으나 Functions 코드에서 throw 되지 않음
-- 위치: `functions/src/verifyTossPayment.ts` lines 160, 202-205
-- 확인 방법: 동일 idempotencyKey로 verifyTossPayment를 두 번 호출 시 두 번째 호출이 성공(덮어쓰기)하거나 Toss API 에러로만 차단됨
-- 제안 fix: `const snap = await orderDoc.get(); if (snap.exists) throw new HttpsError("already-exists", "이미 처리된 결제입니다");` 를 batch write 직전에 추가
-- 우선순위: P1 (보안/결제 위변조 방어 — 중복 결제 기록 방지)
+_(F6 항목 없음 — 2026-05-26 fix 완료. 멱등성 가드를 Toss confirm 호출 이전 (step 3-pre) 으로 이동. terminal status 존재 시 기존 결과 반환 (Toss API 미호출), 비정상 상태 시 internal 에러. Cloud Function 재배포 완료. 상세는 `implementation.md` 섹션 16 참조.)_
 
 ---
 
-### F7 — OrdersPage 로딩 shimmer 미구현 (P2)
-
-- 문제: design.md(OrdersPage Loading 섹션)에서 "ListView shimmer (카드 목업 4개)" 명시. 코드는 `loading: () => const Center(child: CircularProgressIndicator())` 로 단순 스피너 표시
-- 위치: `lib/presentation/customer/log/orders_page.dart` line 30
-- 확인 방법: 앱 실행 후 Log 탭 진입 시 shimmer 카드가 아닌 중앙 스피너 표시
-- 제안 fix: shimmer 패키지(기존 앱 사용 방식) 또는 AnimatedContainer gradient 로 4개 카드 shimmer 구현. OwnerOrdersPage의 `_buildShimmer()` 패턴 참조
-- 우선순위: P2 (기능 영향 없음, UX 품질)
+_(F7 항목 없음 — 2026-05-28 fix 완료. `orders_page.dart` `_buildShimmer()` 메서드 구현. `ListView.builder(itemCount: 4)` 로 shimmer 카드 4개 (storeName row + menuSummary row + price/date row) 표시. AppColors.surface + AppColors.border 만 사용. 상세는 `implementation.md` 섹션 17 참조.)_
 
 ---
 
-### F8 — OrderDetailPage loading shimmer 미구현 (P2)
-
-- 문제: design.md(OrderDetailPage Loading 섹션)에서 "전체 화면 shimmer (상태 뱃지 + 매장명 + 아이템 행 3개 + 가격 요약)" 명시. 코드는 `loading: () => const Center(child: CircularProgressIndicator())`
-- 위치: `lib/presentation/customer/order/orders/order_detail_page.dart` line 51
-- 확인 방법: OrderDetailPage 진입 시 shimmer가 아닌 중앙 스피너 표시
-- 제안 fix: design.md 명세 기준의 shimmer 구조 구현
-- 우선순위: P2 (기능 영향 없음, UX 품질)
+_(F8 항목 없음 — 2026-05-28 fix 완료. `order_detail_page.dart` `_OrderDetailShimmer` 위젯 구현. 상태 뱃지 영역 + 매장명 row + 아이템 행 3개 + 가격 요약 블록 + 결제 정보 블록 shimmer 표시. AppColors.border 박스만 사용. 상세는 `implementation.md` 섹션 17 참조.)_
 
 ---
 
@@ -367,37 +319,27 @@
 - 필요한 확인: TOSS_CLIENT_KEY dart-define 등록 후 테스트 환경 결제 시도
 - 후속 작업 제안: implementation.md 13번 섹션 "사전 점검" 항목 수행 후 T01~T04 시나리오 검증
 
+### H7 — ReceiptWebView 앱 내 WebView ~~미구현~~ → **해소 (2026-05-29)**
+
+- ~~이유: spec(line 27, 268)에서 `ReceiptWebView` 공통 컴포넌트 신규 생성 요구. 2026-05-28 기준 `url_launcher.launchUrl(LaunchMode.externalApplication)` 방식 유지 — Toss 영수증 URL 이 외부 도메인이므로 현행 외부 브라우저 UX도 허용 가능. webview_flutter 의존 추가 여부는 사용자·디자이너 UX 결정 후 별도 task 분리 예정~~
+- **해소 내용 (2026-05-29):** `lib/presentation/customer/checkout/widgets/receipt_web_view.dart` 구현 완료. `WebViewController` 기반 풀스크린 위젯 — 진행률 표시 / 에러 재시도 포함. `order_detail_page.dart` 연결 완료, `url_launcher` 의존 제거. F3 → PASS 전환.
+- 현재 판단: **PASS**
+
 ---
 
 ## 설계자 전달 메시지
 
 ### 요약
 
-- 전체 판단: **FAIL 있음 — 재작업 후 배포 권장**
-- 42개 PASS / 8개 FAIL / 6개 보류
+- 전체 판단: **FAIL 0 — Phase 3a 종결 완료**
+- 58개 PASS / 0개 FAIL / 6개 보류
 - Clean Architecture 레이어 경계는 대체로 준수됨 (domain BuildContext 예외는 인지된 tradeoff)
 - 결제 핵심 파이프라인(verifyTossPayment batch, cancel, refund 흐름) 구현 완료
-- flutter analyze No issues 확인
+- flutter analyze No issues 확인 (2026-05-28 재확인)
 
 ### 재작업 우선순위
 
-1. **F1 — CartPage._CheckoutBar 비로그인 가드 없음** (P0)
-   - 이유: 미인증 사용자가 CheckoutPage UI에 접근 가능. 결제 흐름의 핵심 보안 가드 누락
-
-2. **F6 — verifyTossPayment already-exists 중복 결제 방지 미구현** (P1)
-   - 이유: 동일 idempotencyKey 재호출 시 Firestore doc 덮어쓰기. 결제 위변조 방어 시나리오(T10) 미충족
-
-3. **F2 — OrderDetailPage completed 상태에서 환불 요청 버튼 노출** (P1)
-   - 이유: 완료된 주문에 환불 요청 진입 허용. 비즈니스 로직 오류
-
-4. **F4 — NoOpQoinAccrualHook 미구현** (P1)
-   - 이유: Phase 4 Qoin 적립 확장을 위한 hook 자리가 준비되지 않음. spec 명시 요구사항 누락
-
-5. **F3 — ReceiptWebView 전용 위젯 미구현** (P1)
-   - 이유: spec에서 공통 컴포넌트로 명시된 ReceiptWebView 누락. 현재 url_launcher 대체 사용 중 (UX 차이 있음)
-
-6. **F5 — 취소 버튼 스타일 불일치** / **F7 F8 — shimmer 미구현** (P2)
-   - 이유: 기능 영향 없음. design.md 일치화 목적
+_(잔여 FAIL 없음. 모든 FAIL 항목 수정 완료.)_
 
 ### 후속 task 후보
 
@@ -406,6 +348,7 @@
 - **Cloud Functions 배포 및 TOSS 키 등록** (implementation.md 13-1~3): 실 결제 환경 진입 전
 - **실기기 딥링크 검증** (H5): T02 카카오페이 시나리오
 - **domain BuildContext 제거** (H1): Phase 3b에서 navigatorKey 패턴으로 개선 권장
+- ~~**ReceiptWebView 앱 내 WebView 구현** (H7): UX 방향 결정 후 별도 task~~ → **2026-05-29 해소**
 
 ---
 
@@ -425,6 +368,68 @@
 
 ## 완료 판단
 
-- [ ] 전체 PASS
-- [x] FAIL 있으나 후속 task로 분리 가능 (F2/F3/F4/F7/F8)
-- [x] 재작업 필요 (F1 P0, F6 P1)
+- [x] 핵심 결제·환불 흐름 라이브 검증 PASS (T5 회귀 8건 모두 통과)
+- [x] **F1 (P0) / F6 (P1) 재작업 완료** (2026-05-26)
+- [x] **F2 / F4 / F5 / F7 / F8 수정 완료** (2026-05-28)
+- [x] **F3 보류 전환 — H7로 편입** (2026-05-28)
+- [x] **F3 / H7 (ReceiptWebView) 구현 완료 — 보류 해소** (2026-05-29)
+- [x] **잔여 FAIL 0 — Phase 3a 최종 종결**
+
+---
+
+## 라이브 검증 (2026-05-13 이후)
+
+### 검증 일시
+
+- 2026-05-25 ~ 2026-05-26
+
+### 검증 방법
+
+- 운영 Firestore 환경 (정식 Rules 배포 후) 라이브 흐름 수동 테스트
+- Cloud Functions (verifyTossPayment / cancelTossPayment / processRefund) 실제 호출
+- flutter analyze — No issues found (재확인 완료)
+
+---
+
+### T5 회귀 — 결제/환불 흐름 (신규 Rules + drift fix 후)
+
+| 항목 | 결과 |
+|---|---|
+| 고객: paid 주문 취소 (`cancelTossPayment` CF 호출) → status=cancelled, cancelInfo 필드 정상 노출 | PASS |
+| 고객: accepted 주문 환불 요청 → `refundRequest` 필드 정상 노출 (orders 문서 update, O2 룰 통과) | PASS |
+| 점주: 환불 요청 거절 → `refundRequest.deniedAt` dot-path update → O3 룰 통과 | PASS |
+| 점주: 환불 승인 → `processRefund` CF 호출 → status=refunded, refundInfo 필드 정상 노출 | PASS |
+| 점주: paid 주문 accept → `acceptedAt` 필드 정상, O1 룰 통과 | PASS |
+| owner orders 로딩 — `storeId / status` 복합 쿼리 Firestore 인덱스 영구화 후 정상 | PASS |
+| cancelInfo 표시 — OrderDetailPage cancelled 상태에서 정상 노출 | PASS |
+| refundRequest 표시 — OrderDetailPage refundRequest!=null 상태에서 정상 노출 | PASS |
+
+**추가 PASS: 8건**
+
+---
+
+### 라이브 검증 전체 결과 (누적)
+
+- 정적 검증 (2026-05-13): PASS 42 / FAIL 8 / 보류 6
+- 라이브 검증 추가 (2026-05-26): PASS +8
+- F1 / F6 재작업 완료 (2026-05-26): PASS +2 / FAIL −2
+- F2 / F4 / F5 / F7 / F8 수정 완료 (2026-05-28): PASS +5 / FAIL −5
+- F3 보류 전환 (2026-05-28): FAIL −1 / 보류 +1
+- F3 / H7 해소 (2026-05-29): PASS +1 / 보류 −1
+- **누적: PASS 58 / FAIL 0 / 보류 6**
+
+---
+
+## Phase 3a 종결 선언 (2026-05-26, 갱신 2026-05-29)
+
+**범위:** Toss Payments 결제 흐름 + 취소 + 환불 요청·거절·완료 + Owner 주문 접수 + 신규 Rules 환경 정합성
+
+**최종 결과:**
+- PASS 58 / FAIL 0 / 보류 6
+- P0 결제·환불 핵심 흐름 라이브 검증 PASS
+- 본 phase 산출물 4종 (spec / design / implementation / test_report) 작성 완료
+- 부수 산출물: Cloud Functions (verifyTossPayment / cancelTossPayment / processRefund) 배포 / Firestore 정식 Rules 배포 / Firestore Composite Index 영구화
+- 후속 수정 (2026-05-28): F2 / F4 / F5 / F7 / F8 수정 완료, F3 → H7 보류 전환, flutter analyze No issues 재확인
+- 후속 수정 (2026-05-29): F3 / H7 (ReceiptWebView 앱 내 WebView) 구현 완료 — spec 원래 명세 충족, 보류 6개로 감소, flutter analyze No issues 재확인
+
+**Phase 3a 종결.** 다음 phase 후보는 별도 architect 호출로 결정.

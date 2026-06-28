@@ -101,14 +101,31 @@ export const processRefund = onCall(
       );
     }
 
-    // 7. Toss cancel API (전액 환불)
+    // 7. Toss cancel API (전액 환불, 또는 Mock 분기 — docs 공개 키 사용 시)
     const paymentInfo = order["paymentInfo"] as Record<string, unknown>;
     const paymentKey = paymentInfo["paymentKey"] as string;
 
-    const tossResponse = await cancelPayment(tossSecretKey.value(), {
-      paymentKey,
-      cancelReason: data.reason,
-    });
+    const secretKey = tossSecretKey.value();
+    const isMockMode = secretKey.startsWith("test_gsk_docs_");
+    const tossResponse = isMockMode
+      ? {
+          paymentKey,
+          orderId: data.orderId,
+          status: "CANCELED",
+          cancels: [{
+            transactionKey: "mock-tx-" + Date.now(),
+            cancelReason: data.reason,
+            canceledAt: new Date().toISOString(),
+            cancelAmount: (paymentInfo["amount"] as number) ?? 0,
+          }],
+        }
+      : await cancelPayment(secretKey, {
+          paymentKey,
+          cancelReason: data.reason,
+        });
+    if (isMockMode) {
+      console.log("[processRefund] MOCK MODE — Toss cancel SKIP");
+    }
 
     const cancelEntry = tossResponse.cancels?.[0];
 

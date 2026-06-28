@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Qradar Firebase Storage Security Rules — 임시 (Phase 3b 검증용)
+//
+// ⚠️ 출시 전 정밀한 권한 규칙으로 재작성 필요. 별도 task 후보:
+//   docs/tasks/storage_security_rules/spec.md
+//
+// 현재 정책:
+//   - 모든 사용자 read 허용 (이미지는 공개)
+//   - 인증된 사용자 write 허용
+//   - 1회 업로드 최대 10MB
+//   - image/* MIME 타입만 허용
+// ─────────────────────────────────────────────────────────────────────────
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      // read: 모두 허용 (이미지는 앱 내 공개 표시)
+      allow read: if true;
+
+      // write: 인증된 사용자 + 10MB 이하 + image 타입
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

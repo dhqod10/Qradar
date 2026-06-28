@@ -66,12 +66,23 @@ export const verifyTossPayment = onCall(
     secrets: [tossSecretKey],
   },
   async (request) => {
+    console.log("[verifyTossPayment] START");
+    try {
     // 1. 인증 확인
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
     }
     const uid = request.auth.uid;
     const data = request.data as VerifyPaymentInput;
+    console.log("[verifyTossPayment] input:", JSON.stringify({
+      uid,
+      paymentKey: data.paymentKey?.substring(0, 20),
+      orderId: data.orderId,
+      amount: data.amount,
+      idempotencyKey: data.idempotencyKey,
+      paymentMethod: data.paymentMethod,
+      cartKeys: data.cart ? Object.keys(data.cart) : null,
+    }));
 
     // 2. 입력값 검증
     if (
@@ -94,12 +105,60 @@ export const verifyTossPayment = onCall(
       );
     }
 
-    // 3. Toss Server API confirm 호출
-    const tossResponse = await confirmPayment(tossSecretKey.value(), {
-      paymentKey: data.paymentKey,
-      orderId: data.orderId,
-      amount: data.amount,
-    });
+    // 3-pre. 멱등성 가드: Toss confirm 호출 전에 동일 idempotencyKey 문서 존재 확인
+    //   - 정상 처리된 주문(status='paid' 이상) → already-exists 에러 + 기존 orderId 반환
+    //   - 비정상 상태(status 누락 / 알 수 없는 값) → internal 에러
+    //   - 존재하지 않으면 기존 흐름 진행
+    const db = admin.firestore();
+    const idempotencyDocRef = db.collection("orders").doc(data.idempotencyKey);
+    const idempotencyDocSnap = await idempotencyDocRef.get();
+    if (idempotencyDocSnap.exists) {
+      const existingData = idempotencyDocSnap.data();
+      const existingStatus = existingData?.status as string | undefined;
+      const terminalStatuses = ["paid", "accepted", "making", "ready", "completed", "cancelled", "refunded"];
+      if (existingStatus && terminalStatuses.includes(existingStatus)) {
+        console.log(
+          "[verifyTossPayment] idempotency hit — already processed. orderId:",
+          data.idempotencyKey,
+          "status:",
+          existingStatus
+        );
+        // 정상 처리된 주문: 동일 결과 반환 (새 doc 생성 없음)
+        return { orderId: data.idempotencyKey, status: existingStatus };
+      }
+      // 비정상 상태 문서가 존재하는 경우 — 중복 write 금지
+      console.error(
+        "[verifyTossPayment] idempotency conflict — unexpected status:",
+        existingStatus,
+        "orderId:",
+        data.idempotencyKey
+      );
+      throw new HttpsError(
+        "internal",
+        "동일 주문 키로 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요."
+      );
+    }
+
+    // 3. Toss Server API confirm 호출 (또는 Mock 분기 — docs 공개 키 사용 시)
+    const secretKey = tossSecretKey.value();
+    const isMockMode = secretKey.startsWith("test_gsk_docs_");
+    const tossResponse = isMockMode
+      ? {
+          paymentKey: data.paymentKey,
+          orderId: data.idempotencyKey,
+          status: "DONE",
+          totalAmount: data.amount,
+          approvedAt: new Date().toISOString(),
+          method: data.paymentMethod,
+        }
+      : await confirmPayment(secretKey, {
+          paymentKey: data.paymentKey,
+          orderId: data.orderId,
+          amount: data.amount,
+        });
+    if (isMockMode) {
+      console.log("[verifyTossPayment] MOCK MODE — Toss confirm SKIP");
+    }
 
     // 4. 응답 검증
     const isStatusDone = tossResponse.status === "DONE";
@@ -108,14 +167,16 @@ export const verifyTossPayment = onCall(
 
     if (!isStatusDone || !isAmountMatch || !isOrderIdMatch) {
       // 5. 검증 실패 → Toss cancel 시도 후 에러 throw
-      try {
-        await cancelPayment(tossSecretKey.value(), {
-          paymentKey: data.paymentKey,
-          cancelReason: "서버 측 검증 실패로 인한 자동 취소",
-        });
-      } catch (cancelErr) {
-        // cancel 실패는 로그만 기록, 원본 에러를 throw
-        console.error("verifyTossPayment: cancel 실패", cancelErr);
+      if (!isMockMode) {
+        try {
+          await cancelPayment(secretKey, {
+            paymentKey: data.paymentKey,
+            cancelReason: "서버 측 검증 실패로 인한 자동 취소",
+          });
+        } catch (cancelErr) {
+          // cancel 실패는 로그만 기록, 원본 에러를 throw
+          console.error("verifyTossPayment: cancel 실패", cancelErr);
+        }
       }
       throw new HttpsError(
         "invalid-argument",
@@ -126,7 +187,6 @@ export const verifyTossPayment = onCall(
     }
 
     // 6. Firestore batch write
-    const db = admin.firestore();
     const now = admin.firestore.FieldValue.serverTimestamp();
     const logId = uuidv4();
     const orderId = data.idempotencyKey;
@@ -156,15 +216,8 @@ export const verifyTossPayment = onCall(
       easyPayProvider: tossResponse.easyPay?.provider ?? null,
     };
 
-    // orders/{orderId} 문서 — 동일 idempotencyKey 중복 결제 방지
-    const orderDoc = db.collection("orders").doc(orderId);
-    const existing = await orderDoc.get();
-    if (existing.exists) {
-      throw new HttpsError(
-        "already-exists",
-        "이미 처리된 결제입니다."
-      );
-    }
+    // orders/{orderId} 문서 (멱등성 가드 통과 후 신규 write)
+    const orderDoc = idempotencyDocRef; // 이미 step 3-pre 에서 참조 확보
     const orderData = {
       userId: uid,
       storeId: data.cart.storeId,
@@ -212,7 +265,15 @@ export const verifyTossPayment = onCall(
     await batch.commit();
 
     // 7. 반환
+    console.log("[verifyTossPayment] SUCCESS orderId:", orderId);
     return { orderId, status: "paid" };
+    } catch (err) {
+      console.error("[verifyTossPayment] FATAL:", err);
+      if (err instanceof Error) {
+        console.error("[verifyTossPayment] stack:", err.stack);
+      }
+      throw err;
+    }
   }
 );
 

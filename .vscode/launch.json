@@ -2,6 +2,14 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Flutter (with TOSS key)",
+      "request": "launch",
+      "type": "dart",
+      "args": [
+        "--dart-define=TOSS_CLIENT_KEY=test_ck_docs_Ovk5rk1EwkEbP0W43n07xlzm"
+      ]
+    },
+    {
       "name": "qradar (debug)",
       "request": "launch",
       "type": "dart",

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
+import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/presentation/common/order_status_badge.dart';
 
 class OrderCard extends StatelessWidget {
@@ -23,6 +24,8 @@ class OrderCard extends StatelessWidget {
         : extra > 0
             ? '${firstItem.menuItemName} 외 ${extra}개' // ignore: unnecessary_brace_in_string_interps
             : firstItem.menuItemName;
+
+    final refundBadge = _refundBadgeFor(order);
 
     return GestureDetector(
       onTap: onTap,
@@ -57,6 +60,10 @@ class OrderCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (refundBadge != null) ...[
+                  refundBadge,
+                  const SizedBox(width: 6),
+                ],
                 OrderStatusBadge(status: order.status),
               ],
             ),
@@ -104,5 +111,50 @@ class OrderCard extends StatelessWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes}분 전';
     if (diff.inHours < 24) return '${diff.inHours}시간 전';
     return '${diff.inDays}일 전';
+  }
+
+  /// 환불 요청 상태에 따른 보조 배지. status badge 옆에 함께 표시.
+  /// - 진행 중: "환불 요청 중" (primary)
+  /// - 거절됨: "환불 거절" (error)
+  /// - 그 외: null (표시 안 함)
+  static Widget? _refundBadgeFor(OrderEntity order) {
+    if (order.status == OrderStatus.refunded) return null;
+    final req = order.refundRequest;
+    if (req == null) return null;
+    if (req.deniedAt != null) {
+      return const _OrderCardSubBadge(
+        label: '환불 거절',
+        color: AppColors.error,
+      );
+    }
+    return const _OrderCardSubBadge(
+      label: '환불 요청 중',
+      color: AppColors.primary,
+    );
+  }
+}
+
+class _OrderCardSubBadge extends StatelessWidget {
+  const _OrderCardSubBadge({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha((0.10 * 255).round()),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
   }
 }
