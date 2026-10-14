@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:qradar/core/dialog/dialog_queue_service.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 
 /// 다이얼로그 호출 주체 — 카피 분기용.
@@ -7,18 +8,21 @@ enum NotificationDialogAudience { owner, customer }
 /// FCM 알림 권한 요청 다이얼로그.
 ///
 /// [audience] 에 따라 본문 카피가 점주 / 고객 관점으로 분기된다.
+/// [queue] 를 통해 글로벌 dialog 큐를 경유하므로 동시 stacking 이 발생하지 않는다.
 ///
 /// 반환값:
 /// - `'allow'`: 사용자가 "허용" 탭 → 호출부에서 OS 권한 요청 진행.
 /// - `'later'`: 사용자가 "나중에" 탭 → 권한 요청 skip.
-/// - `null`: 도달 불가 (`barrierDismissible: false`). 방어적으로 'later' 와 동일 처리.
+/// - `null`: context 만료 또는 dedup 으로 인한 skip. 'later' 와 동일 처리.
 Future<String?> showNotificationPermissionDialog(
   BuildContext context, {
   required NotificationDialogAudience audience,
+  required DialogQueueService queue,
 }) {
-  return showDialog<String>(
+  return queue.enqueueDialog<String>(
     context: context,
-    barrierDismissible: false, // D-5: 명시적 버튼 선택 강제
+    key: 'notification_permission_${audience.name}',
+    barrierDismissible: false,
     barrierColor: AppColors.textHeading.withValues(alpha: 0.6),
     builder: (ctx) => _NotificationPermissionDialog(audience: audience),
   );

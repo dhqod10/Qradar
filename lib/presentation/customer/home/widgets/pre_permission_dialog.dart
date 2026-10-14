@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:qradar/core/dialog/dialog_queue_service.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 
 /// OS 위치 권한 다이얼로그보다 먼저 노출되는 안내 대화상자.
 ///
 /// - [허용하기]  → `true` 반환 (호출부가 OS 권한 요청 트리거)
 /// - [나중에]    → `false` 반환 (호출부가 폴백 위치 사용)
-/// - 배경 탭으로 닫히면 `null` — 호출부에서 `false` 로 취급.
+/// - 배경 탭으로 닫히거나 context 만료 시 `null` — 호출부에서 `false` 로 취급.
 class PrePermissionDialog extends StatelessWidget {
   const PrePermissionDialog({super.key});
 
-  static Future<bool> show(BuildContext context) async {
-    final result = await showDialog<bool>(
+  /// [queue] 를 통해 글로벌 dialog 큐를 경유한다.
+  static Future<bool> show(
+    BuildContext context, {
+    required DialogQueueService queue,
+  }) async {
+    final result = await queue.enqueueDialog<bool>(
       context: context,
+      key: 'location_pre_permission',
       barrierDismissible: true,
       builder: (_) => const PrePermissionDialog(),
     );
@@ -48,7 +54,7 @@ class PrePermissionDialog extends StatelessWidget {
               ),
               child: const Icon(
                 Icons.location_on_rounded,
-                color: Colors.white,
+                color: AppColors.onPrimary,
                 size: 28,
               ),
             ),
@@ -99,7 +105,7 @@ class PrePermissionDialog extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(true),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primaryBright,
-                      foregroundColor: Colors.white,
+                      foregroundColor: AppColors.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/dialog/dialog_queue_service.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/notification_permission_status.dart';
 import 'package:qradar/presentation/common/notification/notification_permission_dialog.dart';
@@ -59,6 +60,7 @@ class _OwnerScaffoldState extends ConsumerState<OwnerScaffold> {
     final result = await showNotificationPermissionDialog(
       context,
       audience: NotificationDialogAudience.owner,
+      queue: ref.read(dialogQueueServiceProvider),
     );
 
     if (!mounted) return;

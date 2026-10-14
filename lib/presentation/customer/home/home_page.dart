@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/dialog/dialog_queue_service.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/location_permission_status.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
@@ -47,7 +48,10 @@ class _HomePageState extends ConsumerState<HomePage> {
       case LocationPermissionStatus.serviceDisabled:
         notifier.declineAndFallback();
       case LocationPermissionStatus.notYetAsked:
-        final agreed = await PrePermissionDialog.show(context);
+        final agreed = await PrePermissionDialog.show(
+          context,
+          queue: ref.read(dialogQueueServiceProvider),
+        );
         if (!mounted) return;
         if (agreed) {
           await notifier.allowAndFetch();
