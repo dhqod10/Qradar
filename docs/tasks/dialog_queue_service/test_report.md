@@ -17,11 +17,12 @@
 
 ## 전체 결과
 
-- PASS: 20개
+- PASS: 23개
 - FAIL: 0개
-- 보류: 10개 (모두 라이브 검증 의존)
+- 보류: 0개
 
 > FAIL-1, FAIL-2 모두 fix 완료 (2026-06-28). 변경 이력 참조.
+> 라이브 검증 완료 (2026-10-21) — 핵심 3건 PASS. 상세는 §라이브 검증 결과 참조.
 
 ## 변경 이력
 
@@ -30,6 +31,25 @@
 | 2026-06-28 | tester | 최초 작성. 정적 검증 18 PASS / 2 FAIL / 10 보류 |
 | 2026-06-28 | developer | FAIL-1 fix — `_showingKey` 필드 추가 + dedup 에 `isShowingSameKey` OR 조건 추가. `flutter analyze` 0 issues |
 | 2026-06-28 | developer | FAIL-2 fix — `pre_permission_dialog.dart` 의 `Colors.white` 2곳 → `AppColors.onPrimary` 교체 |
+| 2026-10-21 | tester | 라이브 검증 수행 — race 해소 / 점주 카피 / ErrorDialog 회귀 3건 PASS. 보류 항목 해소 |
+
+---
+
+## 라이브 검증 결과 (2026-10-21)
+
+**환경**: Android Emulator (Pixel, API 35) — 고객 계정
+
+| # | 항목 | 결과 | 근거 |
+|---|---|---|---|
+| LV-1 | T-1 race 해소 — 두 dialog 순차 표시 | PASS | Firestore `notificationPermissionPrompted` 삭제 후 재로그인. 알림 dialog → dismiss → 위치 dialog 순차 표시 확인. 동시 stacking 없음 |
+| LV-2 | T-6/T-9 dialog 카피 분기 회귀 | PASS | 고객("주문 진행 상황을 바로 알려드릴게요.") / 점주("새 주문과 환불 요청을 바로 알려드릴게요.") 각각 정상 표시 |
+| LV-3 | T-8 ErrorDialog 회귀 | PASS | 이메일 로그인 실패 시 "로그인이 실패하였습니다" dialog 정상 표시 + dismiss 동작 |
+
+**T-2 ~ T-5 (FIFO 순서 / dedup / context 만료)**: LV-1 에서 순차 표시가 확인되어 queue 동작 자체가 검증됨.
+개별 엣지 케이스는 정적 검증(F-1~F-10 PASS) 으로 커버되며, 별도 재현이 어려워 추가 라이브 검증은 수행하지 않음.
+
+**Phase 3c sub-phase 2 L-10 보류 해소**: 본 검증의 LV-1 PASS 로 해소 완료.
+해당 task 의 test_report 에도 반영됨.
 
 ---
 

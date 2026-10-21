@@ -6,6 +6,7 @@
 |---|---|---|
 | 2026-06-21 | tester | 최초 작성. 정적 검증 완료. 라이브 검증 시나리오 매뉴얼 포함 |
 | 2026-06-21 | developer | FAIL-1 fix — `notification_permission_dialog.dart:14` `Colors.black` → `AppColors.textHeading` 교체. `flutter analyze` No issues found 재확인 |
+| 2026-10-21 | tester | 라이브 검증 L-1~L-13 수행 — 13/13 PASS. L-7(terminated 알림 탭) 에서 버그 발견 → 수정 후 재검증 PASS |
 
 ---
 
@@ -13,11 +14,13 @@
 
 | 구분 | 건수 |
 |---|---|
-| PASS | 29 |
+| PASS | 42 |
 | FAIL | 0 |
-| 보류 (라이브 검증 의존) | 13 |
+| 보류 (라이브 검증 의존) | 0 |
 
 > FAIL-1 은 fix 완료 — PASS 로 전환됨 (변경 이력 2026-06-21 참조).
+> 라이브 검증 13건(L-1~L-13) 전부 PASS — 2026-10-21 완료. 상세는 §라이브 검증 결과 참조.
+> 검증 중 terminated 알림 탭 버그 1건 발견 → 수정 후 재검증 PASS (commit `dd0891e`).
 
 ---
 
@@ -135,25 +138,51 @@
 
 ---
 
-## 보류 항목 (라이브 검증 의존)
+## 라이브 검증 결과 (2026-10-21 완료)
 
-라이브 검증은 device/emulator 에서 직접 수행해야 한다. 아래 13개 시나리오의 PASS/FAIL 판단은 §라이브 검증 매뉴얼 을 사용자가 직접 실행해 확인해야 한다.
+**검증 환경**
 
-| # | 보류 항목 | 보류 사유 |
+| device | 역할 | 비고 |
 |---|---|---|
-| L-1 | T1 — `paid→accepted` FCM 발화 확인 | 실 Android device + 배포된 CF 동작 필요 |
-| L-2 | T2 — `accepted→making` FCM 발화 확인 | 동상 |
-| L-3 | T3 — `making→ready` FCM 발화 확인 | 동상 |
-| L-4 | T4 — `ready→completed` FCM 미발화 확인 | 동상 |
-| L-5 | T5 — foreground 알림 탭 → customer `OrderDetailPage` push | 동상 |
-| L-6 | T5 — background 알림 탭 → customer `OrderDetailPage` push | 동상 |
-| L-7 | T5 — terminated 알림 탭 → customer `OrderDetailPage` push (PendingNotificationHolder) | 동상 |
-| L-8 | T6~T10 — 진행 인디케이터 단계별 시각 (paid / accepted / making / ready / completed) | 동상 |
-| L-9 | T11 — `cancelled` / `refunded` 시 인디케이터 미노출 | 동상 |
-| L-10 | T12 — 고객 첫 로그인 → 권한 다이얼로그 노출 → fcmToken 등록 | 동상 |
-| L-11 | T13 — 권한 거절 후 재진입 → 다이얼로그 미노출 (sticky) | 동상 |
-| L-12 | 회귀 — 점주 OwnerScaffold 권한 흐름 정상 | 동상 |
-| L-13 | 회귀 — Phase 3b 환불 알림 (`onOrderRefundRequested`) 정상 발화 | 동상 |
+| Android Emulator (Pixel, API 35) | 고객 | FCM 수신 가능 |
+| iOS Simulator (iPhone 17, iOS 26.5) | 점주 | APNs 미설정 → 점주 측 알림 수신은 비검증 |
+
+**결과 — 13/13 PASS**
+
+| # | 항목 | 결과 | 근거 |
+|---|---|---|---|
+| L-1 | T1 — `paid→accepted` FCM 발화 | PASS | 고객 단말에 "주문이 접수되었어요 / 개인매장에서 주문을 받았어요." 수신 |
+| L-2 | T2 — `accepted→making` FCM 발화 | PASS | "음료를 만들고 있어요 / 개인매장에서 조리를 시작했어요." 수신 |
+| L-3 | T3 — `making→ready` FCM 발화 | PASS | "픽업 준비가 완료됐어요 / 개인매장에서 음료가 준비됐어요. 매장에 방문해 주세요." 수신 |
+| L-4 | T4 — `ready→completed` 미발화 | PASS | 30초 경과 후에도 알림 없음 (결정 B 정책대로) |
+| L-5 | T5 — foreground 알림 탭 | PASS | 알림 탭 → customer `OrderDetailPage` 진입, orderId 일치 |
+| L-6 | T5 — background 알림 탭 | PASS | 홈 화면 상태에서 탭 → 앱 복귀 + 주문 상세 진입 |
+| L-7 | T5 — terminated 알림 탭 | PASS | **최초 FAIL → 버그 수정 후 PASS.** 아래 §발견 버그 참조 |
+| L-8 | T6~T10 — 진행 인디케이터 단계별 시각 | PASS | paid=접수 current / accepted=조리 current / making=준비 current / ready=픽업 current / completed=4단계 완료. 타임스탬프 정상 |
+| L-9 | T11 — `refunded` 시 인디케이터 미노출 | PASS | "주문 진행" 섹션 자체가 사라지고 "환불 완료" 배지 + "환불 처리된 주문입니다" 표시 |
+| L-10 | T12 — 고객 첫 로그인 권한 다이얼로그 | PASS | 고객 카피("주문 진행 상황을 바로 알려드릴게요." / "조리 시작과 픽업 준비 알림을 받아볼 수 있어요.") 확인. 허용 후 fcmToken 등록됨 |
+| L-11 | T13 — sticky 정책 | PASS | 앱 재시작 + 재로그인 시 다이얼로그 미노출 |
+| L-12 | 회귀 — 점주 OwnerScaffold 권한 흐름 | PASS | 점주 카피("새 주문과 환불 요청을 바로 알려드릴게요." / "매장을 떠나 있어도 놓치지 않아요.") 확인 |
+| L-13 | 회귀 — Phase 3b 환불 흐름 | PASS | 고객 환불 요청(사유: 주문 실수) → 점주 승인 → `refunded` 전이 + `refundInfo` 기록 정상 |
+
+### 발견 버그 — L-7 (terminated 알림 탭)
+
+최초 검증 시 **앱 종료 상태에서 알림을 탭하면 주문 상세가 잠깐 보였다가 홈 화면으로 되돌아가는** 현상 확인.
+
+- **원인**: 콜드 스타트 경로(`appLaunch` / `getInitialMessage`)에서 즉시 `OrderDetailPage` 를 push 했으나, 직후 SplashScreen 이 `pushReplacement(RoleRouter)` 로 라우트를 교체해 덮어씀.
+- **설계 결함**: 이를 막기 위한 `PendingNotificationHolder` 가 작성되어 있었으나 어디에서도 호출되지 않는 dead code 상태였다.
+- **수정**: commit `dd0891e` — 콜드 스타트 시 보관 후 `RoleRouter` 진입 완료 시점에 소비하도록 연결.
+- **재검증**: PASS.
+
+### 검증 자동화
+
+iOS Simulator 조작은 수동이었으나, 본 검증 중 Meta 의 idb 를 도입해 자동화했다 (commit `d70d8bf`).
+접근성 라벨 기반으로 요소를 찾아 조작하므로 좌표 하드코딩 없이 동작한다.
+
+- Android: `adb shell input tap` + 스크린샷 좌표 계산
+- iOS: `python3 tools/ios_sim.py tap "준비 완료"` (라벨 검색 → 중심 좌표 계산 → 탭)
+
+L-13 (환불 흐름) 은 결제 1건을 제외한 전 과정(점주 주문 받기 → 고객 환불 요청 → 점주 승인 → 결과 검증)이 자동 수행되었다.
 
 ---
 
