@@ -65,4 +65,19 @@ class UserRemoteDataSource {
     final data = snapshot.data() ?? {};
     return (data['notificationPermissionPrompted'] as bool?) ?? false;
   }
+
+  // ── 알림 설정 (Phase 3c-3) ────────────────────────────────────────────────
+
+  /// 알림 설정 1개 키를 dot-path 로 갱신 (다른 키 보존).
+  /// 허용 필드: `notificationSettings`, `updatedAt` (Rules 화이트리스트).
+  Future<void> updateNotificationSetting({
+    required String uid,
+    required String key,
+    required bool enabled,
+  }) async {
+    await _doc(uid).update({
+      'notificationSettings.$key': enabled,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

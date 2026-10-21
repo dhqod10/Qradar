@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:qradar/domain/entities/notification_category.dart';
+import 'package:qradar/domain/entities/notification_settings_entity.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/entities/user_role.dart';
 
@@ -31,6 +33,10 @@ abstract class UserModel with _$UserModel {
     @JsonKey(includeFromJson: false, includeToJson: false)
     @Default(false)
     bool notificationPermissionPrompted,
+    /// 알림 카테고리별 설정 (Phase 3c-3). JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false)
+    @Default(NotificationSettingsEntity())
+    NotificationSettingsEntity notificationSettings,
   }) = _UserModel;
 
   factory UserModel.fromJson(Map<String, dynamic> json) =>
@@ -50,6 +56,7 @@ extension UserModelX on UserModel {
         fcmToken: fcmToken,
         fcmTokenUpdatedAt: fcmTokenUpdatedAt,
         notificationPermissionPrompted: notificationPermissionPrompted,
+        notificationSettings: notificationSettings,
       );
 }
 
@@ -91,6 +98,25 @@ class UserModelFactory {
           : null,
       notificationPermissionPrompted:
           (data['notificationPermissionPrompted'] as bool?) ?? false,
+      notificationSettings: _parseNotificationSettings(
+        data['notificationSettings'],
+      ),
+    );
+  }
+
+  /// map 이 아니거나 키 부재/비bool 이면 해당 키만 기본값 fallback.
+  static NotificationSettingsEntity _parseNotificationSettings(Object? raw) {
+    if (raw is! Map) return const NotificationSettingsEntity();
+    bool read(NotificationCategory c) {
+      final v = raw[c.asString];
+      return v is bool ? v : c.defaultValue;
+    }
+
+    return NotificationSettingsEntity(
+      orderProgress: read(NotificationCategory.orderProgress),
+      pickupComplete: read(NotificationCategory.pickupComplete),
+      newOrder: read(NotificationCategory.newOrder),
+      refundRequest: read(NotificationCategory.refundRequest),
     );
   }
 

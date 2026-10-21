@@ -38,7 +38,7 @@
 |---|---|---|
 | read | `self(uid) OR admin` | 모든 필드 |
 | create | `self(uid)` | **`role == 'customer'` 강제**, **`brandId` 필드 동시 포함 금지** (가입 시점 brandId 차단) |
-| update | `admin (전권) OR self(uid)` self 케이스: `onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'updatedAt', 'brandId'])` + role 전이 화이트리스트 + `brandId` 는 empty→value 1회만 | 변경 가능: displayName, photoUrl, fcmToken, role(허용 전이), brandId(최초 1회) |
+| update | `admin (전권) OR self(uid)` self 케이스: `onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationSettings', 'updatedAt', 'brandId'])` + role 전이 화이트리스트 + `brandId` 는 empty→value 1회만 | 변경 가능: displayName, photoUrl, fcmToken, fcmTokenUpdatedAt, notificationPermissionPrompted, notificationSettings(bool map, dot-path), role(허용 전이), brandId(최초 1회) |
 | delete | `admin` | — |
 | Cloud Function 전담 | 없음 (모든 작업 클라이언트에서 가능) | — |
 

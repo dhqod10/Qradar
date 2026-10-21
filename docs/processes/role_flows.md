@@ -121,6 +121,7 @@ stateDiagram-v2
 | 주문 내역(Log) 조회 | `customer/log/**` | `users/{uid}/orderLogs` |
 | 즐겨찾기 매장/메뉴 | `customer/home/widgets/favorites_*` | `users/{uid}/favoriteStores`, `/favoriteMenuItems` |
 | Qoin (적립금) | `customer/qoin/**` | **미구현 — 컬렉션 미정의** |
+| 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`orderProgress` / `pickupComplete`), OS 권한 3-state, 명시 재요청 |
 | 선물하기 | — | **미구현** |
 | 리뷰 작성 | — | **미구현** — `reviews/{reviewId}` Rules 만 정의, UI 없음 |
 
@@ -144,6 +145,7 @@ stateDiagram-v2
 | 환불 요청 거절 | `owner/orders/**` | `orders.update` (refundRequest.deniedAt 채움) |
 | 환불 요청 승인(전액 환불) | `owner/orders/**` | `processRefund` Cloud Function |
 | 매출 조회 | `owner/placeholders/owner_sales_placeholder.dart` | **미구현 (placeholder)** |
+| 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`newOrder` / `refundRequest`), OS 권한 3-state |
 | 고객 모드 전환 | `owner/more/owner_more_page.dart` | `DowngradeToCustomerUseCase` |
 
 **핵심 진입점**: `OwnerScaffold` — 4탭 (내 매장 / 주문 접수 / 매출 / 더보기). MVP 는 "내 매장" 탭만 실구현, 매출은 placeholder.

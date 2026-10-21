@@ -6,6 +6,8 @@ enum NotificationType {
   orderAccepted,
   orderMaking,
   orderReady,
+  // Phase 3c-3: 픽업 완료 (옵트인 — pickupComplete 설정)
+  orderCompleted,
   unknown,
 }
 
@@ -37,6 +39,7 @@ class RemoteNotificationMessage {
       'order_accepted' => NotificationType.orderAccepted,
       'order_making' => NotificationType.orderMaking,
       'order_ready' => NotificationType.orderReady,
+      'order_completed' => NotificationType.orderCompleted,
       _ => NotificationType.unknown,
     };
     return RemoteNotificationMessage(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/presentation/common/notification/notification_settings_page.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 
@@ -24,6 +25,16 @@ class OwnerMorePage extends ConsumerWidget {
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textDark,
+              ),
+            ),
+          ),
+          _Tile(
+            icon: Icons.notifications_outlined,
+            title: '알림 설정',
+            subtitle: '신규 주문 · 환불 요청 알림을 설정해요',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const NotificationSettingsPage(),
               ),
             ),
           ),

@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:qradar/domain/entities/notification_settings_entity.dart';
 import 'package:qradar/domain/entities/user_role.dart';
 
 part 'user_entity.freezed.dart';
@@ -21,5 +22,8 @@ abstract class UserEntity with _$UserEntity {
     DateTime? fcmTokenUpdatedAt,
     /// 알림 권한 다이얼로그 노출 이력 (재요청 방지).
     @Default(false) bool notificationPermissionPrompted,
+    /// 알림 카테고리별 on/off (부재 시 기본값 fallback).
+    @Default(NotificationSettingsEntity())
+    NotificationSettingsEntity notificationSettings,
   }) = _UserEntity;
 }

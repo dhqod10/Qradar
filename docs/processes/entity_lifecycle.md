@@ -102,6 +102,7 @@ stateDiagram-v2
 ### 2.5 보류/미구현
 
 - **making / ready / completed 전이 구현 완료 (Phase 3c)**: Security Rules O5/O6/O7 분기 추가. `StartMakingOrderUseCase` / `MarkOrderReadyUseCase` / `MarkOrderCompletedUseCase` 및 점주 UI(`OwnerOrdersPage` 3탭 + `OwnerInProgressOrderTile` + 픽업 완료 다이얼로그) 구현. `OwnerOrderDetailPage` 에 `_TimelineSection` 노출.
+- **ready → completed 옵트인 알림 (Phase 3c-3)**: `onOrderStatusChanged` 가 `users/{userId}.notificationSettings.pickupComplete == true` 일 때만 고객에게 `order_completed` 알림 발송 (기본 false → 미발화). 전이 조건·actor 는 불변.
 - **부분 환불 미구현**: `processRefund` 가 항상 전액 환불.
 - **재환불 요청 차단** (위 2.3 주의 참조).
 

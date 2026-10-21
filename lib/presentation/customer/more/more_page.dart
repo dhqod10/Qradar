@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 // DEV_ONLY_SEED — order_flow_phase1. 시드 제거 시 다음 import 와 사용처(앱 버전 텍스트 래퍼) 삭제.
 import 'package:qradar/dev/seed/dev_seed_trigger.dart';
+import 'package:qradar/presentation/common/notification/notification_settings_page.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_brand_section.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_owner_section.dart';
@@ -30,6 +31,17 @@ class MorePage extends ConsumerWidget {
           const UpgradeToOwnerSection(),
           const UpgradeToBrandSection(),
           const SizedBox(height: 16),
+          _NotificationSettingsTile(
+            icon: Icons.notifications_outlined,
+            title: '알림 설정',
+            subtitle: '주문 진행 · 픽업 완료 알림을 설정해요',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const NotificationSettingsPage(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           Center(
             child: TextButton(
               onPressed: () => ref.read(authProvider.notifier).signOut(),
@@ -57,6 +69,51 @@ class MorePage extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 더보기 진입 타일. `OwnerMorePage._Tile` 과 시그니처·시각 스펙 동일 (U4).
+class _NotificationSettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback? onTap;
+
+  const _NotificationSettingsTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      leading: Icon(icon, size: 22, color: AppColors.textBody),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textHeading,
+        ),
+      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle!,
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+      trailing: onTap == null
+          ? null
+          : const Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: AppColors.textMuted,
+            ),
     );
   }
 }

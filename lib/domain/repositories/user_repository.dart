@@ -1,3 +1,4 @@
+import 'package:qradar/domain/entities/notification_category.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/entities/user_role.dart';
 
@@ -24,4 +25,13 @@ abstract class UserRepository {
 
   /// 알림 권한 다이얼로그 노출 이력을 조회한다.
   Future<bool> getNotificationPermissionPrompted(String uid);
+
+  // ── 알림 설정 (Phase 3c-3) ─────────────────────────────────────────────
+
+  /// 알림 카테고리 1개의 on/off 를 갱신한다 (다른 카테고리는 보존).
+  Future<void> updateNotificationSetting({
+    required String uid,
+    required NotificationCategory category,
+    required bool enabled,
+  });
 }

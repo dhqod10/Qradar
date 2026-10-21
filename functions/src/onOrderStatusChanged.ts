@@ -4,10 +4,10 @@
  * 흐름:
  *   1. orders/{orderId} 문서 업데이트 트리거
  *   2. before.status != after.status diff 검사 — 매칭 전이가 아니면 early return
- *   3. 발화 전이: paid→accepted / accepted→making / making→ready (3건)
- *      ready→completed 는 미발화 (결정 B)
+ *   3. 발화 전이: paid→accepted / accepted→making / making→ready (orderProgress)
+ *      + ready→completed (pickupComplete 옵트인, Phase 3c-3 결정 E)
  *   4. orders/{orderId}.userId → users/{userId}.fcmToken 조회
- *   5. fcmToken 없으면 skip
+ *   5. fcmToken 없으면 skip / 알림 설정(settingKey) off 면 skip
  *   6. FCM data-only 메시지 발송
  *   7. invalid token → Firestore fcmToken 정리
  *   8. 발송 실패는 swallow
@@ -15,28 +15,46 @@
 
 import * as admin from "firebase-admin";
 import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import {
+  isNotificationEnabled,
+  NotificationSettingKey,
+} from "./notificationSettings";
 
-// 발화 전이 매트릭스 — ready→completed 는 미발화 (결정 B)
+// 발화 전이 매트릭스. ready→completed 는 pickupComplete 옵트인 (Phase 3c-3 결정 E).
 const NOTIFICATION_MATRIX: Record<
   string,
-  { type: string; title: string; body: (storeName: string) => string }
+  {
+    type: string;
+    title: string;
+    body: (storeName: string) => string;
+    settingKey: NotificationSettingKey;
+  }
 > = {
   "paid->accepted": {
     type: "order_accepted",
     title: "주문이 접수되었어요",
     body: (n) => `${n}에서 주문을 받았어요.`,
+    settingKey: "orderProgress",
   },
   "accepted->making": {
     type: "order_making",
     title: "음료를 만들고 있어요",
     body: (n) => `${n}에서 조리를 시작했어요.`,
+    settingKey: "orderProgress",
   },
   "making->ready": {
     type: "order_ready",
     title: "픽업 준비가 완료됐어요",
     body: (n) => `${n}에서 음료가 준비됐어요. 매장에 방문해 주세요.`,
+    settingKey: "orderProgress",
   },
-  // "ready->completed" — 결정 B: 미발화
+  // Phase 3c-3 결정 E: pickupComplete 옵트인 (기본 false → 기존 사용자 미발화)
+  "ready->completed": {
+    type: "order_completed",
+    title: "픽업이 완료됐어요",
+    body: (n) => `${n}에서 받은 음료, 맛있게 즐겨주세요.`,
+    settingKey: "pickupComplete",
+  },
 };
 
 export const onOrderStatusChanged = onDocumentUpdated(
@@ -82,9 +100,11 @@ export const onOrderStatusChanged = onDocumentUpdated(
 
     // 4. users/{userId}.fcmToken 조회
     let fcmToken: string | undefined;
+    let userData: Record<string, unknown> | undefined;
     try {
       const userSnap = await db.collection("users").doc(userId).get();
-      fcmToken = userSnap.data()?.fcmToken as string | undefined;
+      userData = userSnap.data();
+      fcmToken = userData?.fcmToken as string | undefined;
     } catch (err) {
       console.error("[onOrderStatusChanged] Failed to fetch user. userId:", userId, err);
       return;
@@ -96,6 +116,17 @@ export const onOrderStatusChanged = onDocumentUpdated(
         "[onOrderStatusChanged] No fcmToken.",
         { userId, orderId, matrixKey }
       );
+      return;
+    }
+
+    // 5-1. 알림 설정 게이트 (Phase 3c-3)
+    if (!isNotificationEnabled(userData, matrix.settingKey)) {
+      console.info("[onOrderStatusChanged] Skipped.", {
+        userId,
+        orderId,
+        key: matrix.settingKey,
+        reason: "disabled_by_user",
+      });
       return;
     }
 

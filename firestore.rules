@@ -87,7 +87,7 @@ service cloud.firestore {
       function isSelfProfileUpdate(userId) {
         return isSignedIn()
           && uid() == userId
-          && onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'updatedAt', 'brandId'])
+          && onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationSettings', 'updatedAt', 'brandId'])
           && (
             // role 변경 없음 (다른 필드만 업데이트)
             request.resource.data.get('role', 'customer') == resource.data.get('role', 'customer')

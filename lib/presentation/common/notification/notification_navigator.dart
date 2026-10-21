@@ -10,8 +10,9 @@ import 'package:qradar/presentation/owner/orders/owner_order_detail_page.dart';
 ///
 /// role 별 분기:
 /// - owner: [newOrder] / [refundRequest] → [OwnerOrderDetailPage]
-/// - customer: [orderAccepted] / [orderMaking] / [orderReady] → [OrderDetailPage]
-///   (Phase 3c-2 에서 customer status 전이 알림 추가됨)
+/// - customer: [orderAccepted] / [orderMaking] / [orderReady] / [orderCompleted]
+///   → [OrderDetailPage]
+///   (Phase 3c-2 에서 customer status 전이 알림 추가, Phase 3c-3 에서 orderCompleted 추가)
 class NotificationNavigator {
   const NotificationNavigator._();
 
@@ -35,6 +36,7 @@ class NotificationNavigator {
       case NotificationType.orderAccepted:
       case NotificationType.orderMaking:
       case NotificationType.orderReady:
+      case NotificationType.orderCompleted:
         navigatorKey.currentState?.push(
           MaterialPageRoute<void>(
             builder: (_) => OrderDetailPage(orderId: orderId),

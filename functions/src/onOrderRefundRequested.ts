@@ -14,6 +14,7 @@
 
 import * as admin from "firebase-admin";
 import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { isNotificationEnabled } from "./notificationSettings";
 
 export const onOrderRefundRequested = onDocumentUpdated(
   {
@@ -69,9 +70,11 @@ export const onOrderRefundRequested = onDocumentUpdated(
 
     // 4. users/{ownerId}.fcmToken
     let fcmToken: string | undefined;
+    let userData: Record<string, unknown> | undefined;
     try {
       const userSnap = await db.collection("users").doc(ownerId).get();
-      fcmToken = userSnap.data()?.fcmToken as string | undefined;
+      userData = userSnap.data();
+      fcmToken = userData?.fcmToken as string | undefined;
     } catch (err) {
       console.error("[onOrderRefundRequested] Failed to fetch user. ownerId:", ownerId, err);
       return;
@@ -82,6 +85,17 @@ export const onOrderRefundRequested = onDocumentUpdated(
       console.info(
         "[onOrderRefundRequested] No fcmToken. ownerId:", ownerId, "orderId:", orderId
       );
+      return;
+    }
+
+    // 5-1. 알림 설정 게이트 (Phase 3c-3) — refundRequest
+    if (!isNotificationEnabled(userData, "refundRequest")) {
+      console.info("[onOrderRefundRequested] Skipped.", {
+        userId: ownerId,
+        orderId,
+        key: "refundRequest",
+        reason: "disabled_by_user",
+      });
       return;
     }
 

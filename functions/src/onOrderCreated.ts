@@ -13,6 +13,7 @@
 
 import * as admin from "firebase-admin";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { isNotificationEnabled } from "./notificationSettings";
 
 export const onOrderCreated = onDocumentCreated(
   {
@@ -58,9 +59,11 @@ export const onOrderCreated = onDocumentCreated(
 
     // 3. users/{ownerId}.fcmToken
     let fcmToken: string | undefined;
+    let userData: Record<string, unknown> | undefined;
     try {
       const userSnap = await db.collection("users").doc(ownerId).get();
-      fcmToken = userSnap.data()?.fcmToken as string | undefined;
+      userData = userSnap.data();
+      fcmToken = userData?.fcmToken as string | undefined;
     } catch (err) {
       console.error("[onOrderCreated] Failed to fetch user. ownerId:", ownerId, err);
       return;
@@ -69,6 +72,17 @@ export const onOrderCreated = onDocumentCreated(
     // 4. fcmToken 없으면 skip
     if (!fcmToken) {
       console.info("[onOrderCreated] No fcmToken. ownerId:", ownerId, "orderId:", orderId);
+      return;
+    }
+
+    // 4-1. 알림 설정 게이트 (Phase 3c-3) — newOrder
+    if (!isNotificationEnabled(userData, "newOrder")) {
+      console.info("[onOrderCreated] Skipped.", {
+        userId: ownerId,
+        orderId,
+        key: "newOrder",
+        reason: "disabled_by_user",
+      });
       return;
     }
 
