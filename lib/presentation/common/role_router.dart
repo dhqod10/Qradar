@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/navigation/app_navigator_key.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/user_role.dart';
 import 'package:qradar/presentation/admin/admin_scaffold.dart';
 import 'package:qradar/presentation/brand/brand_scaffold.dart';
+import 'package:qradar/presentation/common/notification/notification_navigator.dart';
+import 'package:qradar/presentation/common/notification/pending_notification_holder.dart';
 import 'package:qradar/presentation/common/scaffold_with_nav.dart';
 import 'package:qradar/presentation/customer/auth/login_page.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
@@ -28,6 +31,20 @@ class RoleRouter extends ConsumerWidget {
       error: (e, st) => _ErrorView(error: e, stack: st),
       data: (user) {
         if (user == null) return const LoginPage();
+
+        // 앱 종료 상태에서 알림 탭으로 진입한 경우의 deep link 처리.
+        // SplashScreen 의 pushReplacement 로 스택이 교체된 뒤인 이 시점에
+        // 소비해야 주문 상세 화면이 덮어써지지 않는다.
+        // consume() 은 1회성이라 rebuild 시 중복 실행되지 않는다.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final pending = PendingNotificationHolder.consume();
+          if (pending == null) return;
+          NotificationNavigator.navigate(
+            navigatorKey: navigatorKey,
+            message: pending,
+          );
+        });
+
         switch (user.role) {
           case UserRole.owner:
             return const OwnerScaffold();

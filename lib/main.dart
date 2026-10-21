@@ -8,17 +8,19 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
+import 'package:qradar/core/navigation/app_navigator_key.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/remote_notification_message.dart';
 import 'package:qradar/firebase_options.dart';
 import 'package:qradar/presentation/common/notification/notification_navigator.dart';
+import 'package:qradar/presentation/common/notification/pending_notification_holder.dart';
 import 'package:qradar/presentation/common/q_logo.dart'; // QLogo, QradarLogo
 import 'package:qradar/presentation/common/role_router.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/auth/login_page.dart';
 
 /// 글로벌 NavigatorKey — NotificationNavigator 등에서 앱 전역 탐색에 사용.
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+// navigatorKey 는 lib/core/navigation/app_navigator_key.dart 로 분리됨
 
 /// FCM 백그라운드 핸들러 (top-level 함수 필수 — isolate 제약).
 ///
@@ -140,16 +142,39 @@ void _navigateFromPayload(String payload, {required String source}) {
     return;
   }
   final remoteMsg = RemoteNotificationMessage.fromData(data);
+  _dispatchNotification(remoteMsg, source: source);
+}
+
+/// 알림 메시지를 즉시 navigate 하거나, 콜드 스타트 경로면 pending 으로 보관한다.
+///
+/// 앱 종료 상태에서 알림 탭으로 진입하면 SplashScreen 이 곧바로
+/// `pushReplacement(RoleRouter)` 로 스택을 교체하므로, 여기서 바로 push 하면
+/// 그 라우트가 덮어써져 사라진다. 따라서 콜드 스타트
+/// (`appLaunch` / `getInitialMessage`) 이거나 navigator 가 아직 준비되지
+/// 않은 경우에는 [PendingNotificationHolder] 에 보관하고,
+/// [RoleRouter] 진입이 끝난 시점에 소비한다.
+void _dispatchNotification(
+  RemoteNotificationMessage message, {
+  required String source,
+}) {
   final currentState = navigatorKey.currentState;
+  final isColdStart = source == 'appLaunch' || source == 'getInitialMessage';
   // ignore: avoid_print
   print(
-    '[NotifTap] _navigateFromPayload source=$source '
-    'type=${remoteMsg.type} orderId=${remoteMsg.orderId} '
-    'navigatorState=${currentState != null ? "ready" : "null"}',
+    '[NotifTap] dispatch source=$source '
+    'type=${message.type} orderId=${message.orderId} '
+    'navigatorState=${currentState != null ? "ready" : "null"} '
+    'coldStart=$isColdStart',
   );
+
+  if (isColdStart || currentState == null) {
+    PendingNotificationHolder.set(message);
+    return;
+  }
+
   NotificationNavigator.navigate(
     navigatorKey: navigatorKey,
-    message: remoteMsg,
+    message: message,
   );
 }
 
@@ -225,17 +250,7 @@ void _navigateFromNotification(
   RemoteNotificationMessage message, {
   required String source,
 }) {
-  final currentState = navigatorKey.currentState;
-  // ignore: avoid_print
-  print(
-    '[NotifTap] _navigateFromNotification source=$source '
-    'type=${message.type} orderId=${message.orderId} '
-    'navigatorState=${currentState != null ? "ready" : "null"}',
-  );
-  NotificationNavigator.navigate(
-    navigatorKey: navigatorKey,
-    message: message,
-  );
+  _dispatchNotification(message, source: source);
 }
 
 void main() async {
