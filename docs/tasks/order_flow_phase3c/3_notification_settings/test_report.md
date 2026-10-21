@@ -8,7 +8,8 @@
 | 구분 | PASS | FAIL | 보류 |
 |---|---|---|---|
 | 정적 검증 (Cross-check 3 / F34 / U8 / designer 5 / CA 3 / Rules 3 / 파싱 3 / 빌드 3) | 62 | 0 | 0 |
-| 라이브 (T1~T16 + Rules) | 13 | 0 | 3 (T9 / T13 / Rules — 환경·인프라 사유, E 절 참조) |
+| 라이브 (T1~T16) | 13 | 0 | 2 (T9 / T13 — 환경 사유, E 절 참조) |
+| Rules (에뮬레이터 R1~R8) | 8 | 0 | 0 |
 
 `flutter analyze`: No issues found / `flutter test`: 4 passed / CF `npm run build`(tsc): 통과 — 모두 직접 재실행.
 
@@ -196,10 +197,29 @@ await ref.read(userRepositoryProvider).markNotificationPermissionPrompted(uid);
 | T16 | sub-phase 1·2 회귀 | **PASS** (관찰분) | 점주 조리 전이 4단계 정상, 고객 진행 인디케이터 4/4 정상, background deep link 정상, 권한 다이얼로그 sticky 정상(미요청 상태에서도 미노출) |
 | **T9** | sticky 우회 **[차단]** | **보류** | Android 재현 불가 (F-1). iOS 는 권한 초기화에 앱 재설치 → 재로그인 필요 + APNs 키 미등록으로 토큰 등록 검증 불가 |
 | T13 | 점주 토글 반영 | **보류** | 점주 doc 에 `fcmToken` 자체가 없어 `onOrderCreated.ts:73` 토큰 가드에서 early return → 79행 설정 게이트에 도달하지 않음. 원인은 iOS Simulator + APNs 키 미등록 (환경 제약) |
-| Rules | 타인 uid update 거부 | **보류** | emulator / `@firebase/rules-unit-testing` 미구성. 본인 self-update 허용 경로는 모든 토글 저장 성공으로 간접 확인됨. deny 경로는 Console Rules Playground 1분 작업으로 확인 가능 |
+| Rules | 타인 uid update 거부 | **PASS** | 로컬 Firestore 에뮬레이터 + `@firebase/rules-unit-testing` 으로 실제 `firestore.rules` 검증 — 8/8 PASS (아래 표) |
+
+### Rules 검증 상세
+
+Console 의 Rules Playground 는 현재 Firebase Console 에서 제거되어 (`개발 및 테스트` 버튼이 Cloud Shell 튜토리얼로 연결됨) 로컬 에뮬레이터로 대체 검증했다.
+`firebase-tools@14` + `@firebase/rules-unit-testing@4`, 시드 후 `authenticatedContext(고객 uid)` 로 실행.
+
+| # | 시나리오 | 기대 | 결과 |
+|---|---|---|---|
+| R1 | 타인(점주) doc 의 `notificationSettings.newOrder` update | deny | **PASS** |
+| R2 | 본인 doc 의 `notificationSettings.orderProgress` update | allow | **PASS** |
+| R3 | 본인 doc 의 `notificationSettings` 2키 동시 update | allow | **PASS** |
+| R4 | 본인 doc 의 `uid` 변경 (immutable) | deny | **PASS** |
+| R5 | 본인 doc 에 화이트리스트 밖 필드(`isAdmin`) 추가 | deny | **PASS** |
+| R6 | 타인 doc read | deny | **PASS** |
+| R7 | 본인 doc read | allow | **PASS** |
+| R8 | 본인 doc `fcmToken` update (T11 경로) | allow | **PASS** |
+
+거부 케이스는 에뮬레이터 로그에 `PERMISSION_DENIED ... evaluation error at L80` (= `allow update` 규칙) 으로 기록됐다.
+재현 스크립트는 리포지토리에 포함하지 않았다 — 영구 테스트로 편입하려면 후속 과제 ① 참조.
 
 ### 보완 메모
 
 **T6 의 foreground / terminated**: `NotificationNavigator` 에서 `orderCompleted` 는 `orderAccepted` / `orderMaking` / `orderReady` 와 **동일한 case 블록**을 공유한다 (타입별 분기 없음). 해당 3종의 foreground / terminated 는 sub-phase 2 에서 라이브 PASS (terminated 는 `PendingNotificationHolder` 수정 후 재검증 완료). 따라서 background 만 추가 검증하고 나머지는 코드 동일성으로 커버한다.
 
-**릴리스 판단**: 차단 3건 중 T8 · T11 PASS. T9 는 Android 에서 발생 불가능한 상태를 전제하며, Android 의 대체 경로(`설정 열기` → OS 설정 → 복귀 reconcile)가 T11 에서 실증됐다. T13 · Rules 보류는 환경/인프라 사유이며 코드 결함 근거는 없다. → **릴리스 가능**.
+**릴리스 판단**: 차단 3건 중 T8 · T11 PASS. T9 는 Android 에서 발생 불가능한 상태를 전제하며, Android 의 대체 경로(`설정 열기` → OS 설정 → 복귀 reconcile)가 T11 에서 실증됐다. T13 보류는 환경 사유이며 코드 결함 근거는 없다. → **릴리스 가능**.
