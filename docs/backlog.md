@@ -5,6 +5,44 @@
 
 ---
 
+## 현재 남은 작업 (2026-10-21 코드 기준 전수 조사)
+
+Phase 3c 완결 시점의 스냅샷. **문서가 아니라 코드를 읽어 작성했다.**
+
+### 탭에 연결된 미구현 화면
+
+| 화면 | 위치 | 비고 |
+|---|---|---|
+| 점주 매출 조회 | `owner_scaffold.dart:63` → `OwnerSalesPlaceholder` | 점주 4탭 중 1개가 통째로 빔. 데이터는 이미 존재 |
+| 고객 Qoin | `customer/qoin/qoin_page.dart:50` | Phase 4 Qoin 도메인으로 별도 분리 결정됨 |
+
+### 진입점만 있고 동작 없음 (SnackBar `준비 중`)
+
+| 기능 | 위치 |
+|---|---|
+| 홈 검색 | `customer/home/widgets/home_header.dart:200` |
+| 추천 매장 더보기 | `customer/home/widgets/recommended_stores_section.dart:70` |
+
+### 기술 부채 / 품질 (상세는 아래 Follow-up 절)
+
+| # | 항목 | 규모 |
+|---|---|---|
+| N1 | flow 헬퍼·CTA 핸들러 자동화 테스트 | 중 |
+| N2 | Rules 테스트 하네스 리포지토리 편입 | 소 |
+| N3 | iOS 점주 `notDetermined` 배너 게이트 | 소 |
+| N4 | `auth_provider.dart` 레이어 정리 (절대 규칙 2 위반) | 소 |
+| N6 | `notificationPermissionPrompted` 필드명 정리 | 마이그레이션 동반 시 |
+
+### 환경 대기
+
+`docs/tasks/ios_apns_setup/spec.md` (출시 1~2주 전 예정) 완료 시 N5 의 보류 4건(T9 / T13 / T-B11 / F22)이 함께 해소된다.
+
+### 출시 준비
+
+`docs/dev_to_prod_checklist.md` 참조.
+
+---
+
 ## 인증 / 계정
 
 ### 다중 인증 제공자 계정 통합
@@ -55,25 +93,38 @@ Phase 4-5 (phone auth 도입과 함께)
 
 ---
 
-## 주문 운영 흐름 (Phase 3 완료 후)
+## 주문 운영 흐름
 
-### 주문 상태 흐름
-`paid → accepted → making → ready → completed` 또는 `cancelled / refunded`. FCM 푸시 + customer/owner 양쪽 알림.
+> **2026-10-21 코드 기준 재조사.** 이 절의 상당수가 이미 구현 완료였고 문서만 낡아 있었다.
+> 이후 이 절을 수정할 때는 **반드시 코드를 먼저 확인**한다 (`grep` 으로 placeholder 문자열만 보면 죽은 파일에 속는다).
 
-### 주문 내역 (Log)
-customer 측 Log 탭. 현재 placeholder. 결제 완료 주문들이 자동 노출. 영수증 보기 / 재주문.
+### ✅ 주문 상태 흐름 — 구현 완료
+`paid → accepted → making → ready → completed` / `cancelled / refunded`. FCM 푸시 + customer/owner 양쪽 알림.
+Phase 3c-1~3c-4 에서 완료. 라이브 검증 완료 (각 sub-phase `test_report.md`).
 
-### 점주 주문 접수
-`OwnerOrdersPlaceholder` 자리. 신규 주문 listen → 접수/거절 → 상태 변경 → 완료. 거절 시 환불.
+### ✅ 주문 내역 (Log) — 구현 완료
+Log 탭은 `lib/presentation/customer/log/orders_page.dart` (`OrdersPage`) 를 사용한다.
+매장명 / 대표 메뉴 / 금액 / 상태 배지(완료·환불 완료) / 상대 시간 노출, 탭 시 `OrderDetailPage` 진입.
+재주문은 `lib/presentation/customer/home/widgets/quick_reorder_section.dart` 에 구현돼 있다.
+남은 것: **영수증 보기**(PG 영수증 URL 노출) — 미확인, 필요 시 별도 task.
 
-### 점주 매출 조회
-`OwnerSalesPlaceholder` 자리. 시간대/일/월/연/카드사별 매출 통계.
+### ✅ 점주 주문 접수 — 구현 완료
+`lib/presentation/owner/orders/owner_orders_page.dart` (`OwnerOrdersPage`).
+신규 / 조리 중 / 환불 요청 3탭, 접수·거절·조리 시작·준비 완료·픽업 완료 전이 전부 동작.
 
-### 매장 운영시간 자동 차단
+### ⬜ 점주 매출 조회 — **미구현 (유일하게 탭에 연결된 placeholder)**
+`lib/presentation/owner/placeholders/owner_sales_placeholder.dart` 가 `owner_scaffold.dart:63` 에 **실제로 연결돼 있다.**
+점주 4개 탭 중 하나가 통째로 비어 있는 상태.
+필요: 시간대 / 일 / 월 / 연 / 카드사별 매출 통계. 데이터는 `orders` 컬렉션에 이미 쌓여 있어 집계만 하면 된다.
+
+### ⬜ 매장 운영시간 자동 차단
 운영시간 외 주문 차단. (도메인 일부 있음 — 확인 후 보강.)
 
-### 검색 기능
-홈 검색바. 현재 "검색 준비 중" placeholder. 매장/메뉴 검색.
+### ⬜ 검색 기능
+홈 검색바. `home_header.dart:200` 에서 `검색 준비 중입니다` SnackBar. 매장/메뉴 검색.
+
+### ⬜ 추천 매장 더보기
+`recommended_stores_section.dart:70` 에서 `준비 중입니다` SnackBar.
 
 ---
 
