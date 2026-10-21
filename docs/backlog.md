@@ -114,3 +114,40 @@ sub-phase 7. 메인 카테고리별 옵션 그룹 노출 제한 (예: 에이드 
 sub-phase 7. brand/매장 옵션 그룹의 분포 audit.
 
 ---
+
+## Follow-up (order_flow_phase3c 완료 후 미적용)
+
+출처: `docs/tasks/order_flow_phase3c/3_notification_settings/test_report.md` (F 절),
+`docs/tasks/order_flow_phase3c/4_notification_permission_retry/test_report.md` (우선순위 / Z 절 / L 절).
+
+### N1 — 알림 권한 flow · CTA 핸들러 자동화 테스트
+sub-phase 4 의 단위 테스트는 `NotificationPermissionPromptState` 경계값, `parseLaterCount`, `ShouldShowNotificationPermissionDialogUseCase` 3종을 덮는다. 반면 **`runNotificationPermissionPrompt` 의 기록 분기**(allow→`prompted=true` / later→`increment` / null→write 없음)와 **`_onPermissionCtaTap` 의 폴백·세션 가드 분기**는 자동화 0건이며 코드 검증 + 라이브로만 확인됐다.
+이 둘은 회귀가 **조용히** 발생하는 지점이다 (쓰기가 안 돼도 UI 에 증상이 없다). 위젯 테스트 또는 repository fake 를 쓴 flow 단위 테스트를 권장한다.
+
+### N2 — Firestore Rules 테스트 하네스 리포지토리 편입
+sub-phase 3·4 의 Rules 검증(R1~R12)은 `firebase-tools@14` + `@firebase/rules-unit-testing@4` 로 수행했으나, 하네스가 **세션 임시 폴더에만 존재**해 재현이 불가능하다.
+편입 시 포함할 것: 시드(고객/점주 doc), R1~R12 케이스, `npm run test:rules` 스크립트, CI 연결 여부 판단.
+주의: `firebase-tools@15` 부터 **JDK 21 이상**을 요구한다 (현재 로컬은 JDK 17 이라 14 로 고정해 실행했다).
+
+### N3 — iOS 점주 `notDetermined` 배너 게이트 (O1)
+`OwnerOrdersPage` 배너는 `status == denied` 일 때만 노출한다 (기존 동작). iOS 점주가 `나중에` 를 누른 뒤 OS 가 `notDetermined` 로 남으면 주문 접수 화면에 배너가 뜨지 않는다. sub-phase 4 spec 비범위(F23)로 두었으므로 결함은 아니나, 설정 화면과 동작이 어긋난다.
+
+### N4 — `auth_provider.dart` 레이어 정리 (O5)
+`presentation` 레이어인 `auth_provider.dart` 가 `firebase_auth` 를 직접 import 한다. sub-phase 4 이전부터 있던 기존 부채이며 CLAUDE.md 절대 규칙 2 위반이다. `signOut()` 의 uid fallback 경로에서만 쓰이므로 repository 경유로 바꾸면 해소된다.
+
+### N5 — APNs 키 등록 후 재검증 대기 항목
+`docs/tasks/ios_apns_setup/spec.md` 완료가 선행 조건이다. 아래 항목들이 **환경 사유로 보류** 중이며 코드 결함 근거는 없다.
+
+| 항목 | 출처 | 보류 사유 |
+|---|---|---|
+| T9 sticky 우회 | 3c-3 | Android 는 `notDetermined` 재현 불가(F-1), iOS 는 APNs 미등록으로 토큰 등록 검증 불가 |
+| T13 점주 토글 반영 | 3c-3 | 점주 doc 에 `fcmToken` 이 없어 `onOrderCreated.ts:73` 토큰 가드에서 early return |
+| T-B11 iOS 거부 후 미전환 | 3c-4 | iOS Simulator 권한 초기화에 앱 재설치 → 소셜 재로그인 필요 |
+| F22 점주 배너 회귀 | 3c-4 | 점주 계정의 OS 권한이 허용 상태라 `denied` 조건 생성 불가 |
+
+APNs 등록 후에는 **점주 기기에서 FCM 토큰이 발급**되므로 T13 과 F22 가 함께 풀린다.
+
+### N6 — `notificationPermissionPrompted` 필드명 정리 (Q1 수용 사항)
+sub-phase 4 에서 이 필드의 의미를 "다이얼로그 노출 이력" → "**OS 시트 소진**" 으로 바꿨으나 **이름은 그대로 두었다** (리네임 시 마이그레이션 필요). 이름과 뜻이 어긋나 있어 코드를 처음 읽는 사람이 오해할 수 있다. 다른 마이그레이션을 수행할 일이 생기면 `notificationOsPromptConsumed` 등으로 함께 정리하는 것을 권장한다.
+
+---
