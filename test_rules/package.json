@@ -1,0 +1,13 @@
+{
+  "name": "qradar-rules-test",
+  "private": true,
+  "type": "module",
+  "description": "Firestore Security Rules 검증 하네스 (firestore.rules 를 에뮬레이터로 직접 실행)",
+  "scripts": {
+    "test": "cd .. && npx --yes firebase-tools@14 emulators:exec --only firestore --project order-app-5957e \"node test_rules/rules.test.mjs\""
+  },
+  "dependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0"
+  }
+}

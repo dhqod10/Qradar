@@ -28,9 +28,9 @@ Phase 3c 완결 시점의 스냅샷. **문서가 아니라 코드를 읽어 작�
 | # | 항목 | 규모 |
 |---|---|---|
 | N1 | flow 헬퍼·CTA 핸들러 자동화 테스트 | 중 |
-| N2 | Rules 테스트 하네스 리포지토리 편입 | 소 |
+| ~~N2~~ | ~~Rules 테스트 하네스 편입~~ → **완료 (2026-10-21)** `test_rules/` | — |
+| ~~N4~~ | ~~`auth_provider.dart` 레이어 정리~~ → **완료 (2026-10-21)** | — |
 | N3 | iOS 점주 `notDetermined` 배너 게이트 | 소 |
-| N4 | `auth_provider.dart` 레이어 정리 (절대 규칙 2 위반) | 소 |
 | N6 | `notificationPermissionPrompted` 필드명 정리 | 마이그레이션 동반 시 |
 
 ### 환경 대기
@@ -175,16 +175,28 @@ sub-phase 7. brand/매장 옵션 그룹의 분포 audit.
 sub-phase 4 의 단위 테스트는 `NotificationPermissionPromptState` 경계값, `parseLaterCount`, `ShouldShowNotificationPermissionDialogUseCase` 3종을 덮는다. 반면 **`runNotificationPermissionPrompt` 의 기록 분기**(allow→`prompted=true` / later→`increment` / null→write 없음)와 **`_onPermissionCtaTap` 의 폴백·세션 가드 분기**는 자동화 0건이며 코드 검증 + 라이브로만 확인됐다.
 이 둘은 회귀가 **조용히** 발생하는 지점이다 (쓰기가 안 돼도 UI 에 증상이 없다). 위젯 테스트 또는 repository fake 를 쓴 flow 단위 테스트를 권장한다.
 
-### N2 — Firestore Rules 테스트 하네스 리포지토리 편입
+### ~~N2~~ — Firestore Rules 테스트 하네스 리포지토리 편입 ✅ 완료 (2026-10-21)
+
+`test_rules/` 로 편입 완료. 실행: `cd /Users/Byeonguk/Developer/OrderApp/test_rules && npm test` (최초 1회 `npm install`).
+케이스 R1~R12, 실행 결과 12/12 PASS. `firebase.json` 에 `emulators.firestore.port = 8137` 추가.
+`firebase-tools@14` 고정 — 15 부터 JDK 21 을 요구하는데 로컬은 JDK 17 이다. 상세는 `test_rules/README.md`.
+
+<details><summary>원래 기술</summary>
 sub-phase 3·4 의 Rules 검증(R1~R12)은 `firebase-tools@14` + `@firebase/rules-unit-testing@4` 로 수행했으나, 하네스가 **세션 임시 폴더에만 존재**해 재현이 불가능하다.
 편입 시 포함할 것: 시드(고객/점주 doc), R1~R12 케이스, `npm run test:rules` 스크립트, CI 연결 여부 판단.
 주의: `firebase-tools@15` 부터 **JDK 21 이상**을 요구한다 (현재 로컬은 JDK 17 이라 14 로 고정해 실행했다).
+</details>
 
 ### N3 — iOS 점주 `notDetermined` 배너 게이트 (O1)
 `OwnerOrdersPage` 배너는 `status == denied` 일 때만 노출한다 (기존 동작). iOS 점주가 `나중에` 를 누른 뒤 OS 가 `notDetermined` 로 남으면 주문 접수 화면에 배너가 뜨지 않는다. sub-phase 4 spec 비범위(F23)로 두었으므로 결함은 아니나, 설정 화면과 동작이 어긋난다.
 
-### N4 — `auth_provider.dart` 레이어 정리 (O5)
-`presentation` 레이어인 `auth_provider.dart` 가 `firebase_auth` 를 직접 import 한다. sub-phase 4 이전부터 있던 기존 부채이며 CLAUDE.md 절대 규칙 2 위반이다. `signOut()` 의 uid fallback 경로에서만 쓰이므로 repository 경유로 바꾸면 해소된다.
+### ~~N4~~ — `auth_provider.dart` 레이어 정리 (O5) ✅ 완료 (2026-10-21)
+
+`AuthRepository.currentUser` / `AuthRemoteDataSource.currentUser` 를 신설하고, `auth_provider.dart` 의 `firebase_auth` 직접 import 3곳(provider 주입 / `build()` 세션 확인 / `signOut()` uid fallback)을 전부 repository 경유로 바꿨다.
+`AuthRemoteDataSourceImpl` 생성자의 `firebaseAuth` 를 optional 로 바꿔 기본값 `FirebaseAuth.instance` 를 data 레이어 안에서 해결하게 했다 (테스트 주입은 그대로 가능).
+`authStateChanges` 와 중복이던 `User → UserModel` 변환을 `_toModel` 로 통합.
+
+검증: `grep -rl "package:firebase_\|package:cloud_firestore" lib/presentation/ lib/domain/` → **0건**.
 
 ### N5 — APNs 키 등록 후 재검증 대기 항목
 `docs/tasks/ios_apns_setup/spec.md` 완료가 선행 조건이다. 아래 항목들이 **환경 사유로 보류** 중이며 코드 결함 근거는 없다.

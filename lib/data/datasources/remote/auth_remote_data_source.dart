@@ -14,13 +14,37 @@ abstract class AuthRemoteDataSource {
   Future<UserModel> signUpWithEmail({required String email, required String password});
   Future<void> signOut();
   Stream<UserModel?> get authStateChanges;
+
+  /// 현재 로그인된 사용자 (없으면 null).
+  ///
+  /// Naver / Kakao 로그인도 Custom Token 으로 Firebase Auth 세션에 통합되므로
+  /// 이 하나로 모든 provider 의 세션을 확인할 수 있다.
+  UserModel? get currentUser;
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   final FirebaseAuth _firebaseAuth;
 
-  AuthRemoteDataSourceImpl({required FirebaseAuth firebaseAuth})
-      : _firebaseAuth = firebaseAuth;
+  AuthRemoteDataSourceImpl({FirebaseAuth? firebaseAuth})
+      : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
+
+  /// Firebase `User` → `UserModel` 변환 (세션 조회 / authStateChanges 공용).
+  static UserModel? _toModel(User? user) {
+    if (user == null) return null;
+    final provider = user.providerData.isNotEmpty
+        ? user.providerData.first.providerId
+        : 'unknown';
+    return UserModel(
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      photoUrl: user.photoURL,
+      provider: provider,
+    );
+  }
+
+  @override
+  UserModel? get currentUser => _toModel(_firebaseAuth.currentUser);
 
   // ── Google ────────────────────────────────────────────────────────────────
 
@@ -178,18 +202,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   @override
   Stream<UserModel?> get authStateChanges {
-    return _firebaseAuth.authStateChanges().map((user) {
-      if (user == null) return null;
-      final provider = user.providerData.isNotEmpty
-          ? user.providerData.first.providerId
-          : 'unknown';
-      return UserModel(
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoUrl: user.photoURL,
-        provider: provider,
-      );
-    });
+    return _firebaseAuth.authStateChanges().map(_toModel);
   }
 }

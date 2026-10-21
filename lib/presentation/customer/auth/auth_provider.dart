@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/data/datasources/remote/auth_remote_data_source.dart';
 import 'package:qradar/data/repositories/auth_repository_impl.dart';
@@ -17,7 +16,7 @@ import 'package:qradar/presentation/common/notification/providers/notification_p
 // ── 인프라 Provider ────────────────────────────────────────────────────────
 
 final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
-  return AuthRemoteDataSourceImpl(firebaseAuth: FirebaseAuth.instance);
+  return AuthRemoteDataSourceImpl();
 });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
@@ -55,22 +54,9 @@ final signUpWithEmailUseCaseProvider = Provider<SignUpWithEmailUseCase>((ref) {
 class AuthNotifier extends AsyncNotifier<UserEntity?> {
   @override
   Future<UserEntity?> build() async {
-    // Firebase Auth 세션 확인
-    // Naver/Kakao 로그인도 Custom Token을 통해 Firebase Auth 세션으로 통합되므로
-    // FirebaseAuth.currentUser 하나만 확인하면 된다.
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    if (firebaseUser == null) return null;
-
-    final provider = firebaseUser.providerData.isNotEmpty
-        ? firebaseUser.providerData.first.providerId
-        : 'unknown';
-    return UserEntity(
-      uid: firebaseUser.uid,
-      email: firebaseUser.email,
-      displayName: firebaseUser.displayName,
-      photoUrl: firebaseUser.photoURL,
-      provider: provider,
-    );
+    // Auth 세션 확인. Naver/Kakao 로그인도 Custom Token 으로 Firebase Auth
+    // 세션에 통합되므로 currentUser 하나로 모든 provider 를 확인할 수 있다.
+    return ref.read(authRepositoryProvider).currentUser;
   }
 
   Future<void> signInWithGoogle() async {
@@ -133,7 +119,8 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
   Future<void> signOut() async {
     state = const AsyncLoading();
     // FCM 토큰 정리 (Auth 끊기 전에 수행 — Rules: 본인 self-update 통과)
-    final uid = state.asData?.value?.uid ?? FirebaseAuth.instance.currentUser?.uid;
+    final uid = state.asData?.value?.uid ??
+        ref.read(authRepositoryProvider).currentUser?.uid;
     if (uid != null) {
       await ref.read(clearFcmTokenUseCaseProvider).call(uid);
     }

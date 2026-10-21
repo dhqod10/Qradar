@@ -14,4 +14,7 @@ abstract class AuthRepository {
   });
   Future<void> signOut();
   Stream<UserEntity?> get authStateChanges;
+
+  /// 현재 로그인된 사용자 (없으면 null). 동기 조회.
+  UserEntity? get currentUser;
 }
