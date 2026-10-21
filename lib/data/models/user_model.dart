@@ -29,10 +29,14 @@ abstract class UserModel with _$UserModel {
     /// 마지막 FCM 토큰 갱신 시각 (Phase 3b). JSON 직렬화 제외.
     @JsonKey(includeFromJson: false, includeToJson: false)
     DateTime? fcmTokenUpdatedAt,
-    /// 알림 권한 다이얼로그 노출 이력 (Phase 3b). JSON 직렬화 제외.
+    /// OS 권한 시트 소진 이력 (`허용` 선택). JSON 직렬화 제외.
     @JsonKey(includeFromJson: false, includeToJson: false)
     @Default(false)
     bool notificationPermissionPrompted,
+    /// `나중에` 선택 횟수 (Phase 3c-4). JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false)
+    @Default(0)
+    int notificationPermissionLaterCount,
     /// 알림 카테고리별 설정 (Phase 3c-3). JSON 직렬화 제외.
     @JsonKey(includeFromJson: false, includeToJson: false)
     @Default(NotificationSettingsEntity())
@@ -56,6 +60,7 @@ extension UserModelX on UserModel {
         fcmToken: fcmToken,
         fcmTokenUpdatedAt: fcmTokenUpdatedAt,
         notificationPermissionPrompted: notificationPermissionPrompted,
+        notificationPermissionLaterCount: notificationPermissionLaterCount,
         notificationSettings: notificationSettings,
       );
 }
@@ -98,10 +103,20 @@ class UserModelFactory {
           : null,
       notificationPermissionPrompted:
           (data['notificationPermissionPrompted'] as bool?) ?? false,
+      notificationPermissionLaterCount:
+          parseLaterCount(data['notificationPermissionLaterCount']),
       notificationSettings: _parseNotificationSettings(
         data['notificationSettings'],
       ),
     );
+  }
+
+  /// `notificationPermissionLaterCount` 방어적 파싱. num 이면 toInt, 아니면 0, 음수는 0.
+  static int parseLaterCount(Object? raw) {
+    if (raw is! num) return 0;
+    if (raw.isNaN || raw.isInfinite) return 0;
+    final v = raw.toInt();
+    return v < 0 ? 0 : v;
   }
 
   /// map 이 아니거나 키 부재/비bool 이면 해당 키만 기본값 fallback.

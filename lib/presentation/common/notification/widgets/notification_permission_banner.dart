@@ -4,7 +4,8 @@ import 'package:qradar/domain/entities/notification_permission_status.dart';
 
 /// 알림 설정 화면 전용 OS 권한 배너 (denied / notDetermined).
 ///
-/// 순수 표시 위젯 — 실제 동작(설정 열기 / 권한 요청)은 [onPrimaryTap] 으로 주입.
+/// 순수 표시 위젯 — 실제 동작(권한 요청 → 실패 시 설정 앱 폴백)은 [onPrimaryTap] 으로 주입.
+/// 두 state 모두 CTA 라벨·동작이 동일하며 톤·아이콘·제목으로만 구분한다.
 class NotificationPermissionBanner extends StatelessWidget {
   /// `denied` 또는 `notDetermined` 만 유효.
   final NotificationPermissionStatus status;
@@ -30,13 +31,15 @@ class NotificationPermissionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tone = _denied ? AppColors.warning : AppColors.info;
-    final title = _denied ? '기기 설정에서 알림이 꺼져 있어요' : '알림을 켜 보세요';
+    final title = _denied ? '알림이 꺼져 있어요' : '알림을 켜 보세요';
     final body = _denied
-        ? '알림을 받으려면 기기 설정에서 Qradar 알림을 허용해 주세요.'
+        ? (isOwner
+            ? '알림을 켜면 새 주문과 환불 요청을 바로 받아볼 수 있어요.'
+            : '알림을 켜면 주문 진행 상황을 바로 받아볼 수 있어요.')
         : (isOwner
             ? '새 주문과 환불 요청을 바로 받아볼 수 있어요.'
             : '주문 진행 상황을 바로 받아볼 수 있어요.');
-    final cta = _denied ? '설정 열기' : '알림 켜기';
+    const cta = '알림 켜기';
 
     return Semantics(
       container: true,

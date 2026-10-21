@@ -212,6 +212,8 @@ OS 권한이 꺼져 있으면 앱 내 토글이 켜져 있어도 알림이 오�
 
 #### D-3. sub-phase 2 sticky 정책과의 관계
 
+> **[변경됨 — 3c-4]** 아래 표의 `prompted` 의미 및 자동 재노출 "없음" 은 sub-phase 4 (`4_notification_permission_retry`) 에서 `laterCount` 기반 최대 3회 재노출로 바뀌었다. 아래는 당시 결정의 이력이다.
+
 | 항목 | 변경 여부 |
 |---|---|
 | `notificationPermissionPrompted` 의 의미 ("최초 권한 다이얼로그 노출 이력") | **변경 없음** |

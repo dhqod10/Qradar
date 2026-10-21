@@ -67,11 +67,11 @@ class _OwnerOrdersPageState extends ConsumerState<OwnerOrdersPage>
     final uid = ref.read(authProvider).asData?.value?.uid;
     if (uid == null) return;
 
-    // prompted == true 인 경우에만 배너 노출 후보
-    final prompted = await ref
+    // 다이얼로그를 한 번이라도 본 사용자(허용 또는 나중에)만 배너 노출 후보
+    final promptState = await ref
         .read(userRepositoryProvider)
-        .getNotificationPermissionPrompted(uid);
-    if (!prompted) {
+        .getNotificationPermissionPromptState(uid);
+    if (!promptState.hasSeenDialog) {
       if (mounted) setState(() => _showNotificationDeniedBanner = false);
       return;
     }

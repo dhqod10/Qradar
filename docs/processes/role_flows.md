@@ -121,7 +121,8 @@ stateDiagram-v2
 | 주문 내역(Log) 조회 | `customer/log/**` | `users/{uid}/orderLogs` |
 | 즐겨찾기 매장/메뉴 | `customer/home/widgets/favorites_*` | `users/{uid}/favoriteStores`, `/favoriteMenuItems` |
 | Qoin (적립금) | `customer/qoin/**` | **미구현 — 컬렉션 미정의** |
-| 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`orderProgress` / `pickupComplete`), OS 권한 3-state, 명시 재요청 |
+| 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`orderProgress` / `pickupComplete`), OS 권한 3-state, 명시 재요청 (배너 CTA: 앱 내 요청 먼저 → 실패 시 설정 앱 폴백) |
+| 알림 권한 다이얼로그 (진입 시) | `common/notification/notification_permission_prompt_flow.dart` | `나중에` 선택 시 `notificationPermissionLaterCount` +1, 최대 3회까지 재노출. `허용` 선택 시 `notificationPermissionPrompted=true` 후 재노출 없음(설정 화면 경유). OS 권한 허용 상태면 노출 안 함 |
 | 선물하기 | — | **미구현** |
 | 리뷰 작성 | — | **미구현** — `reviews/{reviewId}` Rules 만 정의, UI 없음 |
 
@@ -145,7 +146,8 @@ stateDiagram-v2
 | 환불 요청 거절 | `owner/orders/**` | `orders.update` (refundRequest.deniedAt 채움) |
 | 환불 요청 승인(전액 환불) | `owner/orders/**` | `processRefund` Cloud Function |
 | 매출 조회 | `owner/placeholders/owner_sales_placeholder.dart` | **미구현 (placeholder)** |
-| 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`newOrder` / `refundRequest`), OS 권한 3-state |
+| 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`newOrder` / `refundRequest`), OS 권한 3-state, 명시 재요청 (앱 내 요청 먼저 → 실패 시 설정 앱 폴백) |
+| 알림 권한 다이얼로그 (진입 시) | `common/notification/notification_permission_prompt_flow.dart` | `나중에` 선택 시 `notificationPermissionLaterCount` +1, 최대 3회까지 재노출. `허용` 선택 시 `notificationPermissionPrompted=true` 후 재노출 없음(설정 화면 경유). 주문 접수 화면 denied 배너는 `prompted \|\| laterCount>0` 인 사용자에게만 노출 |
 | 고객 모드 전환 | `owner/more/owner_more_page.dart` | `DowngradeToCustomerUseCase` |
 
 **핵심 진입점**: `OwnerScaffold` — 4탭 (내 매장 / 주문 접수 / 매출 / 더보기). MVP 는 "내 매장" 탭만 실구현, 매출은 placeholder.

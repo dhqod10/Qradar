@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:qradar/core/dialog/dialog_queue_service.dart';
 import 'package:qradar/core/theme/app_colors.dart';
-import 'package:qradar/domain/entities/notification_permission_status.dart';
 import 'package:qradar/presentation/common/notification/notification_permission_dialog.dart';
-import 'package:qradar/presentation/common/notification/providers/notification_providers.dart';
-import 'package:qradar/presentation/customer/auth/auth_provider.dart';
-import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
+import 'package:qradar/presentation/common/notification/notification_permission_prompt_flow.dart';
 import 'package:qradar/presentation/owner/more/owner_more_page.dart';
 import 'package:qradar/presentation/owner/my_store/my_store_page.dart';
 import 'package:qradar/presentation/owner/orders/owner_orders_page.dart';
@@ -43,46 +39,13 @@ class _OwnerScaffoldState extends ConsumerState<OwnerScaffold> {
     });
   }
 
-  Future<void> _checkAndRequestNotificationPermission() async {
-    final authState = ref.read(authProvider);
-    final uid = authState.asData?.value?.uid;
-    if (uid == null) return;
-
-    // notificationPermissionPrompted 플래그 조회
-    final prompted = await ref
-        .read(userRepositoryProvider)
-        .getNotificationPermissionPrompted(uid);
-    if (prompted) return; // 이미 노출됨 → 재노출 안 함
-
-    if (!mounted) return;
-
-    // 다이얼로그 노출
-    final result = await showNotificationPermissionDialog(
-      context,
+  Future<void> _checkAndRequestNotificationPermission() {
+    return runNotificationPermissionPrompt(
+      context: context,
+      ref: ref,
       audience: NotificationDialogAudience.owner,
-      queue: ref.read(dialogQueueServiceProvider),
+      isMounted: () => mounted,
     );
-
-    if (!mounted) return;
-
-    // 결과 처리
-    if (result == 'allow') {
-      // OS 권한 요청
-      final status = await ref
-          .read(requestNotificationPermissionUseCaseProvider)
-          .call();
-
-      // 권한 허용 시 토큰 등록
-      if (status == NotificationPermissionStatus.authorized ||
-          status == NotificationPermissionStatus.provisional) {
-        await ref.read(registerFcmTokenUseCaseProvider).call(uid);
-      }
-    }
-
-    // 결과와 무관하게 플래그 set (재노출 방지)
-    await ref
-        .read(userRepositoryProvider)
-        .markNotificationPermissionPrompted(uid);
   }
 
   @override

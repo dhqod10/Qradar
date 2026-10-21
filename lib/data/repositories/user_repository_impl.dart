@@ -1,6 +1,7 @@
 import 'package:qradar/data/datasources/remote/user_remote_data_source.dart';
 import 'package:qradar/data/models/user_model.dart';
 import 'package:qradar/domain/entities/notification_category.dart';
+import 'package:qradar/domain/entities/notification_permission_prompt_state.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/entities/user_role.dart';
 import 'package:qradar/domain/repositories/user_repository.dart';
@@ -42,8 +43,13 @@ class UserRepositoryImpl implements UserRepository {
       _dataSource.markNotificationPermissionPrompted(uid);
 
   @override
-  Future<bool> getNotificationPermissionPrompted(String uid) =>
-      _dataSource.getNotificationPermissionPrompted(uid);
+  Future<NotificationPermissionPromptState>
+  getNotificationPermissionPromptState(String uid) =>
+      _dataSource.getNotificationPermissionPromptState(uid);
+
+  @override
+  Future<void> incrementNotificationPermissionLaterCount(String uid) =>
+      _dataSource.incrementNotificationPermissionLaterCount(uid);
 
   @override
   Future<void> updateNotificationSetting({

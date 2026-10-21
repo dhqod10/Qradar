@@ -29,6 +29,11 @@ class _NotificationSettingsPageState
   NotificationPermissionStatus? _osStatus;
   bool _requestingPermission = false;
 
+  /// 이 화면 인스턴스에서 requestPermission() 을 이미 1회 호출했고 허용되지 않았다.
+  /// true 면 이후 CTA 는 요청을 건너뛰고 설정 앱을 바로 연다 (Android 거부 카운터 보호).
+  /// 영속화하지 않는다 — 화면을 벗어나면 리셋.
+  bool _permissionRequestAttempted = false;
+
   /// 저장 진행 중 카테고리 (연타 방지).
   final Set<NotificationCategory> _saving = {};
 
@@ -74,20 +79,77 @@ class _NotificationSettingsPageState
     }
   }
 
-  Future<void> _requestPermission(String uid) async {
+  /// 배너 CTA: 앱 내 권한 요청을 먼저 시도하고, 요청 전 상태가 denied 이며
+  /// 결과도 denied 이면 설정 앱으로 폴백한다 (denied / notDetermined 공용).
+  ///
+  /// 설정 화면 CTA 는 notificationPermissionPrompted / LaterCount 를 읽거나 쓰지 않는다.
+  Future<void> _onPermissionCtaTap(String uid) async {
     if (_requestingPermission) return;
+    // _refreshOsStatus() 가 _osStatus 를 덮어쓰므로 요청 전 값을 스냅샷
+    final statusBefore = _osStatus;
     setState(() => _requestingPermission = true);
     try {
-      final result =
-          await ref.read(requestNotificationPermissionUseCaseProvider).call();
+      if (_permissionRequestAttempted) {
+        // 이미 한 번 요청했음 → 요청 건너뛰고 설정 앱
+        await _fallbackToAppSettings();
+        return;
+      }
+
+      NotificationPermissionStatus? result;
+      try {
+        _permissionRequestAttempted = true;
+        result = await ref
+            .read(requestNotificationPermissionUseCaseProvider)
+            .call();
+      } catch (_) {
+        // 요청 예외 → 정상 경로와 동일한 기준으로 안내 (결정 E-2).
+        // notDetermined 에서 실패한 경우는 안내도 하지 않는다 (배너 톤 변화가 피드백).
+        if (statusBefore == NotificationPermissionStatus.denied) {
+          _showSettingsHint();
+        }
+        return;
+      }
+
       if (result == NotificationPermissionStatus.authorized ||
           result == NotificationPermissionStatus.provisional) {
         await ref.read(registerFcmTokenUseCaseProvider).call(uid);
+        await _refreshOsStatus();
+        return;
       }
+
       await _refreshOsStatus();
+      // 1회차 탭에서는 설정 앱으로 전환하지 않는다 (결정 E-2 개정).
+      // 방금 시트에서 거절한 사용자를 즉시 끌고 가는 것은 거절 의사를 무시하는 동작이고,
+      // Android 는 "방금 거절" 과 "이미 영구 차단" 을 구분할 수 없어 전자까지 휩쓸린다.
+      // 영구 차단된 사용자는 안내 SnackBar 를 보고 다시 탭하면 세션 가드가 설정 앱으로 보낸다.
+      // notDetermined 거부는 배너 톤 변화가 피드백이므로 안내도 생략한다.
+      if (statusBefore == NotificationPermissionStatus.denied) {
+        _showSettingsHint();
+      }
     } finally {
       if (mounted) setState(() => _requestingPermission = false);
     }
+  }
+
+  /// 기기 설정에서 켜야 한다는 안내만 표시한다 (화면 전환 없음).
+  void _showSettingsHint() {
+    if (!mounted) return;
+    _showSnack(
+      '기기 설정에서 알림을 허용해 주세요',
+      backgroundColor: AppColors.primary,
+      duration: const Duration(seconds: 4),
+      clearBefore: true,
+    );
+  }
+
+  /// 전환 안내 SnackBar 후 설정 앱을 연다 (2회차 탭 전용).
+  Future<void> _fallbackToAppSettings() async {
+    if (!mounted) return;
+    _showSettingsHint();
+    // 안내 SnackBar 가 읽힐 시간 확보 (스피너는 _requestingPermission 으로 유지)
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    await _openAppSettings();
   }
 
   Future<void> _openAppSettings() async {
@@ -126,13 +188,21 @@ class _NotificationSettingsPageState
     }
   }
 
-  void _showSnack(String message) {
+  /// 기본은 error 톤. 안내용은 [backgroundColor] 로 톤을 바꾼다.
+  void _showSnack(
+    String message, {
+    Color backgroundColor = AppColors.error,
+    Duration duration = const Duration(seconds: 3),
+    bool clearBefore = false,
+  }) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    if (clearBefore) messenger.clearSnackBars();
+    messenger.showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.error,
-        duration: const Duration(seconds: 3),
+        backgroundColor: backgroundColor,
+        duration: duration,
         content: Text(
           message,
           style: const TextStyle(
@@ -228,9 +298,7 @@ class _NotificationSettingsPageState
                     status: os!,
                     isOwner: isOwner,
                     isRequesting: _requestingPermission,
-                    onPrimaryTap: () => os == NotificationPermissionStatus.denied
-                        ? _openAppSettings()
-                        : _requestPermission(user.uid),
+                    onPrimaryTap: () => _onPermissionCtaTap(user.uid),
                   ),
                 )
               : const SizedBox(width: double.infinity),

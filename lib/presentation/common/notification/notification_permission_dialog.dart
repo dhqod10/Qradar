@@ -12,8 +12,9 @@ enum NotificationDialogAudience { owner, customer }
 ///
 /// 반환값:
 /// - `'allow'`: 사용자가 "허용" 탭 → 호출부에서 OS 권한 요청 진행.
-/// - `'later'`: 사용자가 "나중에" 탭 → 권한 요청 skip.
-/// - `null`: context 만료 또는 dedup 으로 인한 skip. 'later' 와 동일 처리.
+/// - `'later'`: 사용자가 "나중에" 탭 → 권한 요청 skip. `laterCount` 증가 대상.
+/// - `null`: context 만료 또는 dedup 으로 인한 skip. 사용자의 선택이 아니므로
+///   어떤 기록도 남기지 않는다 (Phase 3c-4).
 Future<String?> showNotificationPermissionDialog(
   BuildContext context, {
   required NotificationDialogAudience audience,

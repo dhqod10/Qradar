@@ -6,6 +6,7 @@ import 'package:qradar/domain/usecases/clear_fcm_token_use_case.dart';
 import 'package:qradar/domain/usecases/handle_notification_message_use_case.dart';
 import 'package:qradar/domain/usecases/register_fcm_token_use_case.dart';
 import 'package:qradar/domain/usecases/request_notification_permission_use_case.dart';
+import 'package:qradar/domain/usecases/should_show_notification_permission_dialog_use_case.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 
 // ── 인프라 Provider ────────────────────────────────────────────────────────
@@ -48,4 +49,11 @@ final requestNotificationPermissionUseCaseProvider =
 final handleNotificationMessageUseCaseProvider =
     Provider<HandleNotificationMessageUseCase>((ref) {
   return const HandleNotificationMessageUseCase();
+});
+
+final shouldShowNotificationPermissionDialogUseCaseProvider =
+    Provider<ShouldShowNotificationPermissionDialogUseCase>((ref) {
+  return ShouldShowNotificationPermissionDialogUseCase(
+    userRepo: ref.watch(userRepositoryProvider),
+  );
 });
