@@ -41,6 +41,10 @@ abstract class UserModel with _$UserModel {
     @JsonKey(includeFromJson: false, includeToJson: false)
     @Default(NotificationSettingsEntity())
     NotificationSettingsEntity notificationSettings,
+    /// Qoin 잔액 (Firestore 전용, CF 만 쓴다). JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false)
+    @Default(0)
+    int qoinBalance,
   }) = _UserModel;
 
   factory UserModel.fromJson(Map<String, dynamic> json) =>
@@ -62,6 +66,7 @@ extension UserModelX on UserModel {
         notificationPermissionPrompted: notificationPermissionPrompted,
         notificationPermissionLaterCount: notificationPermissionLaterCount,
         notificationSettings: notificationSettings,
+        qoinBalance: qoinBalance,
       );
 }
 
@@ -108,7 +113,16 @@ class UserModelFactory {
       notificationSettings: _parseNotificationSettings(
         data['notificationSettings'],
       ),
+      qoinBalance: parseQoinBalance(data['qoinBalance']),
     );
+  }
+
+  /// `qoinBalance` 방어적 파싱. num 이면 toInt (`135.0` → 135), 부재/비num/NaN/Infinity 는 0.
+  /// **음수는 보존한다** (clamp 금지 — `parseLaterCount` 와 다름. 원장 불변식 감사 수단).
+  static int parseQoinBalance(Object? raw) {
+    if (raw is! num) return 0;
+    if (raw.isNaN || raw.isInfinite) return 0;
+    return raw.toInt();
   }
 
   /// `notificationPermissionLaterCount` 방어적 파싱. num 이면 toInt, 아니면 0, 음수는 0.

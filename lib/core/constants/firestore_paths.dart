@@ -101,4 +101,18 @@ class FirestorePaths {
 
   /// 단일 주문 경로 헬퍼.
   static String orderPath(String orderId) => '$orders/$orderId';
+
+  // ── Qoin ──────────────────────────────────────────────────────────────────
+  /// Qoin 원장 서브컬렉션 키 — `users/{uid}/qoinTransactions/{txId}`. CF 전용 쓰기.
+  static const String qoinTransactions = 'qoinTransactions';
+
+  /// Qoin 원장 경로 헬퍼.
+  static String userQoinTransactions(String uid) =>
+      '$users/$uid/$qoinTransactions';
+
+  /// 운영 설정 컬렉션 `config/{docId}`.
+  static const String config = 'config';
+
+  /// Qoin 설정 문서 ID — `config/qoin` (accrualRate / enabled).
+  static const String qoinConfigDocId = 'qoin';
 }

@@ -21,7 +21,8 @@ mixin _$UserModel {
 @JsonKey(includeFromJson: false, includeToJson: false) DateTime? get fcmTokenUpdatedAt;/// OS 권한 시트 소진 이력 (`허용` 선택). JSON 직렬화 제외.
 @JsonKey(includeFromJson: false, includeToJson: false) bool get notificationPermissionPrompted;/// `나중에` 선택 횟수 (Phase 3c-4). JSON 직렬화 제외.
 @JsonKey(includeFromJson: false, includeToJson: false) int get notificationPermissionLaterCount;/// 알림 카테고리별 설정 (Phase 3c-3). JSON 직렬화 제외.
-@JsonKey(includeFromJson: false, includeToJson: false) NotificationSettingsEntity get notificationSettings;
+@JsonKey(includeFromJson: false, includeToJson: false) NotificationSettingsEntity get notificationSettings;/// Qoin 잔액 (Firestore 전용, CF 만 쓴다). JSON 직렬화 제외.
+@JsonKey(includeFromJson: false, includeToJson: false) int get qoinBalance;
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -34,16 +35,16 @@ $UserModelCopyWith<UserModel> get copyWith => _$UserModelCopyWithImpl<UserModel>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is UserModel&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is UserModel&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings)&&(identical(other.qoinBalance, qoinBalance) || other.qoinBalance == qoinBalance));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings);
+int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings,qoinBalance);
 
 @override
 String toString() {
-  return 'UserModel(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings)';
+  return 'UserModel(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings, qoinBalance: $qoinBalance)';
 }
 
 
@@ -54,7 +55,7 @@ abstract mixin class $UserModelCopyWith<$Res>  {
   factory $UserModelCopyWith(UserModel value, $Res Function(UserModel) _then) = _$UserModelCopyWithImpl;
 @useResult
 $Res call({
- String uid, String? email,@JsonKey(name: 'display_name') String? displayName,@JsonKey(name: 'photo_url') String? photoUrl, String provider, String role, DateTime? createdAt, String? brandId,@JsonKey(includeFromJson: false, includeToJson: false) String? fcmToken,@JsonKey(includeFromJson: false, includeToJson: false) DateTime? fcmTokenUpdatedAt,@JsonKey(includeFromJson: false, includeToJson: false) bool notificationPermissionPrompted,@JsonKey(includeFromJson: false, includeToJson: false) int notificationPermissionLaterCount,@JsonKey(includeFromJson: false, includeToJson: false) NotificationSettingsEntity notificationSettings
+ String uid, String? email,@JsonKey(name: 'display_name') String? displayName,@JsonKey(name: 'photo_url') String? photoUrl, String provider, String role, DateTime? createdAt, String? brandId,@JsonKey(includeFromJson: false, includeToJson: false) String? fcmToken,@JsonKey(includeFromJson: false, includeToJson: false) DateTime? fcmTokenUpdatedAt,@JsonKey(includeFromJson: false, includeToJson: false) bool notificationPermissionPrompted,@JsonKey(includeFromJson: false, includeToJson: false) int notificationPermissionLaterCount,@JsonKey(includeFromJson: false, includeToJson: false) NotificationSettingsEntity notificationSettings,@JsonKey(includeFromJson: false, includeToJson: false) int qoinBalance
 });
 
 
@@ -71,7 +72,7 @@ class _$UserModelCopyWithImpl<$Res>
 
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,Object? qoinBalance = null,}) {
   return _then(_self.copyWith(
 uid: null == uid ? _self.uid : uid // ignore: cast_nullable_to_non_nullable
 as String,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
@@ -86,7 +87,8 @@ as String?,fcmTokenUpdatedAt: freezed == fcmTokenUpdatedAt ? _self.fcmTokenUpdat
 as DateTime?,notificationPermissionPrompted: null == notificationPermissionPrompted ? _self.notificationPermissionPrompted : notificationPermissionPrompted // ignore: cast_nullable_to_non_nullable
 as bool,notificationPermissionLaterCount: null == notificationPermissionLaterCount ? _self.notificationPermissionLaterCount : notificationPermissionLaterCount // ignore: cast_nullable_to_non_nullable
 as int,notificationSettings: null == notificationSettings ? _self.notificationSettings : notificationSettings // ignore: cast_nullable_to_non_nullable
-as NotificationSettingsEntity,
+as NotificationSettingsEntity,qoinBalance: null == qoinBalance ? _self.qoinBalance : qoinBalance // ignore: cast_nullable_to_non_nullable
+as int,
   ));
 }
 /// Create a copy of UserModel
@@ -180,10 +182,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String uid,  String? email, @JsonKey(name: 'display_name')  String? displayName, @JsonKey(name: 'photo_url')  String? photoUrl,  String provider,  String role,  DateTime? createdAt,  String? brandId, @JsonKey(includeFromJson: false, includeToJson: false)  String? fcmToken, @JsonKey(includeFromJson: false, includeToJson: false)  DateTime? fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false)  bool notificationPermissionPrompted, @JsonKey(includeFromJson: false, includeToJson: false)  int notificationPermissionLaterCount, @JsonKey(includeFromJson: false, includeToJson: false)  NotificationSettingsEntity notificationSettings)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String uid,  String? email, @JsonKey(name: 'display_name')  String? displayName, @JsonKey(name: 'photo_url')  String? photoUrl,  String provider,  String role,  DateTime? createdAt,  String? brandId, @JsonKey(includeFromJson: false, includeToJson: false)  String? fcmToken, @JsonKey(includeFromJson: false, includeToJson: false)  DateTime? fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false)  bool notificationPermissionPrompted, @JsonKey(includeFromJson: false, includeToJson: false)  int notificationPermissionLaterCount, @JsonKey(includeFromJson: false, includeToJson: false)  NotificationSettingsEntity notificationSettings, @JsonKey(includeFromJson: false, includeToJson: false)  int qoinBalance)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _UserModel() when $default != null:
-return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings);case _:
+return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance);case _:
   return orElse();
 
 }
@@ -201,10 +203,10 @@ return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.pro
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String uid,  String? email, @JsonKey(name: 'display_name')  String? displayName, @JsonKey(name: 'photo_url')  String? photoUrl,  String provider,  String role,  DateTime? createdAt,  String? brandId, @JsonKey(includeFromJson: false, includeToJson: false)  String? fcmToken, @JsonKey(includeFromJson: false, includeToJson: false)  DateTime? fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false)  bool notificationPermissionPrompted, @JsonKey(includeFromJson: false, includeToJson: false)  int notificationPermissionLaterCount, @JsonKey(includeFromJson: false, includeToJson: false)  NotificationSettingsEntity notificationSettings)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String uid,  String? email, @JsonKey(name: 'display_name')  String? displayName, @JsonKey(name: 'photo_url')  String? photoUrl,  String provider,  String role,  DateTime? createdAt,  String? brandId, @JsonKey(includeFromJson: false, includeToJson: false)  String? fcmToken, @JsonKey(includeFromJson: false, includeToJson: false)  DateTime? fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false)  bool notificationPermissionPrompted, @JsonKey(includeFromJson: false, includeToJson: false)  int notificationPermissionLaterCount, @JsonKey(includeFromJson: false, includeToJson: false)  NotificationSettingsEntity notificationSettings, @JsonKey(includeFromJson: false, includeToJson: false)  int qoinBalance)  $default,) {final _that = this;
 switch (_that) {
 case _UserModel():
-return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings);case _:
+return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -221,10 +223,10 @@ return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.pro
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String uid,  String? email, @JsonKey(name: 'display_name')  String? displayName, @JsonKey(name: 'photo_url')  String? photoUrl,  String provider,  String role,  DateTime? createdAt,  String? brandId, @JsonKey(includeFromJson: false, includeToJson: false)  String? fcmToken, @JsonKey(includeFromJson: false, includeToJson: false)  DateTime? fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false)  bool notificationPermissionPrompted, @JsonKey(includeFromJson: false, includeToJson: false)  int notificationPermissionLaterCount, @JsonKey(includeFromJson: false, includeToJson: false)  NotificationSettingsEntity notificationSettings)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String uid,  String? email, @JsonKey(name: 'display_name')  String? displayName, @JsonKey(name: 'photo_url')  String? photoUrl,  String provider,  String role,  DateTime? createdAt,  String? brandId, @JsonKey(includeFromJson: false, includeToJson: false)  String? fcmToken, @JsonKey(includeFromJson: false, includeToJson: false)  DateTime? fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false)  bool notificationPermissionPrompted, @JsonKey(includeFromJson: false, includeToJson: false)  int notificationPermissionLaterCount, @JsonKey(includeFromJson: false, includeToJson: false)  NotificationSettingsEntity notificationSettings, @JsonKey(includeFromJson: false, includeToJson: false)  int qoinBalance)?  $default,) {final _that = this;
 switch (_that) {
 case _UserModel() when $default != null:
-return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings);case _:
+return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance);case _:
   return null;
 
 }
@@ -236,7 +238,7 @@ return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.pro
 @JsonSerializable()
 
 class _UserModel implements UserModel {
-  const _UserModel({required this.uid, this.email, @JsonKey(name: 'display_name') this.displayName, @JsonKey(name: 'photo_url') this.photoUrl, required this.provider, this.role = 'customer', this.createdAt, this.brandId, @JsonKey(includeFromJson: false, includeToJson: false) this.fcmToken, @JsonKey(includeFromJson: false, includeToJson: false) this.fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false) this.notificationPermissionPrompted = false, @JsonKey(includeFromJson: false, includeToJson: false) this.notificationPermissionLaterCount = 0, @JsonKey(includeFromJson: false, includeToJson: false) this.notificationSettings = const NotificationSettingsEntity()});
+  const _UserModel({required this.uid, this.email, @JsonKey(name: 'display_name') this.displayName, @JsonKey(name: 'photo_url') this.photoUrl, required this.provider, this.role = 'customer', this.createdAt, this.brandId, @JsonKey(includeFromJson: false, includeToJson: false) this.fcmToken, @JsonKey(includeFromJson: false, includeToJson: false) this.fcmTokenUpdatedAt, @JsonKey(includeFromJson: false, includeToJson: false) this.notificationPermissionPrompted = false, @JsonKey(includeFromJson: false, includeToJson: false) this.notificationPermissionLaterCount = 0, @JsonKey(includeFromJson: false, includeToJson: false) this.notificationSettings = const NotificationSettingsEntity(), @JsonKey(includeFromJson: false, includeToJson: false) this.qoinBalance = 0});
   factory _UserModel.fromJson(Map<String, dynamic> json) => _$UserModelFromJson(json);
 
 @override final  String uid;
@@ -258,6 +260,8 @@ class _UserModel implements UserModel {
 @override@JsonKey(includeFromJson: false, includeToJson: false) final  int notificationPermissionLaterCount;
 /// 알림 카테고리별 설정 (Phase 3c-3). JSON 직렬화 제외.
 @override@JsonKey(includeFromJson: false, includeToJson: false) final  NotificationSettingsEntity notificationSettings;
+/// Qoin 잔액 (Firestore 전용, CF 만 쓴다). JSON 직렬화 제외.
+@override@JsonKey(includeFromJson: false, includeToJson: false) final  int qoinBalance;
 
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
@@ -272,16 +276,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UserModel&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UserModel&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings)&&(identical(other.qoinBalance, qoinBalance) || other.qoinBalance == qoinBalance));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings);
+int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings,qoinBalance);
 
 @override
 String toString() {
-  return 'UserModel(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings)';
+  return 'UserModel(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings, qoinBalance: $qoinBalance)';
 }
 
 
@@ -292,7 +296,7 @@ abstract mixin class _$UserModelCopyWith<$Res> implements $UserModelCopyWith<$Re
   factory _$UserModelCopyWith(_UserModel value, $Res Function(_UserModel) _then) = __$UserModelCopyWithImpl;
 @override @useResult
 $Res call({
- String uid, String? email,@JsonKey(name: 'display_name') String? displayName,@JsonKey(name: 'photo_url') String? photoUrl, String provider, String role, DateTime? createdAt, String? brandId,@JsonKey(includeFromJson: false, includeToJson: false) String? fcmToken,@JsonKey(includeFromJson: false, includeToJson: false) DateTime? fcmTokenUpdatedAt,@JsonKey(includeFromJson: false, includeToJson: false) bool notificationPermissionPrompted,@JsonKey(includeFromJson: false, includeToJson: false) int notificationPermissionLaterCount,@JsonKey(includeFromJson: false, includeToJson: false) NotificationSettingsEntity notificationSettings
+ String uid, String? email,@JsonKey(name: 'display_name') String? displayName,@JsonKey(name: 'photo_url') String? photoUrl, String provider, String role, DateTime? createdAt, String? brandId,@JsonKey(includeFromJson: false, includeToJson: false) String? fcmToken,@JsonKey(includeFromJson: false, includeToJson: false) DateTime? fcmTokenUpdatedAt,@JsonKey(includeFromJson: false, includeToJson: false) bool notificationPermissionPrompted,@JsonKey(includeFromJson: false, includeToJson: false) int notificationPermissionLaterCount,@JsonKey(includeFromJson: false, includeToJson: false) NotificationSettingsEntity notificationSettings,@JsonKey(includeFromJson: false, includeToJson: false) int qoinBalance
 });
 
 
@@ -309,7 +313,7 @@ class __$UserModelCopyWithImpl<$Res>
 
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,Object? qoinBalance = null,}) {
   return _then(_UserModel(
 uid: null == uid ? _self.uid : uid // ignore: cast_nullable_to_non_nullable
 as String,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
@@ -324,7 +328,8 @@ as String?,fcmTokenUpdatedAt: freezed == fcmTokenUpdatedAt ? _self.fcmTokenUpdat
 as DateTime?,notificationPermissionPrompted: null == notificationPermissionPrompted ? _self.notificationPermissionPrompted : notificationPermissionPrompted // ignore: cast_nullable_to_non_nullable
 as bool,notificationPermissionLaterCount: null == notificationPermissionLaterCount ? _self.notificationPermissionLaterCount : notificationPermissionLaterCount // ignore: cast_nullable_to_non_nullable
 as int,notificationSettings: null == notificationSettings ? _self.notificationSettings : notificationSettings // ignore: cast_nullable_to_non_nullable
-as NotificationSettingsEntity,
+as NotificationSettingsEntity,qoinBalance: null == qoinBalance ? _self.qoinBalance : qoinBalance // ignore: cast_nullable_to_non_nullable
+as int,
   ));
 }
 

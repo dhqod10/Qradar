@@ -27,5 +27,8 @@ abstract class UserEntity with _$UserEntity {
     /// 알림 카테고리별 on/off (부재 시 기본값 fallback).
     @Default(NotificationSettingsEntity())
     NotificationSettingsEntity notificationSettings,
+    /// Qoin 잔액. Cloud Function 만 쓴다 (고객 쓰기 불가). 필드 부재 → 0.
+    /// **clamp 하지 않는다** — 원장 불변식(`qoinBalance == Σ amount`) 의 감사 수단.
+    @Default(0) int qoinBalance,
   }) = _UserEntity;
 }

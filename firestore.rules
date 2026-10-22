@@ -127,6 +127,17 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
 
+      // ── users/{uid}/qoinTransactions/{txId} ───────────────────────────────
+      // Qoin 원장. append-only. 생성은 Cloud Function (onOrderQoinSettled) 만.
+      // admin 에게도 update/delete 를 허용하지 않는다 (원장 불변식 보호).
+      // 상위 users 규칙은 서브컬렉션에 상속되지 않으므로 이 블록이 없으면 본인도 못 읽는다.
+      match /qoinTransactions/{txId} {
+        allow read: if isAdmin() || (isSignedIn() && uid() == userId);
+        allow create: if false; // Cloud Function (Admin SDK) 만 가능
+        allow update: if false; // append-only
+        allow delete: if false; // append-only
+      }
+
       // ── users/{uid}/favoriteStores/{storeId} ──────────────────────────────
       match /favoriteStores/{storeId} {
         allow read, create, update, delete: if isSignedIn() && uid() == userId;
@@ -534,6 +545,15 @@ service cloud.firestore {
 
     match /{path=**}/menuOverrides/{menuOverrideId} {
       allow read: if isSignedIn();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // config/{docId} — 운영 설정 문서 (config/qoin: 적립률 / kill switch)
+    // read: 로그인 사용자 (고객 앱이 적립률 안내 문구에 사용). write: admin 만.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

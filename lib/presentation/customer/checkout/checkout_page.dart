@@ -119,7 +119,6 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         if (!mounted) return;
 
         await ref.read(clearCartUseCaseProvider).call();
-        await ref.read(qoinAccrualHookProvider).onOrderPaid(order);
 
         if (!mounted) return;
 

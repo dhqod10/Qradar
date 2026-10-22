@@ -2,14 +2,12 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/data/datasources/remote/cloud_functions_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/order_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/toss_payment_remote_data_source.dart';
-import 'package:qradar/data/repositories/no_op_qoin_accrual_hook.dart';
 import 'package:qradar/data/repositories/order_repository_impl.dart';
 import 'package:qradar/data/repositories/payment_gateway_repository_impl.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/domain/repositories/order_repository.dart';
 import 'package:qradar/domain/repositories/payment_gateway_repository.dart';
-import 'package:qradar/domain/repositories/qoin_accrual_hook.dart';
 import 'package:qradar/domain/usecases/accept_order_use_case.dart';
 import 'package:qradar/domain/usecases/cancel_paid_order_use_case.dart';
 import 'package:qradar/domain/usecases/deny_refund_request_use_case.dart';
@@ -54,11 +52,6 @@ final paymentGatewayRepositoryProvider =
     functionsDs: ref.watch(cloudFunctionsRemoteDataSourceProvider),
     orderDs: ref.watch(orderRemoteDataSourceProvider),
   );
-});
-
-/// Phase 3a 는 NoOp. Phase 4 에서 real 구현체로 override.
-final qoinAccrualHookProvider = Provider<QoinAccrualHook>((ref) {
-  return const NoOpQoinAccrualHook();
 });
 
 // ── UseCase ───────────────────────────────────────────────────────────────────
