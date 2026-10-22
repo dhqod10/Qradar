@@ -2144,3 +2144,358 @@ match /{path=**}/qoinRateHistory/{historyId} { allow read: if isAdmin(); }
 **없다.** N1~N8 전건 판정 완료이고, N4 는 사용자 결정(A)을, N6 는 코디네이터 확인 사실("앱 배포 = 로컬 빌드")을 반영했다.
 
 **결정이 아니라 조작 지시 1건** — §20.11 에 기록했다: admin 조작용 기기가 2대 이상이면 ③ 단계에서 **전 기기에 새 빌드를 설치**한다. 그러지 않으면 ④(Rules) 이후 구버전 빌드가 남은 기기에서 **비상 정지 토글이 거부**된다.
+
+---
+
+# 21. 3차 — 2차 검증 FAIL 6건 처리 (2026-10-22, 배포 전)
+
+> **§21 이 최신이다.** §20 과 충돌하면 §21 을 따른다. 입력: `test_report.md` "2차" 절(S1~S6 + 정정 4건 + 보류 1건), 대상 커밋 `2caf3d3`.
+>
+> **사용자 결정 2건은 확정이며 되돌리지 않는다**: ⓐ 보안 구멍을 이번 배포에 포함 ⓑ FAIL 6건을 배포 전에 전부 고친다.
+>
+> **S4 는 이 문서에 없다.** Qoin 범위 밖이므로 [`docs/tasks/brand_authorization_hardening/spec.md`](../brand_authorization_hardening/spec.md) 로 분리했다. 배포는 같은 창에서 함께 나간다 (§21.6).
+
+| FAIL | 처리 | 산출물 |
+|---|---|---|
+| S1 배너 출처 불일치 | §21.1 + §21.7(재발 방지) | design 신규 항목 → developer |
+| S2 포인터를 지울 수 없다 | §21.2 — **설계자 확정. 사용자 결정 불요** | developer |
+| S3 빈 이력 / `changed` 미소비 | §21.3 | design 문구 + developer |
+| S4 Rules 보안 | 별도 task | `brand_authorization_hardening/spec.md` |
+| S5 `data_ownership.md` 드리프트 | §21.5 — **설계자가 직접 갱신 완료** | 문서 (완료) |
+| S6 과도기 마커 불완전 | §21.4 | developer (가드 테스트) |
+
+---
+
+## 21.1 S1 — 중단 판정의 출처를 포인터 하나로 모은다
+
+### 결함의 정체
+
+허브·브랜드 목록은 **브랜드 문서의 포인터**로, 브랜드 편집 페이지만 **이력 스트림**(`qoinRateHistoryProvider(brand, limit 20)`)으로 같은 사실을 판정한다. 두 방향으로 깨진다 (tester 위젯 테스트 PROBE1/PROBE3).
+
+- 포인터 `partial` + 이력 읽기 실패 → 편집 페이지에 **배너·`이어서 적용`·에러가 전부 없다.** 유일한 복구 버튼이 그 화면에만 있으므로 허브 배너 탭 → **막다른 길**이다.
+- 포인터는 종결됐는데 옛 이력이 `partial` → **거짓 경고 + 항상 실패하는 버튼**이 영구히 남는다.
+- 중단 뒤 단건·스위치 변경이 20건 쌓이면 포인터가 `partial` 인데 배너가 사라진다 (같은 뿌리).
+
+### 확정 — 판정 함수 1개, 호출 지점 3개
+
+**중단 판정은 `BrandEntity` 의 포인터만 본다. 이력 스트림은 판정에 쓰지 않는다.**
+
+```
+domain (순수 Dart, 신규 1곳)
+  QoinBulkBanner resolveBulkBanner(BrandEntity brand, DateTime now)
+
+    brand.qoinBulkStatus == partial                        -> unfinished(partial)
+    brand.qoinBulkStatus == inProgress
+        && now - brand.qoinBulkAt > BULK_STALE             -> unfinished(stale)
+    그 외 (null · completed · superseded · 신선한 inProgress) -> none
+```
+
+- **본문의 처리 수/전체 수는 `brand.qoinBulkHistoryId` 로 이력 문서 1건을 읽어 채운다.** 그 읽기가 실패하거나 문서가 없으면 **숫자만 생략**하고 **배너와 `이어서 적용` 버튼은 유지**한다. 스트림(`limit 20`)이 아니라 **문서 1건 직접 읽기**다 — CG 인덱스에 의존하지 않고 20건 창 문제도 없다.
+- 호출 지점 3개(허브 배너 / 브랜드 목록 태그 / 브랜드 편집 페이지 배너)가 **같은 함수**를 쓴다. 화면이 포인터 필드를 직접 비교하지 않는다.
+- `QoinPartialBanner` 는 이미 3곳 공용 위젯이다(design §18 항목 11·166). 바뀌는 것은 **그 위젯에 넣는 상태를 누가 만드는가**다.
+
+### H-3 가 이 화면에 그대로 적용된다
+
+1차 H-3 판정("배너가 에러일 때 사라지면 '중단 없음' 과 '알 수 없음' 이 화면상 같아진다 — 안전 측 실패가 아니다")은 **표면마다 다시 적용돼야 하는 요구**였다. 포인터는 브랜드 문서와 같은 스트림으로 오므로 그 읽기가 실패하면 **브랜드 편집 페이지 자체가 에러 상태**다 → "중단 없음" 으로 오독될 화면이 남지 않는다. 숫자 보조 읽기만 실패하면 배너는 남고 숫자가 빈다. **이것이 S1 의 수용 기준이다.**
+
+→ 재발 방지는 §21.7.
+
+---
+
+## 21.2 S2 — 중단 상태의 종결 (설계자 확정, 사용자 결정 불요)
+
+### 규정이 없었던 것
+
+포인터 `partial` 뒤에 ⓐ 브랜드 단건 변경 ⓑ 스위치 토글 ⓒ preserve 적용 중 하나를 하면 포인터가 `partial` + 옛 id 로 남아 **허브 경고가 영구화**되고 재개는 항상 거부된다. 같은 값이고 남은 개별 설정이 0 이면 noop 이라 **지울 방법이 없다.**
+
+### 선택지와 판단
+
+| 안 | 판단 |
+|---|---|
+| ⓐ admin 수동 동작 `중단 기록 닫기` 버튼 | **기각.** 데이터가 그대로인데 경고만 끄는 장치다. 운영자가 "안 보이게" 눌러 치우는 길을 열면 중단 경고가 신뢰를 잃는다. 표면이 하나 늘어 S1 과 같은 드리프트 후보가 된다 |
+| ⓑ 포인터 TTL (오래되면 자동 소멸) | **기각.** 시간이 지났다는 것이 "처리됐다" 를 뜻하지 않는다. 미적용 매장이 남은 채 경고만 사라진다 — **안전 측 실패가 아니다** (H-3 와 같은 종류) |
+| ⓒ **포인터를 지우지 않고 종결 상태로 전이시킨다** (채택) | 포인터는 **지워지는 값이 아니라 상태 기계**가 된다. 신규 필드 0, Rules 변경 0, 인덱스 변경 0. 같은 변경이 **S3 의 빈 이력까지 함께 닫는다**(§21.3) |
+
+### 확정 — 포인터는 상태 기계이고 종결 상태를 가진다
+
+`qoinBulkStatus` ∈ `in_progress` · `partial` · **`completed`** · **`superseded`** (뒤 2개 신규). **포인터 3필드를 삭제하지 않는다.** `qoinBulkHistoryId` 는 항상 마지막 시도를, `qoinBulkAt` 은 마지막 전이 시각을 가리킨다.
+
+| 전이 | 하는 곳 | 결과 |
+|---|---|---|
+| → `in_progress` | `applyBrandQoinRate` overwrite 시작 | 기존과 동일 (잠금) |
+| → `completed` | overwrite 정상 완료 / preserve 완료 | **삭제 대신 `completed`.** `resolveBulkBanner` 가 `none` 으로 읽는다 |
+| → `partial` | overwrite 중단 | 기존과 동일 |
+| `partial` → `superseded` | **포인터를 쓰는 모든 CF 경로**가 성공할 때: 새 `applyBrandQoinRate`(preserve·overwrite 모두) · `setQoinAccrualRate`(브랜드) · `setQoinAccrualEnabled`(브랜드) | 옛 이력 문서를 `status: 'superseded'` + `supersededBy`(새 historyId 또는 null) + `supersededAt` + `supersededByUid` 로 **마감**하고, 포인터는 새 시도의 것으로 교체되거나 `superseded` 로 전이한다. **같은 트랜잭션** |
+| `partial` → `completed` | same-value overwrite 인데 지울 개별 설정이 0 인 경우 (§21.3 의 "남은 일이 없다") | 새 이력을 만들지 않고 **옛 이력을 `completed` 로 마감** (`closedReason: 'nothing_left'`, `closedBy: uid`) + 포인터 `completed`. 응답 `{ changed: false, closed: true }` |
+
+이로써 **"지울 방법이 없는 상태" 가 존재하지 않는다**: 설정을 바꾸면 superseded 로 닫히고, 아무것도 안 바뀌었지만 남은 일도 없으면 completed 로 닫힌다. 남은 일이 **실제로 있는** 경우에만 `partial` 이 유지되고, 그때 `이어서 적용` 은 유효하다.
+
+- **거짓 경고 + 항상 실패하는 버튼(PROBE3)도 함께 사라진다.** 옛 이력이 영구 `partial` 로 남지 않는다.
+- **구버전 앱 호환**: `QoinBulkStatus.fromCode` 는 모르는 코드에 null 을 돌려주고, 포인터 null = 판정 `none` 이다. ② functions 배포 후 ③ 설치 전까지 구 앱은 `completed`/`superseded` 를 "중단 없음" 으로 읽는다 — **의미가 정확히 일치**하므로 과도기 창이 안전하다 (추가 조치 불요).
+- `op` 에 새 값을 만들지 않는다. 마감은 기존 이력 문서의 `status` 전이다.
+- **Rules·인덱스 변동 없음**: 3필드는 이미 `qoinManagedFields()` 에 있다. 허브의 `partial` 조회는 CG 이력이 아니라 브랜드 문서를 읽으므로 인덱스가 늘지 않는다.
+- **이력 문서를 삭제하지 않는다** (`audit_trail.md` — append-only 성질 보존). 마감은 상태 필드 전이다.
+
+---
+
+## 21.3 S3 — 빈 이력을 만들지 않는다 + `changed` 를 화면이 말한다
+
+### (a) 빈 이력 — 오래된 스캔을 트랜잭션 안에서 불신한다
+
+`scanStores` 는 트랜잭션 **밖**이다. 첫 호출이 1500곳을 전부 지운 뒤 트랜잭션에 도달한 호출은 `sameValue` + **스캔의 `withOverride=1500`** 을 믿고 "할 일 있음" 으로 판단해 포인터를 잠그고 **빈 이력**을 만든다 (tester 실측: 3동시 → 이력 3건, 실제 1 + 빈 2, 응답 모두 `changed=true`).
+
+**확정 가드** — §21.2 의 종결 상태가 이것을 그대로 닫는다.
+
+```
+scanStartedAt = Date.now()            // 스캔 직전
+scan = await scanStores(...)
+runTransaction:
+   snap = get(brandRef)
+   if isBulkInProgress(snap)                        -> failed-precondition   (기존)
+   sameValue 계산                                     (기존)
+   # 신규 — 스캔 무효화
+   if sameValue
+      && snap.qoinBulkStatus in {completed, superseded}
+      && snap.qoinBulkAt > scanStartedAt            -> { changed:false, staleScan:true }
+   if sameValue && (preserve || scan.withOverride == 0)
+      -> partial 포인터가 남아 있으면 §21.2 의 partial→completed 마감
+         아니면 { changed:false }                     (기존)
+```
+
+- 성립 근거: 포인터가 **종결 상태**이고 그 전이 시각이 **내 스캔 시작보다 뒤**라면, 다른 호출이 내 스캔 이후에 일괄 적용을 **끝까지 마쳤다**는 뜻이다. 끝까지 마쳤다면 지울 개별 설정은 남아 있지 않다 → 내 `withOverride` 는 반드시 낡은 값이다. **`partial` 은 이 가드에 넣지 않는다** — 그때는 실제로 남은 일이 있으므로 진행해야 한다.
+- 실패 방향: `qoinBulkAt` 은 Firestore 서버 시각, `scanStartedAt` 은 함수 컨테이너 시각이다. 컨테이너 시각이 앞서면 가드가 **발동하지 않고** 현행 동작(빈 이력)으로 떨어진다 — 더 나빠지지 않는다. 뒤서면 할 일이 있는데 noop 이 되는데, 그때 화면이 `이미 같은 값이에요` 를 말하고 admin 이 다시 누르면 **새 스캔**이 실제 값을 읽는다. **양쪽 모두 돈에 영향이 없다.** developer 는 가드 발동을 `console.warn` 으로 남긴다.
+- **단언 정정**: implementation 개정 2 의 "브랜드 이력 1건" 불변식은 틀렸다(`clearedCount>0` 인 이력만 세어 통과했다). 테스트는 **브랜드 이력 문서 수 자체**를 세야 한다 (§21.8).
+
+### (b) `changed` 를 화면이 소비한다 — "했는데 아무 일도 안 일어났다"
+
+Dart 어디에서도 `changed` 를 읽지 않는다(tester grep: presentation·usecases 소비 0). 결과 카드는 `status == completed` 만 보고 noop 에도 **"적용을 마쳤어요 · 적용된 매장 0곳"** 을 그린다.
+
+**확정**: `changed == false` 는 **적용 결과가 아니라 "바뀐 것이 없음"** 으로 말한다. 적용 결과 카드를 그리지 않는다.
+
+| 경로 | `changed == false` 일 때 |
+|---|---|
+| `applyBrandQoinRate` (일괄) | 결과 카드 대신 **`이미 같은 값이에요` 안내**. `closed: true` 면 한 줄 추가: `끝나지 않은 일괄 적용은 처리가 끝나 있어서 닫았어요`. 카운트 행(적용된 매장 / 초기화된 개별 설정)은 **보이지 않는다** |
+| `setQoinAccrualRate` (단건) | SnackBar `이미 같은 값이에요` (현재는 값이 같아도 "변경했어요" 라고 말할 가능성이 크다 — tester 코드 확인). **설계자 판정: 고친다.** 돈의 값을 바꿨다고 말하는 문장이 거짓이면 운영자가 "바뀐 줄 알고" 화면을 떠난다 |
+| `setQoinAccrualEnabled` (스위치) | 동일. 이미 응답에 `changed` 가 있다 (§20.5.2-5) |
+| `staleScan: true` | 사용자에게 구분해 보여주지 않는다 (`이미 같은 값이에요` 로 수렴). 서버 로그로만 구분한다 — 운영자가 알아야 할 사실이 아니다 |
+
+**불변식 (가드 테스트 대상)**: Qoin 쓰기 callable 의 응답을 소비하는 모든 화면은 `changed` 를 읽는다. 읽지 않고 성공 문구를 그리는 경로가 있으면 FAIL.
+
+---
+
+## 21.4 S6 — 정리 커밋이 안전하게 되도록
+
+마커(`TRANSITIONAL(spec §20.4.5)`)가 붙은 파일은 21개지만, **마커 없이 레거시 분기를 가진 파일이 7개**다: `qoin_rate_chain.dart`(L120) · `qoin_reenable_hint.dart`(L58·64·93·97) · `qoin_config_model.dart`(L24) · `functions/test/emulator.test.mjs`(섹션 I·`expectOf`) · `test/data/qoin_rate_models_test.dart` · `test/presentation/qoin_hub_states_test.dart` · `test_fixtures/qoin_rate_truth_table.json`(`resolve_legacy`·`transitionalExpect` — JSON 이라 주석 불가). 마커 grep 으로만 정리하면 컴파일이 깨진다.
+
+**마커를 더 붙이는 것으로는 닫히지 않는다.** 다음에 레거시 분기를 추가하는 사람이 마커를 빠뜨리면 같은 일이 반복된다. **기계가 목록을 강제하게** 만든다.
+
+### 확정 — 과도기 자산 목록을 테스트가 소유한다
+
+1. **마커를 7개 파일에 추가**한다. JSON 은 주석이 불가하므로 최상위 메타 키를 둔다:
+   ```json
+   { "_transitional": { "ref": "spec §20.4.5",
+                        "arrays": ["resolve_legacy"],
+                        "keys": ["transitionalExpect"] }, ... }
+   ```
+2. **`qoin_architecture_guard_test` 를 확장**한다 (현재 3개 파일만 확인).
+   - **레거시 토큰 집합**을 테스트에 선언한다: `legacyZero` · `isLegacyZero` · `QoinRateCellKind.legacyZero` · `resolve_legacy` · `transitionalExpect` · `legacyZeroCount` · `LEGACY_MESSAGE_PREFIX` · `migrateQoinZeroRates` · `migratedFromRate` · `auditBrandLinks`.
+   - 저장소 전체(`lib/` `functions/src/` `functions/test/` `test/` `test_fixtures/`)를 그 토큰으로 grep 해서 **나온 파일 집합이 테스트에 적힌 허용 목록과 정확히 같은지** 단언한다 (초과도 FAIL, 누락도 FAIL).
+   - 그 허용 목록에 적힌 **모든** 파일에 마커(또는 JSON 메타 키)가 있는지 단언한다.
+   - **마커를 grep 하지 않는다. 레거시를 실제로 만드는 토큰을 grep 한다.** 마커는 사람에게 보여주는 표지이고, 기계가 보는 것은 토큰이다. 이 역전이 S6 의 핵심 수정이다.
+3. **정리 커밋 절차**를 spec §20.4.5 에 추가한다 (아래 6·7 신규):
+   6. 허용 목록 파일 전체에서 토큰 제거 → 가드 테스트의 허용 목록을 **빈 집합**으로 만든다
+   7. `flutter analyze` 이슈 0 · `flutter test` 전건 · `npm --prefix functions test` 전건 · Rules 하네스 전건이 **모두 통과**해야 커밋한다. 하나라도 실패하면 정리 커밋을 쪼개지 않고 되돌린다
+4. 선행 조건은 불변: **마이그레이션 dry-run 0건**(§20.4.4 의 7) + `auditBrandLinks` 0건(보안 task §4.3 의 6).
+
+---
+
+## 21.5 S5 — `data_ownership.md` 드리프트 (설계자가 직접 갱신했다)
+
+| tester 지적 | 조치 |
+|---|---|
+| L119·L219 가 없는 함수명(`hasQoinRateOnCreate()` / `touchesQoinRate()`) | `hasQoinManagedOnCreate()` / `touchesQoinManaged()` 로 교정 + 보호 필드 **집합**임을 §2.5 / §2.11.1 양쪽에 명시 |
+| L118·L121·L159 가 `qoinAccrualRate` 만 말한다 | 보호 필드 5개 집합으로 교체 |
+| 포인터 3필드를 설명하는 곳이 없다 | **§2.11.1b 신설** — 의미 · 작성자(`applyBrandQoinRate` 만) · 읽는 쪽(허브·브랜드 목록·브랜드 편집) · 상태 기계(§21.2) |
+| §2.11.5 가 "미구현" 인데 구현됐다 / `skipped_rate_zero` 는 삭제됨 | 제목에서 "미구현" 제거 + 사유 코드를 현재 코드와 일치시킴(`skipped_accrual_disabled` 는 기록하지 않음, `skipped_invalid_enabled` 는 기록) |
+| L120 "pending 은 주문·적립 불가" 가 서버 보증이 아니다 | **문서만 고칠 문제가 아니다 — 판정했다.** 아래 |
+
+### L120 — 실제로 보증해야 하는가
+
+**사실**: `verifyTossPayment` 는 `stores` 를 읽지 않고(grep 0) 적립 트리거도 `status` 를 보지 않는다. 즉 `pending` 매장도 callable 직접 호출로 결제가 성립하고, 성립한 주문은 적립된다. **UI 에서만 막힌다.**
+
+**판정**:
+
+1. **문서는 즉시 교정한다** — "서버가 보증하지 않는다. UI 차단뿐이다" 로 적는다. 완료.
+2. **§20.5.6 #13(Q3 수용)의 근거가 약해진다.** 수용 문장은 "재생성 매장은 `pending` 이라 재승인 전까지 주문·적립이 없다" 였는데 그 전제가 서버 보증이 아니다. 실제 잔여 위험: **적립이 중단(`qoinAccrualEnabled: false`)된 매장의 점주가 자기 매장을 삭제·재생성해 중단 상태를 지우고, 미승인 상태로 직접 호출 결제를 태워 적립을 재개할 수 있다.** 돈이 나가는 방향이다. **#13 의 수용은 유지하되 근거를 이 사실로 교체**했다 (아래 §21.5-#13).
+3. **게이트를 지금 넣는 것은 설계자가 단독 확정하지 않는다.** 결제 거부는 **돈이 멈추는 방향**의 실패이고, 매장 `status` 데이터가 틀어진 한 건이 정상 결제를 막는다. 이번 배포는 이미 Rules·CF·앱·마이그레이션이 한 창에 들어가 있어 결제 경로를 같이 건드리면 실패 시 원인 분리가 어렵다. → **사용자 질문 Q-S1** (`brand_authorization_hardening/spec.md` §9 에 1건으로 통합. 설계자 추천: 별도 task)
+
+### §20.5.6 #13 의 수용 근거 교체
+
+| | 내용 |
+|---|---|
+| 기존 근거 | 재생성 매장은 `status: 'pending'` 이라 재승인 전까지 주문·적립이 발생하지 않는다 |
+| **정정** | 그 보증은 **UI 에만** 있다. 수용 근거는 ⓐ 실행에 **점주 본인의 SDK 직접 조작**이 필요하다 ⓑ 재생성은 개별 요율과 스위치를 **둘 다 지우므로** 결과는 "브랜드/전역 요율로 적립" 이고 임의 요율을 **올릴 수는 없다**(상한은 브랜드 또는 전역) ⓒ 재생성된 매장은 admin 승인 화면에 `pending` 으로 다시 올라오므로 **사후에 보인다** 로 교체한다. 잔여 위험은 "중단 상태의 우회" 1건이고 금액 상한은 상위 계층 요율이다 |
+| 후속 | Q-S1 ⓐ 를 택하면 이 경로는 서버에서 닫힌다. ⓑ 면 `backlog.md` 에 남는다 |
+
+---
+
+## 21.6 배포 순서 — 재확인 결과 **변경 없음**
+
+보안 Rules 수정(별도 task §7)이 들어와도 §20.11 의 순서를 **그대로 쓴다.**
+
+```
+① indexes → ② functions → ③ 앱 빌드·설치 → ④ rules
+→ ⑤ 브랜드 링크 점검(신규, auditBrandLinks) → ⑥ 마이그레이션 dry-run → ⑦ 실행
+→ ⑧ 라이브 검증 → ⑨ dry-run·점검 재확인 0건 → ⑩ 정리 커밋
+```
+
+| 재확인 항목 | 결과 |
+|---|---|
+| 보안 Rules 를 어느 단계에 넣는가 | **④ 그대로.** 별도 단계를 만들지 않는다 — Rules 배포는 파일 1개의 원자적 교체이고, Qoin 보호 필드와 `users`/`isBrandHolder`/`stores` create 변경을 **다른 시점에 올릴 방법이 없다** |
+| ③ → ④ 순서가 여전히 맞는가 | **더 강하게 맞다.** ④ 가 먼저면 구버전 앱의 **브랜드 신규 등록이 전면 실패**한다(batch 에 `users.brandId` 가 있어 batch 전체 거부). 기존에는 비상 정지 토글 하나가 근거였고, 이제 근거가 2개다 |
+| 새 앱 + 구 Rules(③~④ 구간)에 새 위험이 생겼는가 | **없다.** 새 앱이 `users.brandId` 를 **더 이상 쓰지 않고** `claimSubmittedBrand`(CF, Rules 우회)를 쓴다. 구 Rules 는 그 결과를 막을 수 없다. 승인 화면 강화는 읽기뿐이다 |
+| 비상 정지가 전 구간 안전한가 | **그대로 안전하다.** 보안 task 는 `config/{docId}` 블록을 건드리지 않는다. Qoin 쪽에서 추가되는 `enabledChangedAt == request.time`(§21.9-1)은 **④ 이후**에만 걸리고, 새 앱은 `FieldValue.serverTimestamp()` 를 보내므로(`qoin_remote_data_source.dart` L71) `request.time` 과 일치해 통과한다. ③~④ 구간은 구 Rules 라 무조건 통과. **구버전 앱 + 신 Rules 조합이 발생하는 구간은 없다** |
+| ⚠️ 조작 지시 (재강조) | **admin 조작용 기기가 2대 이상이면 ③ 에서 전 기기에 새 빌드를 설치한다.** ④ 이후 구버전 빌드가 남은 기기에서는 ⓐ 비상 정지 토글(`enabledChangedAt` 미강제 → 거부) ⓑ 브랜드 신규 등록(batch 거부) **둘 다** 막힌다. 근거가 하나 늘었다 |
+| ⑤ 를 ④ 뒤에 두는 이유 | `auditBrandLinks` 는 Admin SDK 라 Rules 와 무관하지만, **구멍이 닫힌 뒤에 세어야** 집계 중에 새 오염이 들어오지 않는다. 또 점검 카드가 ③ 의 산출물이므로 ③ 뒤여야 한다 |
+| 롤백 단위 | **③+④ 를 함께** (변동 없음). ②(functions)는 구 앱과 호환되므로 되돌리지 않는다 |
+| ③~④ 구간 고지 (tester 요청 반영) | 기존 "이력 화면이 권한 오류" 고지에 **한 줄 추가**: ~~"브랜드 편집 페이지의 중단 배너도 보이지 않는다"~~ → **S1 수정 후에는 보인다.** 포인터는 브랜드 문서에서 오고 브랜드 문서 read 는 구 Rules 에서도 열려 있다. 고지는 "본문의 처리 수/전체 수만 비어 보인다" 로 **완화**된다 |
+
+---
+
+## 21.7 재발 방지 — "같은 패턴이 다른 화면에 남는" 문제 (H-3 → S1)
+
+**개별 화면을 하나씩 고치는 방식이면 또 놓친다.** H-3 를 허브에서 고쳤는데 같은 결함이 브랜드 편집 페이지에 남은 이유는, design §18-8 이 **"허브" 라는 표면 1개만 규정**했기 때문이다. 명세가 표면을 1개로 가정하면 구현도 1개만 고친다.
+
+### 규칙 (이 저장소의 상시 규칙으로 승격한다)
+
+**R1. 한 사실에는 하나의 판정 함수.**
+돈·중단·정책 상태를 화면에 말하는 판정은 **domain 의 단일 함수**를 통과한다. 화면은 그 결과만 렌더하고 원시 필드·스트림을 직접 비교하지 않는다. 출처가 둘 이상(포인터 vs 이력 스트림)이면 설계 결함으로 본다.
+
+**R2. 표면 인벤토리를 spec 에 표로 둔다.** 한 사실 = 한 행이고, 그 사실을 말하는 **모든 화면을 전수 열거**한다. 열마다 ⓐ 판정 출처 ⓑ **출처 읽기가 실패했을 때 무엇이 보이는가** ⓒ 복구 동작이 있는가 를 채운다. **ⓑ 가 빈 칸이면 미설계다** (H-3 의 요구가 바로 ⓑ 였다). 새 화면을 추가하면서 이 표에 행을 추가하지 않으면 리뷰 FAIL.
+
+**R3. 기계로 고정한다.** 가드 테스트가 "판정 함수 밖에서 원시 출처를 읽는 곳이 없다" 를 grep 으로 단언한다. S1 에 대한 구체 단언: `isUnfinished(` 호출과 `qoinBulkStatus` 직접 비교는 **`resolveBulkBanner` 가 있는 파일 1곳**에서만 나온다.
+
+**R4. 알림과 복구를 같은 곳에 두거나, 알림에서 복구로 가는 길이 깨지지 않음을 증명한다.** S1 의 치명도는 "유일한 복구 버튼이 깨진 화면에만 있다" 에서 왔다. **알리는 곳과 고치는 곳이 다르면 그 경로는 테스트 대상**이다.
+
+**R5. tester 상시 항목.** "같은 사실을 말하는 표면을 전수 열거했는가" 를 `tester_guide.md` 체크리스트에 올린다 (이번 분배에 포함).
+
+### 이번 적용 — 중단(partial) 사실의 표면 인벤토리
+
+| 표면 | 판정 출처 | 출처 실패 시 | 복구 동작 |
+|---|---|---|---|
+| admin 허브 배너 | `resolveBulkBanner(brand)` | 브랜드 목록 자체가 에러 → `QoinLoadError` + `다시 시도` | 없음 (알림 전용) → 편집 페이지로 이동 |
+| 브랜드 목록 태그 `적용 중단됨` | 같은 함수 | 목록 에러 행 | 없음 |
+| 브랜드 편집 페이지 배너 | 같은 함수 | 브랜드 문서 에러 → 페이지 에러. **보조 숫자 읽기 실패 시 배너·버튼 유지, 숫자만 생략** | **`이어서 적용`** (유일) |
+| 이력 행의 `partial` plate | 이력 문서 자신의 `status` (그 행이 **그 문서에 대한 표시**이므로 출처가 같다 — 판정이 아니라 렌더다) | 이력 화면 에러 행 | admin 에게만 `이어서 적용` |
+| 점주·브랜드 읽기 화면 | 같은 함수 (plate 만, 버튼 없음) | 상위 화면 에러 | 없음 |
+
+`superseded`/`completed` 이력 행은 `partial` plate 를 **그리지 않는다** (§21.2).
+
+---
+
+## 21.8 작업 분배
+
+### designer — **호출 필요 (소폭, 배포 전)**
+
+| # | 항목 | 근거 |
+|---|---|---|
+| 1 | **§18-8 에 "브랜드 편집 페이지" 항목 추가** — 판정은 포인터, 본문 숫자는 `qoinBulkHistoryId` 로 읽는 이력 1건, **숫자 읽기 실패 시 배너·버튼 유지 + 숫자만 생략**. §21.7-R2 의 표면 인벤토리 표를 design 에 그대로 옮긴다 (§18-8 을 "허브만" 규정한 것이 S1 의 원인이다) | S1 |
+| 2 | **`이미 같은 값이에요` 상태** — 일괄 결과 카드의 신규 분기(카운트 행 없음), 단건·스위치 SnackBar 문구. `closed: true` 일 때의 한 줄 | S3-(b) |
+| 3 | **`적용 중단됨` 태그·배너가 사라지는 조건** 문구 보정 — 포인터가 종결(`completed`/`superseded`)되면 아무것도 보이지 않는다. "중단 기록 닫기" 같은 **사용자 동작은 없다** (§21.2-ⓐ 기각) | S2 |
+| 4 | **일괄 완료 화면의 K 줄 숨김을 form 섹션에도 적용** — design 에 한 줄 추가 (tester "과하지 않다" 판정, 문서 후행) | 정정 |
+| 5 | **매장 승인 상세 화면** — 브랜드 이름(폴백 금지) + **상속될 적립률** + 미존재/비승인 브랜드 warning plate + 승인 버튼 비활성 | 보안 task D5 |
+| 6 | **`_BrandIdMissingView`** — "브랜드 연결 중" / 자동 재연결 실패 안내 / 중복 등록 안내 3분기 | 보안 task D1-2 |
+| 7 | **(임시) 브랜드 링크 점검 카드** — 5분류 목록·건수. 마이그레이션 카드와 같은 형태, 정리 커밋에서 삭제 전제 | 보안 task §4.1 |
+
+제약 그대로: `AppColors` 만, 신규 색 토큰 0 목표. **신규 화면은 없다** — 전부 기존 화면의 상태 추가다.
+
+### developer — **파일 단위** (designer 완료 후)
+
+**백엔드 (TS)**
+
+| 파일 | 작업 |
+|---|---|
+| `functions/src/applyBrandQoinRate.ts` | ① 완료 시 포인터 **삭제 → `completed`** (§21.2) ② `partial` 포인터 발견 시 `superseded` 마감(옛 이력 문서 + 포인터, 같은 트랜잭션) ③ `scanStartedAt` 가드 — 종결 포인터가 스캔보다 뒤면 `{changed:false, staleScan:true}` + `console.warn` (§21.3-a) ④ same-value + 남은 일 0 + 포인터 `partial` → 옛 이력 `completed`(`closedReason:'nothing_left'`) + `{changed:false, closed:true}` ⑤ preserve 완료도 `completed` 포인터를 남긴다 |
+| `functions/src/setQoinAccrualRate.ts` | ① 브랜드 scope 성공 시 `partial` 포인터 `superseded` 마감 ② **레거시 0 가드 추가** (§21.9-2) ③ `changed` 반환 보장 |
+| `functions/src/setQoinAccrualEnabled.ts` | ① 브랜드 scope 성공 시 `superseded` 마감 ② `changed` 반환 (이미 있음 — 유지) |
+| `functions/src/qoinRate.ts` | `QoinBulkStatus` 에 `completed`·`superseded` 추가(TS 측 상수). 판정 헬퍼는 포인터 1곳 |
+| `firestore.rules` | ① `config/{docId}`: `enabled` 변경 시 `request.resource.data.enabledChangedAt == request.time` 요구 (§21.9-1) ② 보안 task 의 D1·D2·D5 + `roleHistory` 블록 |
+| `functions/src/claimSubmittedBrand.ts` | **신규** — 보안 task D1 |
+| `functions/src/auditBrandLinks.ts` | **신규(임시)** — 보안 task §4.1. `TRANSITIONAL(brand_authorization_hardening §4)` |
+| `functions/src/migrateQoinZeroRates.ts` | `describeRaw` — bool·배열·객체를 따옴표로 감싸지 않는다 (§21.9-4) |
+| `functions/src/index.ts` | 신규 callable 2개 export |
+
+**앱 (Dart)**
+
+| 파일 | 작업 |
+|---|---|
+| `lib/domain/entities/qoin_bulk_banner.dart` (신규) 또는 `qoin_rate_change_entity.dart` | **`resolveBulkBanner(BrandEntity, DateTime)`** 단일 판정 함수 (§21.1). `QoinBulkStatus` 에 `completed`·`superseded` 코드 추가, 미지 코드는 null 유지 |
+| `admin_qoin_brand_rate_edit_page.dart` | 배너 판정을 **이력 스트림 → `resolveBulkBanner`** 로 교체. 본문 숫자는 `qoinBulkHistoryId` 로 **이력 문서 1건** 읽기(신규 provider), 실패 시 숫자만 생략 |
+| `admin_qoin_settings_page.dart` | `_PartialSection` 을 같은 함수로 통일 + (임시) 브랜드 링크 점검 카드 |
+| 브랜드 목록(태그) 화면 | 같은 함수로 통일 |
+| `widgets/qoin_rate_confirm_dialog.dart` / 결과 카드 | `changed == false` → `이미 같은 값이에요`(카운트 행 없음), `closed` 한 줄 (§21.3-b) |
+| 단건·스위치 호출 지점 (usecase → 화면) | `changed` 를 반환·소비. SnackBar 분기 |
+| `lib/domain/repositories/qoin_rate_repository.dart` + impl + datasource | 응답의 `changed`/`closed`/`staleScan` 전달 (미지 키 관대) |
+| `lib/data/repositories/brand_repository_impl.dart` | `upsertBrand` 신규 분기: batch 에서 **`users` 쓰기 제거**, 브랜드 문서 1건 → `claimSubmittedBrand` 호출 |
+| `_BrandIdMissingView` + brand providers | `brands where submittedBy == uid` 조회 + 자동 재연결 3분기 |
+| `admin_store_approval_detail_page.dart` · `brand_scope_badge.dart` | 브랜드 이름 폴백 금지 + 상속 적립률 + 미존재/비승인 경고 + 승인 버튼 비활성 |
+| 마커 7개 파일 | `TRANSITIONAL` 주석 / JSON `_transitional` 메타 키 (§21.4-1) |
+
+**테스트**
+
+- `test/.../qoin_architecture_guard_test.dart` — ① **레거시 토큰 집합 ↔ 허용 목록 일치** 단언 (§21.4-2) ② `isUnfinished(`·`qoinBulkStatus` 직접 비교가 판정 함수 파일 1곳에만 있는지 (§21.7-R3) ③ Qoin 쓰기 응답 소비 지점이 `changed` 를 읽는지
+- `functions/test/` — ① **브랜드 이력 문서 수 자체**로 세는 동시 호출 테스트 (1500곳 3동시 → 이력 **1건**) ② `partial` 뒤 preserve / 단건 / 스위치 → 포인터 `superseded`, 허브 판정 `none`, 옛 이력 `superseded` ③ `partial` + 남은 개별 설정 0 + same value → `closed: true`, 포인터 `completed` ④ `completed` 포인터 뒤 같은 값 재적용(스캔 신선) → 정상 진행 ⑤ 보안 task CF1~CF8
+- `test_rules/rules.test.mjs` — ① 보안 task **RM01~RM20** ② `enabled` 변경 시 `enabledChangedAt` 생략 → **DENY**, `serverTimestamp` 동반 → ALLOW ③ 기존 전건 회귀
+- Dart 위젯 — ① 포인터 `partial` + 이력 읽기 실패 → 배너·버튼 **있음**(PROBE1 회귀 핀) ② 포인터 종결 + 옛 이력 `partial` → 배너 **없음**(PROBE3 회귀 핀) ③ `changed:false` → `이미 같은 값이에요`
+- 보고 필수: ⓐ 적립 1건당 read 수 **증가 0** ⓑ `grep` 잔존 0건 (기존 목록 + `qoinBulkStatus` 직접 비교) ⓒ 전건 회귀
+
+### tester — 재검증
+
+중점: ① S1 양방향(PROBE1/PROBE3) **재현으로** 확인 ② `partial` 종결 4경로(새 apply·preserve·단건·스위치) + `nothing_left` 닫기 ③ 1500곳 3동시 → **이력 1건** ④ `changed:false` 가 화면에 "적용" 으로 보이지 않는지 ⑤ **RM 스위트가 역할을 변조하며 때리는지** (고정 시드 재사용 0) + `brandId` 필드가 **없는** 매장 케이스(RM07)가 D2 없이는 ALLOW 임을 확인 ⑥ `claimSubmittedBrand` 멱등·이력·행위자 ⑦ 브랜드 전환 흐름 9단계(보안 task D1-2) **처음부터 끝까지** 1회 ⑧ 과도기 토큰 ↔ 허용 목록 일치가 기계로 단언되는지 ⑨ `audit_trail.md` §4 6항목 (Qoin §20.5.7 + 보안 task §6) ⑩ 실결제 0회
+
+### 설계자 (완료)
+
+- `docs/processes/data_ownership.md` 갱신 (§21.5)
+- `docs/processes/audit_trail.md` A4 행 갱신
+- `docs/backlog.md` 신규 항목
+- `docs/tasks/brand_authorization_hardening/spec.md` 신규
+
+---
+
+## 21.9 tester 정정 4건 + 보류 1건 — 설계자 판정
+
+### 1. `enabledChangedAt` 미강제 → **고친다 (Rules 1줄)**
+
+developer 의 "시각 위조는 가능하나 안전 측" 은 **사유가 틀렸다.** tester 정정이 맞다.
+
+- 시각 위조는 무해하다: 이력의 `changedAt` 은 `serverTimestamp` 이고 행위자는 `enabledChangedBy == uid()` 로 사칭 불가.
+- **실제 틈은 생략이다.** `enabledChangedBy` 만 쓰거나, 이전에 토글한 **같은 admin** 이 `enabled` 만 단독으로 쓰면 통과하고, 이력이 `source:'direct'` / `changedBy:null` 로 남아 **행위자가 지워진다.** 에뮬레이터 실측으로 확인됐다.
+- `audit_trail.md` **§4-4("누가 가 기록되는가")에 정면으로 걸린다.** 그리고 대상이 **비상 정지** — 돈을 멈추는 조작이고, 사고 조사에서 "누가 멈췄나" 를 가장 먼저 묻는 값이다. `onQoinConfigWritten` 이 `source` 를 `enabledChangedAt` 변동으로 판정하므로, 생략형은 **Console 편집과 구별되지 않는다** — 앱에서 한 조작이 Console 편집으로 기록된다.
+- **판정: 고친다.** `config/{docId}` update 에서 `enabled` 가 affectedKeys 에 있으면 `request.resource.data.enabledChangedAt == request.time` 을 요구한다.
+- **안전성**: 새 앱은 `FieldValue.serverTimestamp()` 를 보내므로(`qoin_remote_data_source.dart` L71) `request.time` 과 같아 통과한다. 비상 정지가 막히는 조합은 **구버전 앱 + 신 Rules** 뿐이고 그 구간은 발생하지 않는다 (§21.6). 그래도 "전 기기에 새 빌드" 지시의 근거가 하나 늘었으므로 §21.6 에 재강조했다.
+
+### 2. 단건 `setQoinAccrualRate` 에 레거시 0 가드 없음 → **추가한다**
+
+UI 는 브랜드 쓰기를 항상 일괄 CF 로 보내므로 admin 직접 호출만 해당한다(낮음). 그래도 추가한다: ⓐ **비용이 한 줄**이고 ⓑ 정리 커밋에서 **어차피 함께 삭제**되는 코드이고 ⓒ "보호가 한 경로에만 걸려 있다" 가 1차 F1 의 사고 형태였다. 과도기 자산이므로 §21.4 의 허용 목록에 포함한다.
+
+### 3. K 줄 숨김을 form 섹션에도 적용 → **수용. design 에 한 줄 추가** (§21.8 designer-4)
+
+브랜드가 꺼져 있으면 산하 **전체**가 멈추므로 "어느 쪽을 골라도 적립이 시작되지 않아요" 는 부분 사실이 되어 전체 정지 plate 와 모순된다. design §18 의 규칙을 같은 이유로 확장한 것이고, **코드가 앞서갔으니 문서를 맞춘다** (코드를 되돌리지 않는다).
+
+### 4. 마이그레이션 `raw` 표시 — bool·배열·객체에 따옴표가 덧붙는다 → **고친다 (낮음)**
+
+표시 전용 결함이지만 `raw` 의 **존재 이유가 "어떤 타입의 쓰레기 값이 들어 있나" 를 보여주는 것**이다. `true` 가 `"true"` 로 보이면 그 목적이 깨져 사용자가 Console 에서 잘못된 판단을 한다(§20.4.4 의 1 — 사용자가 `raw` 를 보고 처리 방법을 정한다). `describeRaw` 가 bool·배열·객체를 그대로 직렬화한다.
+
+### 5. 보류 — 실기기 `FirebaseFunctionsException.details` 가 `Map` 인지 → **라이브 검증 항목으로 넘긴다**
+
+에뮬레이터·위젯 테스트로 확인 불가하고, 플러그인이 `additionalData` 를 넘기는 경로는 **실기기에서만** 재현된다. 실패 시 영향은 "레거시 가드 문구가 일반 실패 문구로 보인다" 로 **읽기 전용·돈 무영향**이고, 폴백 문구도 실패를 정확히 알린다(안전 측). 배포를 막지 않는다.
+
+**§20.4.4 에 라이브 검증 1행을 추가한다**: 레거시 `qoinAccrualRate: 0` 매장이 하나 있는 브랜드에서 일괄 적용(`덮어쓰고 적용`) → **"레거시 0% 매장이 있어요 (N곳)"** 가 뜨면 PASS. 일반 실패 문구가 뜨면 `details` 가 넘어오지 않은 것 → `backlog.md` 로 (마이그레이션 실행으로 조건이 소멸하므로 그 뒤에는 재현 불가·무해).
+
+---
+
+## 21.10 남은 사용자 결정사항
+
+**1건.** `brand_authorization_hardening/spec.md` §9 의 **Q-S1** (결제 시점 매장 `status` 게이트를 이번 배포에 넣을지). 설계자 추천은 **별도 task**다. 근거는 §21.5 와 보안 task §9.
+
+그 외는 전건 설계자 확정이다 — S2 의 포인터 수명주기(§21.2)는 운영 판단이 아니라 기술 설계로 닫혔으므로 질문하지 않는다.

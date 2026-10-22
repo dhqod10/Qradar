@@ -277,6 +277,48 @@ Qoin 1차의 원장·잔액·멱등성·회수·고객 화면은 **그대로 재
 
 ---
 
+### ⬜ 결제 시점 매장 `status` 게이트 — **사용자 결정 대기 (Q-S1)** (2026-10-22 신규)
+
+`verifyTossPayment` 가 `stores` 를 **전혀 읽지 않는다**(grep 0). 적립 트리거도 `status` 를 보지 않는다. 따라서 `pending`(미승인 / 재제출 중) 매장도 **callable 직접 호출로 결제가 성립**하고 그 주문은 적립된다. **UI 에서만 막힌다.**
+
+- 걸리는 결정: `qoin_accrual_rate_hierarchy/spec.md` §20.5.6 **#13**(점주의 `stores.delete` → 같은 ID 재생성, 사용자 결정 Q3)의 수용 근거가 "재승인 전까지 주문·적립 불가" 였는데 **서버 보증이 아니다**. 근거를 §21.5 에서 교체했다 (실행에 점주 본인의 SDK 조작이 필요하고, 금액 상한은 브랜드/전역 요율이며, 재승인 요청이 admin 화면에 다시 올라온다).
+- 잔여 위험: **적립이 중단된 매장의 점주가 삭제·재생성으로 중단 상태를 지우고 미승인 상태에서 결제를 태워 적립을 재개**할 수 있다.
+- 넣을 때의 위험: 결제 거부는 **돈이 멈추는 방향**이다. 매장 `status` 데이터가 한 건이라도 틀어져 있으면 정상 결제가 막힌다.
+- 설계자 추천: **별도 task.** 1차 결제부터 있던 Qoin 무관 구멍이고, 계층화 배포 창(Rules·CF·앱·마이그레이션)에 결제 경로를 같이 넣으면 실패 시 원인 분리가 어렵다.
+- 참조: `docs/tasks/brand_authorization_hardening/spec.md` §9 · `docs/processes/data_ownership.md` §2.5
+
+---
+
+### ⬜ `brands` 문서 read 범위 축소 / `brandKey` 비공개화 (2026-10-22 신규)
+
+`match /brands/{brandId} { allow read: if isSignedIn(); }` — 로그인한 누구나 **모든 브랜드의 `brandKey`** 와 `companyName` / `businessRegistrationNumber` / `representativeName` / `contactPhone` / `headOfficeAddress` 를 읽는다.
+
+- **`brandKey` 가 비밀이 아니므로 가맹 신청의 "열쇠" 가 열쇠로 기능하지 않는다.** 점주가 brandKey 를 알고 있다는 사실은 어떤 권한 근거도 되지 못하고, 그래서 매장 create 의 `brandId` 자가 지정을 Rules 로 증명할 수 없다 (`brand_authorization_hardening/spec.md` D5 — 승인 게이트가 유일한 실질 통제).
+- 함께 고쳐야 하는 것: 고객 화면의 브랜드 표시 · 점주 매장 등록 폼의 brandKey 조회(`findByBrandKey`) · 브랜드 정보 화면의 brandKey read-only 노출 · `BrandScopeBadge`. 공개 필드와 비공개 필드를 나누거나(공개 서브문서) brandKey 조회를 CF 로 옮긴다.
+- 사업자번호·대표자명 공개는 그 자체로 별개 문제다.
+
+---
+
+### ⬜ admin 의 `users.brandId` 교정 화면 (2026-10-22 신규)
+
+`brandId` 를 CF 전담으로 옮기면서 **본인 교정을 의도적으로 막았다**(`brand_authorization_hardening/spec.md` D4). 잘못 연결된 계정의 교정 경로는 지금 **Firebase Console 수동 편집**뿐이다.
+
+- 그래서 교정 행위에 이력이 남지 않는다 (같은 spec §6-2 에서 수용, 사유 명시).
+- 화면을 만들 때는 CF + `users/{uid}/roleHistory` 1건을 같은 트랜잭션에 둔다.
+- 함께: `users.role` 변경 이력 전반(`audit_trail.md` A4) — `brandId` 조각만 구현됐다.
+
+---
+
+### ⬜ 중단(partial) 표면 인벤토리를 다른 기능으로 확장 (2026-10-22 신규)
+
+`qoin_accrual_rate_hierarchy/spec.md` §21.7 에서 확정한 규칙 — **"한 사실에는 하나의 판정 함수 + 표면 인벤토리 표 + grep 가드"** — 는 Qoin 중단 상태에만 적용됐다. 같은 종류의 "여러 화면이 같은 사실을 서로 다른 출처로 판정" 후보가 남아 있다.
+
+- 후보: 매장/브랜드 **승인 상태**(`status` + `approvedBy`/`rejectedReason` 조합을 여러 화면이 각자 해석), 주문 상태 배지, 전역 비상 정지 표시(고객·점주·admin 3화면).
+- 적용 순서: 표면 인벤토리 표를 먼저 만들고(ⓐ 판정 출처 ⓑ **출처 읽기 실패 시 보이는 것** ⓒ 복구 동작), 판정 함수로 모으고, grep 가드를 추가한다.
+- `docs/agents/tester_guide.md` 체크리스트에 "같은 사실을 말하는 표면을 전수 열거했는가" 상시 항목 추가 (이번 분배에 포함).
+
+---
+
 ### 🔮 UI 전면 개편 (모든 기능 개발 완료 후 — 2026-10-22 사용자 의사)
 
 사용자가 **전반적인 디자인 변경**을 계획하고 있으며, **기능 개발이 전부 끝난 뒤** 착수한다.

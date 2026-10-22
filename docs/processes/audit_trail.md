@@ -64,6 +64,7 @@ qoinTransactions/{id}
 | 결제 정보 | `orders/{id}.paymentInfo` | PG 응답 박제 (`paymentKey` / 카드사 / 승인시각) |
 | 환불 정보 | `orders/{id}.refundInfo` | 금액·사유 |
 | 매장 승인 메타 | `stores/{id}` 의 `submittedBy` / `submittedAt` / `approvedBy` / `approvedAt` / `rejectedReason` | **누가** 승인했는지 남는 드문 사례 |
+| 브랜드 권한 연결 | `users/{uid}/roleHistory/{id}` | `claimSubmittedBrand` 가 `brandId` 설정을 값과 같은 트랜잭션에 기록 (`changedBy` = 본인 uid) |
 | 주문 로그 | `users/{uid}/orderLogs/{id}` | 주문 생성 시 batch 로 함께 기록 |
 | Qoin 거래 원장 | `users/{uid}/qoinTransactions/{id}` | Qoin 1차. 당시 값 박제 |
 | Cloud Function 실행 | Google Cloud Logging | **30일 등 보존 기간 제한.** 영구 기록으로 믿으면 안 된다 |
@@ -75,7 +76,7 @@ qoinTransactions/{id}
 | **A1** | **적립률 변경 이력** (전역 / 브랜드 / 매장) | `qoin_accrual_rate_hierarchy` 의 **H7 로 포함 확정** |
 | A2 | 매장 운영 정보 변경 이력 (이름·주소·영업시간 등) | 미설계. 현재 덮어쓰기만 |
 | A3 | 메뉴 가격 변경 이력 | 미설계. 가격 분쟁 시 과거 가격 증명 불가 — **주문 문서에 당시 가격이 박제되는지 확인 필요** |
-| A4 | 역할 변경 이력 (customer ↔ owner ↔ brand) | 미설계. `users.role` 덮어쓰기 |
+| A4 | 역할 변경 이력 (customer ↔ owner ↔ brand) | **부분 (2026-10-22)** — `users.brandId`(= 브랜드 권한 값) 설정만 `users/{uid}/roleHistory` 에 남는다 (`brand_authorization_hardening`). `role` 필드 자체는 여전히 덮어쓰기다. **사유**: `brandId` 를 CF 전담으로 옮긴 뒤 `role` 단독으로는 어떤 자원 권한도 주지 않는다 — 권한을 결정하는 것은 `brandId` 다 |
 | A5 | admin 운영 행위 전반 (승인·반려·정지 등) | 부분적. `stores` 승인만 남고 나머지는 없음 |
 | A6 | Qoin 적립 **비용 정산** | **기능 자체가 미설계.** §5 참조 |
 
@@ -87,6 +88,8 @@ architect 는 spec 작성 시, 리뷰어는 검토 시 아래를 확인한다.
 
 1. **이 기능이 돈·권한·정책 값을 바꾸는가?**
    → 그렇다면 **설정 변경 이력이 필요하다.** 기본값은 "남긴다" 이고, 안 남기려면 사유를 spec 에 쓴다.
+
+   > **"권한 값" 을 좁게 보지 않는다.** 역할 문자열만이 권한이 아니다. **한 필드가 어떤 자원 트리의 쓰기 권한을 결정하면 그것이 권한 값이다** — `users.brandId` 1개가 브랜드 전체와 산하 매장의 메뉴·가격 쓰기를 열었다 (`brand_authorization_hardening` §2). 그런 필드는 **클라이언트 쓰기를 닫고 CF 전담 + 이력**이 기본값이다.
 
 2. **덮어쓰기로 사라지는 값이 있는가?**
    → 사라지면 안 되는 값인지 판단한다. Firestore 는 이전 값을 보관하지 않는다.
