@@ -58,6 +58,19 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
     }
 
+    // Qoin 적립률 필드(`qoinAccrualRate`)를 건드리는 update 인가?
+    // 적립률 쓰기는 Cloud Function(setQoinAccrualRate / applyBrandQoinRate) 전담이다.
+    // admin 전권 분기도 예외가 아니다 (1차 F1: 보호가 한 경로에만 걸려 있어 구멍이 났다).
+    // 사용처: stores / brands 의 update 최상위 조건.
+    function touchesQoinRate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(['qoinAccrualRate']);
+    }
+
+    // create 문서에 Qoin 적립률 필드가 들어 있는가? (create 경로 차단용)
+    function hasQoinRateOnCreate() {
+      return 'qoinAccrualRate' in request.resource.data;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // users/{uid}
     // ─────────────────────────────────────────────────────────────────────────
@@ -258,17 +271,21 @@ service cloud.firestore {
       allow read: if isSignedIn();
 
       // create: owner role 사용자가 본인 ownerId 로 등록. status 는 'pending' 으로 시작.
+      // 적립률 필드는 create 로도 심을 수 없다 (CF 전담).
       allow create: if isOwner()
                     && request.resource.data.ownerId == uid()
-                    && request.resource.data.get('status', 'pending') == 'pending';
+                    && request.resource.data.get('status', 'pending') == 'pending'
+                    && !hasQoinRateOnCreate();
 
       // delete: 점주 본인 또는 admin
       allow delete: if isAdmin() || isStoreOwner(storeId);
 
       // update: admin 전권, 점주 운영 필드, brand 운영 필드 (status/ownerId/brandId 제외)
-      allow update: if isAdmin()
-                    || isStoreOwnerFieldUpdate(storeId)
-                    || isStoreOwnerBrandUpdate();
+      // 적립률 필드 변경은 모든 분기(admin 전권 포함)에서 거부 — CF 전담.
+      allow update: if !touchesQoinRate()
+                    && (isAdmin()
+                        || isStoreOwnerFieldUpdate(storeId)
+                        || isStoreOwnerBrandUpdate());
 
       // 점주가 자기 매장 핵심/운영 필드 업데이트.
       // - 핵심 필드 수정(updateStoreCoreFields): status=pending 회귀 + submittedBy/At 갱신 허용.
@@ -335,6 +352,16 @@ service cloud.firestore {
           );
       }
 
+      // ── stores/{storeId}/qoinRateHistory/{id} ──────────────────────────────
+      // 매장 적립률 변경 이력. read: admin / 해당 매장 점주 / 해당 매장 소속 브랜드 보유자.
+      // 쓰기는 CF 전담 — admin 도 불가 (1차 원장 qoinTransactions 와 같은 패턴).
+      match /qoinRateHistory/{historyId} {
+        allow read: if isAdmin()
+                    || isStoreOwner(storeId)
+                    || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
+        allow create, update, delete: if false;
+      }
+
       // ── stores/{storeId}/subCategories/{id} ───────────────────────────────
       match /subCategories/{subCategoryId} {
         allow read: if isSignedIn();
@@ -382,18 +409,22 @@ service cloud.firestore {
 
       // create: admin 전권 또는 brand 유저 자기 신청.
       // brand 유저 조건: 본인 uid 가 submittedBy, status=pending, brandKey='' (승인 전 미발급).
-      allow create: if isAdmin()
-                    || (isBrand()
-                        && request.resource.data.get('submittedBy', '') == uid()
-                        && request.resource.data.get('status', '') == 'pending'
-                        && request.resource.data.get('brandKey', '') == '');
+      // 적립률 필드는 create 로도 심을 수 없다 (admin 포함, CF 전담).
+      allow create: if !hasQoinRateOnCreate()
+                    && (isAdmin()
+                        || (isBrand()
+                            && request.resource.data.get('submittedBy', '') == uid()
+                            && request.resource.data.get('status', '') == 'pending'
+                            && request.resource.data.get('brandKey', '') == ''));
 
       // delete: admin 만
       allow delete: if isAdmin();
 
       // update: admin 전권, brand 본인은 운영 필드만 (status/brandKey 는 admin 전용)
-      allow update: if isAdmin()
-                    || isBrandSelfUpdate(brandId);
+      // 적립률 필드 변경은 모든 분기(admin 전권 포함)에서 거부 — CF 전담.
+      allow update: if !touchesQoinRate()
+                    && (isAdmin()
+                        || isBrandSelfUpdate(brandId));
 
       // brand 본인 운영 필드 업데이트.
       // - 운영 필드 + 승인 메타 회귀 필드(status→pending, submittedBy, submittedAt, rejectedReason) 허용.
@@ -419,6 +450,13 @@ service cloud.firestore {
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
             ['brandKey', 'approvedBy', 'approvedAt', 'createdAt']
           );
+      }
+
+      // ── brands/{brandId}/qoinRateHistory/{id} ──────────────────────────────
+      // 브랜드 적립률 변경 이력 (일괄 적용 1건 포함). read: admin / 해당 브랜드 보유자. 쓰기는 CF 전담.
+      match /qoinRateHistory/{historyId} {
+        allow read: if isAdmin() || isBrandHolder(brandId);
+        allow create, update, delete: if false;
       }
 
       // ── brands/{brandId}/menuItems/{id} ───────────────────────────────────
@@ -553,13 +591,33 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
 
+    // 적립률 변경 이력 collection group — admin 전체 조회 전용 (read 만). 점주/브랜드는 자기 서브컬렉션만.
+    match /{path=**}/qoinRateHistory/{historyId} {
+      allow read: if isAdmin();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // config/{docId} — 운영 설정 문서 (config/qoin: 적립률 / kill switch)
-    // read: 로그인 사용자 (고객 앱이 적립률 안내 문구에 사용). write: admin 만.
+    // read: 로그인 사용자 (읽기 전용 노출 / 관리자 화면).
+    //
+    // 적립률(`accrualRate`)은 CF(setQoinAccrualRate) 전담 — admin 의 SDK 직접 쓰기도 거부한다
+    // (이력 누락 방지, H7). `enabled`(비상 정지)만 admin 직접 쓰기를 유지한다: CF 장애 중에도
+    // 끌 수 있어야 하기 때문. 그 변경은 onQoinConfigWritten 트리거가 이력으로 남긴다.
+    // delete 도 막는다 (삭제 = accrualRate 소멸 = 적립률 쓰기 경로).
     // ─────────────────────────────────────────────────────────────────────────
     match /config/{docId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow create: if isAdmin()
+                    && !('accrualRate' in request.resource.data);
+      allow update: if isAdmin()
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['accrualRate']);
+      allow delete: if false;
+
+      // config/qoin/qoinRateHistory/{id} — 전역 적립률 / 비상 정지 변경 이력. CF 전담 쓰기.
+      match /qoinRateHistory/{historyId} {
+        allow read: if isAdmin();
+        allow create, update, delete: if false; // admin 도 불가 (1차 원장과 같은 패턴)
+      }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

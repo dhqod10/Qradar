@@ -11,8 +11,12 @@
  *     (전량 재계산 / FieldValue.increment 사용 금지 — 2차 Qoin 사용과 레이스 + balanceAfter 정합성)
  *   - 멱등: 결정적 문서 ID `earn_{orderId}` / `clawback_{orderId}` + 트랜잭션 내 선존재 가드.
  *   - users 에는 `qoinBalance` 1필드만 쓴다 (updatedAt 금지). orders 는 읽기 전용.
- *   - 적립률은 `config/qoin` 에서만 읽는다. 코드에 기본값 폴백을 두지 않는다 (fail-closed).
- *   - enabled !== true 이면 적립도 **회수도** 하지 않는다 (spec §5.5).
+ *   - 적립률은 계층 해석(매장 → 브랜드 → 전역 `config/qoin`)으로 읽는다. 코드에 기본값 폴백을 두지 않는다
+ *     (fail-closed). 무효 값은 상위로 폴백하지 않고 멈춘다 (docs/tasks/qoin_accrual_rate_hierarchy/spec.md §6).
+ *   - enabled !== true 이면 적립도 **회수도** 하지 않는다 (spec §5.5). 전역 비상 정지는 둘 다 멈춘다.
+ *   - 매장/브랜드의 명시적 `0` 은 **적립만** 막는다. 회수는 적립률을 읽지 않고 원장 금액을 반전하므로
+ *     0% 여도 통과한다 (막으면 환불된 Qoin 이 남아 돈이 샌다).
+ *   - 계층 읽기는 earn 분기 안에서 `getAll` 1 라운드트립으로 한다 (회수 경로 read 증가 0).
  *   - 실패 정책: 알림 CF 와 정반대. 일시 장애는 throw (retry: true 로 재시도, 멱등하므로 안전),
  *     영구 오류는 console.error + return. 조용히 삼키지 않는다.
  *   - 단수 처리는 버림(floor) 고정. round / ceil 금지.
@@ -23,16 +27,21 @@
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { classifyRate, computeEarnAmount, resolveEffectiveRate } from "./qoinRate";
 
 const LOG = "[onOrderQoinSettled]";
 
 type Outcome = "applied" | "already_applied";
 
-/** config/qoin 을 검증해 반환. 영구 오류면 null (이미 로그 출력). 읽기 실패는 throw. */
+/**
+ * config/qoin 을 읽어 kill switch 를 판정한다. 영구 오류(부재 / enabled != true)면 null (이미 로그 출력).
+ * 읽기 실패는 throw. **적립률 검증은 여기서 하지 않는다** — 회수는 적립률을 읽지 않으며,
+ * 전역 적립률이 깨져도 환불 회수는 막히면 안 된다.
+ */
 async function loadConfig(
   db: admin.firestore.Firestore,
   orderId: string
-): Promise<{ accrualRate: number } | null> {
+): Promise<{ rawAccrualRate: unknown } | null> {
   const snap = await db.collection("config").doc("qoin").get(); // 실패 시 throw -> 재시도
   if (!snap.exists) {
     console.error(`${LOG} skipped_no_config: config/qoin missing. orderId:`, orderId);
@@ -43,30 +52,7 @@ async function loadConfig(
     console.warn(`${LOG} skipped_disabled: config/qoin.enabled != true. orderId:`, orderId);
     return null;
   }
-  const rate = data.accrualRate;
-  // 관리자 화면의 경계(0.1~20%)와 동일하게 서버에서도 막는다.
-  // CF 가 0..1 만 보면 Console 로 `0.5` 를 써 50% 적립이 가능해진다 — 화면 검증은
-  // 우회될 수 있으므로 돈을 발행하는 쪽에도 같은 경계가 있어야 한다.
-  const MIN_RATE = 0.001; // 0.1%
-  const MAX_RATE = 0.2; //  20%
-  if (
-    typeof rate !== "number" ||
-    !Number.isFinite(rate) ||
-    rate < MIN_RATE ||
-    rate > MAX_RATE
-  ) {
-    console.error(`${LOG} skipped_invalid_rate: accrualRate invalid. orderId:`, orderId, "value:", rate);
-    return null;
-  }
-  return { accrualRate: rate };
-}
-
-/**
- * floor(total * rate). 부동소수 오차(4500*0.03 등) 를 피하려고 ppm 정수로 환산해 계산한다.
- */
-function computeEarnAmount(total: number, rate: number): number {
-  const ppm = Math.round(rate * 1_000_000);
-  return Math.floor((total * ppm) / 1_000_000);
+  return { rawAccrualRate: data.accrualRate };
 }
 
 interface TxInput {
@@ -155,9 +141,47 @@ export const onOrderQoinSettled = onDocumentUpdated(
         console.error(`${LOG} skipped_invalid_total. orderId:`, orderId, "totalPrice:", total);
         return;
       }
-      const amount = computeEarnAmount(total, config.accrualRate);
+      // ── 계층 해석 (매장 → 브랜드 → 전역). earn 분기 안에서만 읽는다 (회수 경로 read 증가 0).
+      const storeId = after.storeId;
+      if (typeof storeId !== "string" || storeId.length === 0) {
+        // 조용한 빈 값 방지: 매장을 특정할 수 없으면 어떤 적립률도 고를 수 없다.
+        console.error(`${LOG} skipped_invalid_store. orderId:`, orderId, "storeId:", storeId);
+        return;
+      }
+      const brandId =
+        typeof after.brandId === "string" && after.brandId.length > 0 ? after.brandId : null;
+      const refs = [db.collection("stores").doc(storeId)];
+      if (brandId) refs.push(db.collection("brands").doc(brandId));
+      const snaps = await db.getAll(...refs); // 1 라운드트립. 실패 시 throw -> 재시도
+      const storeSnap = snaps[0];
+      const brandSnap = brandId ? snaps[1] : undefined;
+
+      // 문서 부재(!exists) = 그 단계 설정 없음 = 상위 상속. 필드 부재(undefined) 도 같다.
+      const storeCell = classifyRate(storeSnap.exists ? storeSnap.get("qoinAccrualRate") : undefined);
+      const brandCell = classifyRate(brandSnap?.exists ? brandSnap.get("qoinAccrualRate") : undefined);
+      const globalCell = classifyRate(config.rawAccrualRate, false);
+      const resolved = resolveEffectiveRate(storeCell, brandCell, globalCell);
+
+      if (!resolved.ok) {
+        // fail-closed. 어느 범위 때문에 멈췄는지 로그만으로 판별되게 reason 을 남긴다.
+        console.error(`${LOG} skipped_invalid_rate: ${resolved.reason}. orderId:`, orderId, {
+          storeId,
+          brandId,
+          store: storeCell,
+          brand: brandCell,
+          global: globalCell,
+        });
+        return;
+      }
+      if (resolved.rate === 0) {
+        // 명시적 0% 는 적립만 막는다. 회수는 이 분기를 지나지 않으므로 영향 없다.
+        console.info(`${LOG} skipped_rate_zero. orderId:`, orderId, { source: resolved.source, storeId });
+        return;
+      }
+
+      const amount = computeEarnAmount(total, resolved.rate);
       if (amount <= 0) {
-        console.info(`${LOG} skipped_zero_amount. orderId:`, orderId, { total, rate: config.accrualRate });
+        console.info(`${LOG} skipped_zero_amount. orderId:`, orderId, { total, rate: resolved.rate });
         return;
       }
 
@@ -175,7 +199,9 @@ export const onOrderQoinSettled = onDocumentUpdated(
           // 나중에 추가하면 과거 원장에 값이 없어 소급 집계가 불가능하므로 지금부터 남긴다.
           brandId: (after.brandId as string | undefined) ?? null,
           orderTotalPrice: total,
-          accrualRate: config.accrualRate,
+          accrualRate: resolved.rate,
+          // 이 적립이 누구의 정책 때문에 발생했는지 (정산 N1 의 선행 자산). 지금 박제하지 않으면 소급 불가.
+          accrualRateSource: resolved.source,
         },
       });
       logResult(result, "earn", orderId, userId, amount);
@@ -209,6 +235,8 @@ export const onOrderQoinSettled = onDocumentUpdated(
         brandId: (earn.brandId as string | undefined) ?? (after.brandId as string | undefined) ?? null,
         orderTotalPrice: earn.orderTotalPrice ?? 0,
         accrualRate: earn.accrualRate ?? 0,
+        // clawback 은 earn 문서에서 상속한다 (brandId 와 같은 패턴). 없던 과거 원장은 null.
+        accrualRateSource: earn.accrualRateSource ?? null,
       },
     });
     logResult(result, "clawback", orderId, userId, amount);

@@ -22,3 +22,6 @@ export { onOrderRefundRequested } from "./onOrderRefundRequested";
 export { onOrderStatusChanged } from "./onOrderStatusChanged";
 export { onReviewWritten } from "./onReviewWritten";
 export { onOrderQoinSettled } from "./onOrderQoinSettled";
+export { setQoinAccrualRate } from "./setQoinAccrualRate";
+export { applyBrandQoinRate } from "./applyBrandQoinRate";
+export { onQoinConfigWritten } from "./onQoinConfigWritten";
