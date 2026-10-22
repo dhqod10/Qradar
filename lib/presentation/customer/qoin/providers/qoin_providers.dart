@@ -12,8 +12,9 @@ import 'package:qradar/presentation/customer/qoin/providers/qoin_di_providers.da
 ///
 /// 프로필이 아직 없으면(로딩/로그아웃) 빈 목록이 아니라 **스트림을 만들지 않고 대기**한다 —
 /// 로딩 중 "내역 없음" 이 보이면 안 된다.
-final qoinTransactionsProvider =
-    StreamProvider<List<QoinTransactionEntity>>((ref) {
+final qoinTransactionsProvider = StreamProvider<List<QoinTransactionEntity>>((
+  ref,
+) {
   // uid 만 select — 잔액 변경(프로필 갱신) 때마다 내역 스트림을 재구독하지 않는다.
   final uid = ref.watch(
     currentUserProfileProvider.select((a) => a.asData?.value?.uid),

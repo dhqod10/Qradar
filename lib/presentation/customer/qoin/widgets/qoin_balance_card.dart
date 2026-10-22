@@ -103,10 +103,8 @@ class _BalanceArea extends StatelessWidget {
           ),
         ),
       ),
-      error: (_, _) => _BalanceFallback(
-        message: '잔액을 불러오지 못했어요',
-        onRetry: onRetry,
-      ),
+      error: (_, _) =>
+          _BalanceFallback(message: '잔액을 불러오지 못했어요', onRetry: onRetry),
       data: (user) {
         if (user == null) {
           return const _BalanceFallback(message: '로그인이 필요해요');

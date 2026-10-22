@@ -14,8 +14,7 @@ class QoinRepositoryImpl implements QoinRepository, QoinConfigAdminRepository {
   Stream<List<QoinTransactionEntity>> watchTransactions(
     String uid, {
     required int limit,
-  }) =>
-      _ds.watchTransactions(uid, limit: limit);
+  }) => _ds.watchTransactions(uid, limit: limit);
 
   @override
   Stream<QoinConfigEntity?> watchConfig() => _ds.watchConfig();

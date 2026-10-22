@@ -34,8 +34,8 @@ String qoinSpokenText(QoinTransactionEntity tx) {
   final verb = amount > 0
       ? '$abs Q ${tx.type == QoinTransactionType.earn ? '적립' : '증가'}'
       : amount < 0
-          ? '$abs Q ${tx.type == QoinTransactionType.clawback ? '회수' : '감소'}'
-          : '0 Q';
+      ? '$abs Q ${tx.type == QoinTransactionType.clawback ? '회수' : '감소'}'
+      : '0 Q';
   final after = amount >= 0 ? '적립 후' : '회수 후';
   final date = tx.createdAt == null
       ? ''
@@ -96,7 +96,10 @@ class QoinTransactionTile extends StatelessWidget {
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: iconBg),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: iconBg,
+                ),
                 child: Icon(icon, size: 18, color: iconFg),
               ),
               const SizedBox(width: 12),
@@ -150,7 +153,9 @@ class QoinTransactionTile extends StatelessWidget {
                         QoinFormatters.signed(amount),
                         style: TextStyle(
                           fontSize: 16,
-                          fontWeight: isLoss ? FontWeight.w600 : FontWeight.w700,
+                          fontWeight: isLoss
+                              ? FontWeight.w600
+                              : FontWeight.w700,
                           color: isLoss
                               ? AppColors.textMuted
                               : AppColors.textHeading,

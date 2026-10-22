@@ -59,7 +59,9 @@ class QoinPolicy {
     if (whole.isEmpty && frac.isEmpty) {
       return const RateInputResult(RateInputStatus.malformed);
     }
-    final value = double.parse('${whole.isEmpty ? '0' : whole}.${frac.isEmpty ? '0' : frac}');
+    final value = double.parse(
+      '${whole.isEmpty ? '0' : whole}.${frac.isEmpty ? '0' : frac}',
+    );
     if (value < minTenths / 10) {
       return const RateInputResult(RateInputStatus.tooLow);
     }
@@ -71,7 +73,8 @@ class QoinPolicy {
       return const RateInputResult(RateInputStatus.tooPrecise);
     }
     final tenths =
-        (int.parse(whole.isEmpty ? '0' : whole)) * 10 + (frac.isEmpty ? 0 : int.parse(frac));
+        (int.parse(whole.isEmpty ? '0' : whole)) * 10 +
+        (frac.isEmpty ? 0 : int.parse(frac));
     return RateInputResult(RateInputStatus.valid, tenths);
   }
 

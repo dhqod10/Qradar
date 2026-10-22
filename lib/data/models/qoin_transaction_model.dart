@@ -8,8 +8,7 @@ class QoinTransactionModel {
 
   static QoinTransactionEntity fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
-  ) =>
-      fromMap(doc.id, doc.data() ?? const <String, dynamic>{});
+  ) => fromMap(doc.id, doc.data() ?? const <String, dynamic>{});
 
   /// 방어적 파싱. 누락/비정상 필드는 안전 기본값. amount 부호는 그대로 보존.
   static QoinTransactionEntity fromMap(String id, Map<String, dynamic> data) {

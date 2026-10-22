@@ -26,19 +26,20 @@ final qoinConfigAdminRepositoryProvider = Provider<QoinConfigAdminRepository>(
 
 final watchQoinTransactionsUseCaseProvider =
     Provider<WatchQoinTransactionsUseCase>((ref) {
-  return WatchQoinTransactionsUseCase(ref.watch(qoinRepositoryProvider));
-});
+      return WatchQoinTransactionsUseCase(ref.watch(qoinRepositoryProvider));
+    });
 
 final watchQoinConfigUseCaseProvider = Provider<WatchQoinConfigUseCase>((ref) {
   return WatchQoinConfigUseCase(ref.watch(qoinRepositoryProvider));
 });
 
-final saveQoinAccrualRateUseCaseProvider =
-    Provider<SaveQoinAccrualRateUseCase>((ref) {
-  return SaveQoinAccrualRateUseCase(
-    ref.watch(qoinConfigAdminRepositoryProvider),
-  );
-});
+final saveQoinAccrualRateUseCaseProvider = Provider<SaveQoinAccrualRateUseCase>(
+  (ref) {
+    return SaveQoinAccrualRateUseCase(
+      ref.watch(qoinConfigAdminRepositoryProvider),
+    );
+  },
+);
 
 final setQoinEnabledUseCaseProvider = Provider<SetQoinEnabledUseCase>((ref) {
   return SetQoinEnabledUseCase(ref.watch(qoinConfigAdminRepositoryProvider));

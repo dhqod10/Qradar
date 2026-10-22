@@ -105,12 +105,14 @@ class _Ledger extends StatelessWidget {
     for (var i = 0; i < list.length; i++) {
       final tx = list[i];
       if (i > 0) {
-        rows.add(const Divider(
-          height: 1,
-          color: AppColors.border,
-          indent: 16,
-          endIndent: 16,
-        ));
+        rows.add(
+          const Divider(
+            height: 1,
+            color: AppColors.border,
+            indent: 16,
+            endIndent: 16,
+          ),
+        );
       }
       rows.add(
         QoinTransactionTile(
@@ -118,10 +120,10 @@ class _Ledger extends StatelessWidget {
           onTap: tx.orderId.isEmpty
               ? null
               : () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => OrderDetailPage(orderId: tx.orderId),
-                    ),
+                  MaterialPageRoute<void>(
+                    builder: (_) => OrderDetailPage(orderId: tx.orderId),
                   ),
+                ),
         ),
       );
     }
@@ -146,13 +148,13 @@ class _LedgerSkeleton extends StatelessWidget {
   const _LedgerSkeleton();
 
   Widget _box(double w, double h) => Container(
-        width: w,
-        height: h,
-        decoration: BoxDecoration(
-          color: AppColors.border,
-          borderRadius: BorderRadius.circular(6),
-        ),
-      );
+    width: w,
+    height: h,
+    decoration: BoxDecoration(
+      color: AppColors.border,
+      borderRadius: BorderRadius.circular(6),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {

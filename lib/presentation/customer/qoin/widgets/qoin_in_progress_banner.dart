@@ -21,7 +21,8 @@ class QoinInProgressBanner extends ConsumerWidget {
       child: Semantics(
         button: true,
         excludeSemantics: true,
-        label: '진행 중인 주문이 $count건 있어요. 픽업이 완료되면 Qoin 이 적립돼요. '
+        label:
+            '진행 중인 주문이 $count건 있어요. 픽업이 완료되면 Qoin 이 적립돼요. '
             '탭하면 Log 탭으로 이동',
         child: Material(
           color: Colors.transparent,

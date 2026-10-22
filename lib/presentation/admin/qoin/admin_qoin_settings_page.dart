@@ -73,10 +73,8 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => _RateChangeDialog(
-        currentTenths: current,
-        newTenths: newTenths,
-      ),
+      builder: (_) =>
+          _RateChangeDialog(currentTenths: current, newTenths: newTenths),
     );
     if (ok != true || !mounted) return;
 
@@ -127,8 +125,10 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textBody),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppColors.textBody,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text('Qoin 설정'),
@@ -146,9 +146,8 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
-        error: (_, _) => _LoadError(
-          onRetry: () => ref.invalidate(qoinConfigProvider),
-        ),
+        error: (_, _) =>
+            _LoadError(onRetry: () => ref.invalidate(qoinConfigProvider)),
         data: (cfg) {
           _initFrom(cfg);
           return _buildBody(cfg);
@@ -222,8 +221,9 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
             child: ElevatedButton(
               onPressed: canSave ? () => _onSaveRate(cfg) : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    canSave ? AppColors.primary : AppColors.textMuted,
+                backgroundColor: canSave
+                    ? AppColors.primary
+                    : AppColors.textMuted,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -268,8 +268,11 @@ class _LoadError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded,
-                size: 48, color: AppColors.error),
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 48,
+              color: AppColors.error,
+            ),
             const SizedBox(height: 12),
             const Text(
               '설정을 불러오지 못했어요',
@@ -322,8 +325,7 @@ class _CurrentConfigCard extends StatelessWidget {
     final enabled = cfg?.enabled ?? false;
     final hasRate = rate != null;
     final tenths = hasRate ? QoinPolicy.tenthsFromRate(rate) : null;
-    final preview =
-        tenths == null ? null : QoinPolicy.previewAmount(tenths);
+    final preview = tenths == null ? null : QoinPolicy.previewAmount(tenths);
 
     final rateText = hasRate ? QoinPolicy.formatRatePercent(rate) : '설정 없음';
     final pill = enabled ? '적립 중' : '적립 중단됨';
@@ -331,8 +333,8 @@ class _CurrentConfigCard extends StatelessWidget {
     return Semantics(
       label: hasRate
           ? '현재 적용 중. 적립률 ${QoinPolicy.formatTenths(tenths!)}퍼센트, $pill. '
-              '결제 ${PriceFormatter.formatKrw(QoinPolicy.previewPaymentKrw)}이면 '
-              '${QoinFormatters.number(preview!)} Q 적립'
+                '결제 ${PriceFormatter.formatKrw(QoinPolicy.previewPaymentKrw)}이면 '
+                '${QoinFormatters.number(preview!)} Q 적립'
           : '현재 적용 중. 설정 없음, $pill',
       excludeSemantics: true,
       child: Container(
@@ -397,8 +399,10 @@ class _CurrentConfigCard extends StatelessWidget {
               )
             else
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.warning.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(12),
@@ -495,8 +499,9 @@ class _EnabledSwitchCard extends StatelessWidget {
                   // 낙관적 업데이트 금지: 값은 항상 서버(스트림) 값.
                   value: enabled,
                   activeThumbColor: AppColors.primary,
-                  activeTrackColor:
-                      AppColors.primaryBright.withValues(alpha: 0.3),
+                  activeTrackColor: AppColors.primaryBright.withValues(
+                    alpha: 0.3,
+                  ),
                   inactiveThumbColor: AppColors.textMuted,
                   inactiveTrackColor: AppColors.surface,
                   onChanged: interactive ? onToggle : null,
@@ -527,9 +532,9 @@ class _RateField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     OutlineInputBorder border(Color c) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: c),
-        );
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(color: c),
+    );
     return Semantics(
       label: '적립률, 퍼센트. 3퍼센트를 원하면 3을 입력',
       textField: true,
@@ -686,10 +691,15 @@ AlertDialog _dialog({
   );
 }
 
-const TextStyle _bodyStyle =
-    TextStyle(fontSize: 13, height: 1.5, color: AppColors.textBody);
-const TextStyle _noteStyle =
-    TextStyle(fontSize: 12, color: AppColors.textMuted);
+const TextStyle _bodyStyle = TextStyle(
+  fontSize: 13,
+  height: 1.5,
+  color: AppColors.textBody,
+);
+const TextStyle _noteStyle = TextStyle(
+  fontSize: 12,
+  color: AppColors.textMuted,
+);
 
 /// 끄기: "환불 회수도 멈춘다" 를 반드시 명시한다 (모르고 끄면 환불받은 고객이 Qoin 을 그대로 갖는다).
 class _DisableDialog extends StatelessWidget {
@@ -707,8 +717,7 @@ class _DisableDialog extends StatelessWidget {
         SizedBox(height: 8),
         Text('• 픽업이 완료되어도 Qoin 이 적립되지 않아요', style: _bodyStyle),
         Text('• 이미 적립된 주문이 환불되어도 Qoin 이 회수되지 않아요', style: _bodyStyle),
-        Text('• 중단 중에 픽업 완료된 주문은 다시 켜도 자동으로 적립되지 않아요',
-            style: _bodyStyle),
+        Text('• 중단 중에 픽업 완료된 주문은 다시 켜도 자동으로 적립되지 않아요', style: _bodyStyle),
         SizedBox(height: 10),
         Text('고객 Qoin 탭에는 ‘적립이 잠시 중단되어 있어요’ 가 표시돼요', style: _noteStyle),
       ],
@@ -757,9 +766,12 @@ class _RateChangeDialog extends StatelessWidget {
     );
     final curLabel = cur == null ? '설정 없음' : '${QoinPolicy.formatTenths(cur)}%';
     final newLabel = '${QoinPolicy.formatTenths(newTenths)}%';
-    final curAmount =
-        cur == null ? '—' : QoinFormatters.number(QoinPolicy.previewAmount(cur));
-    final newAmount = QoinFormatters.number(QoinPolicy.previewAmount(newTenths));
+    final curAmount = cur == null
+        ? '—'
+        : QoinFormatters.number(QoinPolicy.previewAmount(cur));
+    final newAmount = QoinFormatters.number(
+      QoinPolicy.previewAmount(newTenths),
+    );
     final pay = PriceFormatter.formatKrw(QoinPolicy.previewPaymentKrw);
 
     return _dialog(
@@ -771,10 +783,10 @@ class _RateChangeDialog extends StatelessWidget {
         Semantics(
           label: cur == null
               ? '적립률을 설정 없음에서 ${QoinPolicy.formatTenths(newTenths)}퍼센트로 변경. '
-                  '$pay 결제 기준 $newAmount Q'
+                    '$pay 결제 기준 $newAmount Q'
               : '적립률을 현재 ${QoinPolicy.formatTenths(cur)}퍼센트에서 '
-                  '${QoinPolicy.formatTenths(newTenths)}퍼센트로 변경. '
-                  '$pay 결제 기준 $curAmount Q에서 $newAmount Q',
+                    '${QoinPolicy.formatTenths(newTenths)}퍼센트로 변경. '
+                    '$pay 결제 기준 $curAmount Q에서 $newAmount Q',
           excludeSemantics: true,
           child: Container(
             width: double.infinity,
@@ -787,13 +799,14 @@ class _RateChangeDialog extends StatelessWidget {
               children: [
                 const Row(
                   children: [
-                    Expanded(
-                      child: Text('현재', style: _noteStyle),
-                    ),
+                    Expanded(child: Text('현재', style: _noteStyle)),
                     SizedBox(width: 18),
                     Expanded(
-                      child: Text('변경',
-                          textAlign: TextAlign.end, style: _noteStyle),
+                      child: Text(
+                        '변경',
+                        textAlign: TextAlign.end,
+                        style: _noteStyle,
+                      ),
                     ),
                   ],
                 ),
@@ -810,8 +823,11 @@ class _RateChangeDialog extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const Icon(Icons.arrow_forward_rounded,
-                        size: 18, color: AppColors.textMuted),
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
                     Expanded(
                       child: Text(
                         newLabel,
@@ -830,10 +846,7 @@ class _RateChangeDialog extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Text(
-          '$pay 결제 기준 $curAmount Q → $newAmount Q',
-          style: _bodyStyle,
-        ),
+        Text('$pay 결제 기준 $curAmount Q → $newAmount Q', style: _bodyStyle),
         if (warn) ...[
           const SizedBox(height: 12),
           Container(
@@ -845,8 +858,11 @@ class _RateChangeDialog extends StatelessWidget {
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline_rounded,
-                    size: 16, color: AppColors.warning),
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: AppColors.warning,
+                ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(

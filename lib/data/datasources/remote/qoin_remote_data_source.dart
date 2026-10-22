@@ -14,7 +14,7 @@ class QoinRemoteDataSource {
   final FirebaseFirestore _firestore;
 
   QoinRemoteDataSource({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   DocumentReference<Map<String, dynamic>> get _configDoc => _firestore
       .collection(FirestorePaths.config)
@@ -36,17 +36,17 @@ class QoinRemoteDataSource {
               .toList(growable: false),
         )
         .handleError((Object e) {
-      if (e is FirebaseException && e.code == 'permission-denied') {
-        throw const PermissionDeniedException();
-      }
-      throw e;
-    });
+          if (e is FirebaseException && e.code == 'permission-denied') {
+            throw const PermissionDeniedException();
+          }
+          throw e;
+        });
   }
 
   Stream<QoinConfigEntity?> watchConfig() {
     return _configDoc.snapshots().map(
-          (doc) => doc.exists ? QoinConfigModel.fromFirestore(doc) : null,
-        );
+      (doc) => doc.exists ? QoinConfigModel.fromFirestore(doc) : null,
+    );
   }
 
   /// 적립률만 저장. 문서 없으면 `enabled: false` 로 생성, 있으면 `enabled` 불변.
