@@ -12,6 +12,7 @@ import 'package:qradar/presentation/customer/order/orders/providers/order_view_p
 import 'package:qradar/presentation/customer/order/widgets/order_item_row.dart';
 import 'package:qradar/presentation/customer/order/widgets/price_summary.dart';
 import 'package:qradar/presentation/customer/order/widgets/refund_request_sheet.dart';
+import 'package:qradar/presentation/customer/review/widgets/order_review_action.dart';
 
 class OrderDetailPage extends ConsumerStatefulWidget {
   const OrderDetailPage({super.key, required this.orderId});
@@ -615,7 +616,10 @@ class _ActionSection extends StatelessWidget {
           ),
         );
 
+      // 매장 평가 진입 (store_reviews). 상태 라벨은 상단 OrderStatusBadge 가 담당.
       case OrderStatus.completed:
+        return OrderReviewAction(order: order);
+
       case OrderStatus.cancelled:
       case OrderStatus.refunded:
         return Container(
@@ -629,8 +633,7 @@ class _ActionSection extends StatelessWidget {
           child: Text(
             switch (order.status) {
               OrderStatus.cancelled => '취소된 주문입니다',
-              OrderStatus.refunded => '환불 처리된 주문입니다',
-              _ => '완료된 주문입니다',
+              _ => '환불 처리된 주문입니다',
             },
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 14, color: AppColors.textMuted),

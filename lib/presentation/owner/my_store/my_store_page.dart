@@ -15,6 +15,7 @@ import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 import 'package:qradar/presentation/owner/brand_store/owner_brand_store_menus_page.dart';
 import 'package:qradar/presentation/owner/store_menu/owner_store_menu_list_page.dart';
 import 'package:qradar/presentation/owner/option_groups/owner_store_option_group_list_page.dart';
+import 'package:qradar/presentation/owner/reviews/owner_store_reviews_page.dart';
 import 'package:qradar/presentation/owner/sub_categories/owner_store_sub_category_list_page.dart';
 
 /// 점주의 "내 매장" 탭.
@@ -725,6 +726,7 @@ class _StoreMetricsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final unrated = store.reviewCount == 0;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
       decoration: BoxDecoration(
@@ -734,12 +736,19 @@ class _StoreMetricsSection extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(child: _Metric(label: '등급', value: store.grade.label)),
+          Expanded(
+            child: _Metric(
+              label: '등급',
+              value: unrated ? '미평가' : store.grade.label,
+              muted: unrated,
+            ),
+          ),
           _Divider(),
           Expanded(
             child: _Metric(
               label: '평균 점수',
-              value: store.averageScore.toStringAsFixed(1),
+              value: unrated ? '-' : store.averageScore.toStringAsFixed(1),
+              muted: unrated,
             ),
           ),
           _Divider(),
@@ -747,6 +756,12 @@ class _StoreMetricsSection extends StatelessWidget {
             child: _Metric(
               label: '리뷰 수',
               value: '${store.reviewCount}',
+              semanticsLabel: '리뷰 수 ${store.reviewCount}개. 받은 평가 보기',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => OwnerStoreReviewsPage(store: store),
+                ),
+              ),
             ),
           ),
         ],
@@ -765,24 +780,63 @@ class _Divider extends StatelessWidget {
 class _Metric extends StatelessWidget {
   final String label;
   final String value;
-  const _Metric({required this.label, required this.value});
+
+  /// 0건 등 값이 없을 때 `textMuted` 로 약하게 표시.
+  final bool muted;
+
+  /// non-null 이면 탭 가능 (라벨 뒤 chevron + InkWell).
+  final VoidCallback? onTap;
+  final String? semanticsLabel;
+
+  const _Metric({
+    required this.label,
+    required this.value,
+    this.muted = false,
+    this.onTap,
+    this.semanticsLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final content = Column(
       children: [
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
-            color: AppColors.textHeading,
+            color: muted ? AppColors.textMuted : AppColors.textHeading,
           ),
         ),
         const SizedBox(height: 2),
-        Text(label,
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textMuted)),
+            if (onTap != null) ...[
+              const SizedBox(width: 2),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 14, color: AppColors.textMuted),
+            ],
+          ],
+        ),
       ],
+    );
+    if (onTap == null) return content;
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: content,
+        ),
+      ),
     );
   }
 }

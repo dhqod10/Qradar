@@ -453,22 +453,63 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // reviews/{reviewId} — 현재 사용 예정 컬렉션. 안전한 기본값 부여 (U-4 결정).
-    // 실제 리뷰 기능 도입 시 별 task 에서 보강.
+    // reviews/{reviewId} — 매장 평가 (store_reviews).
+    //
+    // - 문서 ID = {storeId}_{userId} (1인 1매장 1표, 재평가 = 같은 문서 update)
+    // - score 는 집계(sum) 용 비정규화 값. grade 와 일치 강제.
+    // - 작성 자격: 본문 orderId 의 주문이 본인 / completed / 같은 매장.
+    //   get() 은 호출당 1회 (reviewOrderEligible 안에서 let 바인딩).
+    // - 14일 기한은 보안 경계가 아니라 품질 정책 → UI 에서만 강제 (Rules 에 넣지 않음).
+    // - createdAt / updatedAt 은 request.time 강제 → 클라이언트는 serverTimestamp() 필수.
+    // - stores.averageScore / reviewCount 는 CF(onReviewWritten, Admin SDK) 전담.
+    //   stores 블록은 변경하지 않는다 (점주 평점 조작 방지).
     // ─────────────────────────────────────────────────────────────────────────
     match /reviews/{reviewId} {
+      // 등급/점수/코멘트 형태 검증 (create, update 공용)
+      function reviewGradeOk(d) {
+        return d.grade in ['S', 'A', 'B', 'C']
+          && ((d.grade == 'S' && d.score == 4)
+              || (d.grade == 'A' && d.score == 3)
+              || (d.grade == 'B' && d.score == 2)
+              || (d.grade == 'C' && d.score == 1))
+          && (!('comment' in d.keys())
+              || (d.comment is string && d.comment.size() <= 300));
+      }
+
+      // 주문 자격 검증. orders 문서 get() 1회.
+      function reviewOrderEligible(d) {
+        let o = get(/databases/$(database)/documents/orders/$(d.orderId)).data;
+        return d.orderId is string
+          && o.userId == uid()
+          && o.status == 'completed'
+          && o.storeId == d.storeId;
+      }
+
       // read: 인증된 사용자
       allow read: if isSignedIn();
 
-      // create: 작성자 == 요청자
       allow create: if isSignedIn()
-                    && request.resource.data.get('userId', '') == uid();
+                    && reviewId == request.resource.data.storeId + '_' + uid()
+                    && request.resource.data.userId == uid()
+                    && request.resource.data.keys().hasOnly(
+                         ['storeId', 'userId', 'orderId', 'grade', 'score', 'comment', 'createdAt'])
+                    && request.resource.data.keys().hasAll(
+                         ['storeId', 'userId', 'orderId', 'grade', 'score', 'createdAt'])
+                    && reviewGradeOk(request.resource.data)
+                    && request.resource.data.createdAt == request.time
+                    && reviewOrderEligible(request.resource.data);
 
-      // update: 본인(작성자) 만
+      // update: 본인만. storeId / userId / createdAt immutable.
       allow update: if isSignedIn()
-                    && resource.data.get('userId', '') == uid();
+                    && resource.data.userId == uid()
+                    && onlyChangedFields(['grade', 'score', 'comment', 'orderId', 'updatedAt'])
+                    && request.resource.data.keys().hasOnly(
+                         ['storeId', 'userId', 'orderId', 'grade', 'score', 'comment', 'createdAt', 'updatedAt'])
+                    && reviewGradeOk(request.resource.data)
+                    && request.resource.data.updatedAt == request.time
+                    && reviewOrderEligible(request.resource.data);
 
-      // delete: 본인 또는 admin
+      // delete: 본인 또는 admin (1차 UI 없음. 집계는 CF 가 보정)
       allow delete: if isAdmin()
                     || (isSignedIn() && resource.data.get('userId', '') == uid());
     }

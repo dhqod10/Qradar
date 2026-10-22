@@ -82,9 +82,9 @@ class Phase1SeedData {
         'imageUrl':
             'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800',
         'location': const GeoPoint(37.4979, 127.0276),
-        'grade': 'A',
-        'averageScore': 4.7,
-        'reviewCount': 54,
+        // 평점은 실제 리뷰에서만 생긴다 (onReviewWritten CF 가 집계). grade 는 averageScore 에서 파생되므로 저장하지 않는다.
+        'averageScore': 0.0,
+        'reviewCount': 0,
         'menuCategories': ['coffee'],
         'ownerId': '',
         'phone': '02-1111-2222',
@@ -226,9 +226,8 @@ class Phase1SeedData {
         'imageUrl':
             'https://images.unsplash.com/photo-1453614512568-c4024d13c247?w=800',
         'location': const GeoPoint(37.5665, 126.9780),
-        'grade': 'A',
-        'averageScore': 4.6,
-        'reviewCount': 128,
+        'averageScore': 0.0,
+        'reviewCount': 0,
         'menuCategories': ['coffee', 'nonCoffee', 'dessert'],
         'ownerId': '',
         'phone': '02-0000-0000',

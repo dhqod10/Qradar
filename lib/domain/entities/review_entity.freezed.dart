@@ -14,7 +14,9 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$ReviewEntity {
 
- String get id; String get storeId; String get userId; StoreGrade get grade; String? get comment; DateTime get createdAt;
+ String get id; String get storeId; String get userId;/// 자격 근거가 된 주문 (재주문 후 재평가 시 갱신).
+ String get orderId; StoreGrade get grade; String? get comment; DateTime get createdAt;/// 수정된 적이 있을 때만 non-null.
+ DateTime? get updatedAt;
 /// Create a copy of ReviewEntity
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +27,16 @@ $ReviewEntityCopyWith<ReviewEntity> get copyWith => _$ReviewEntityCopyWithImpl<R
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReviewEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.grade, grade) || other.grade == grade)&&(identical(other.comment, comment) || other.comment == comment)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReviewEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.grade, grade) || other.grade == grade)&&(identical(other.comment, comment) || other.comment == comment)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,storeId,userId,grade,comment,createdAt);
+int get hashCode => Object.hash(runtimeType,id,storeId,userId,orderId,grade,comment,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'ReviewEntity(id: $id, storeId: $storeId, userId: $userId, grade: $grade, comment: $comment, createdAt: $createdAt)';
+  return 'ReviewEntity(id: $id, storeId: $storeId, userId: $userId, orderId: $orderId, grade: $grade, comment: $comment, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -45,7 +47,7 @@ abstract mixin class $ReviewEntityCopyWith<$Res>  {
   factory $ReviewEntityCopyWith(ReviewEntity value, $Res Function(ReviewEntity) _then) = _$ReviewEntityCopyWithImpl;
 @useResult
 $Res call({
- String id, String storeId, String userId, StoreGrade grade, String? comment, DateTime createdAt
+ String id, String storeId, String userId, String orderId, StoreGrade grade, String? comment, DateTime createdAt, DateTime? updatedAt
 });
 
 
@@ -62,15 +64,17 @@ class _$ReviewEntityCopyWithImpl<$Res>
 
 /// Create a copy of ReviewEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? storeId = null,Object? userId = null,Object? grade = null,Object? comment = freezed,Object? createdAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? storeId = null,Object? userId = null,Object? orderId = null,Object? grade = null,Object? comment = freezed,Object? createdAt = null,Object? updatedAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,storeId: null == storeId ? _self.storeId : storeId // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
+as String,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
 as String,grade: null == grade ? _self.grade : grade // ignore: cast_nullable_to_non_nullable
 as StoreGrade,comment: freezed == comment ? _self.comment : comment // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as DateTime,
+as DateTime,updatedAt: freezed == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
   ));
 }
 
@@ -155,10 +159,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String storeId,  String userId,  StoreGrade grade,  String? comment,  DateTime createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String storeId,  String userId,  String orderId,  StoreGrade grade,  String? comment,  DateTime createdAt,  DateTime? updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ReviewEntity() when $default != null:
-return $default(_that.id,_that.storeId,_that.userId,_that.grade,_that.comment,_that.createdAt);case _:
+return $default(_that.id,_that.storeId,_that.userId,_that.orderId,_that.grade,_that.comment,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -176,10 +180,10 @@ return $default(_that.id,_that.storeId,_that.userId,_that.grade,_that.comment,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String storeId,  String userId,  StoreGrade grade,  String? comment,  DateTime createdAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String storeId,  String userId,  String orderId,  StoreGrade grade,  String? comment,  DateTime createdAt,  DateTime? updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _ReviewEntity():
-return $default(_that.id,_that.storeId,_that.userId,_that.grade,_that.comment,_that.createdAt);case _:
+return $default(_that.id,_that.storeId,_that.userId,_that.orderId,_that.grade,_that.comment,_that.createdAt,_that.updatedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -196,10 +200,10 @@ return $default(_that.id,_that.storeId,_that.userId,_that.grade,_that.comment,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String storeId,  String userId,  StoreGrade grade,  String? comment,  DateTime createdAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String storeId,  String userId,  String orderId,  StoreGrade grade,  String? comment,  DateTime createdAt,  DateTime? updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _ReviewEntity() when $default != null:
-return $default(_that.id,_that.storeId,_that.userId,_that.grade,_that.comment,_that.createdAt);case _:
+return $default(_that.id,_that.storeId,_that.userId,_that.orderId,_that.grade,_that.comment,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -211,15 +215,19 @@ return $default(_that.id,_that.storeId,_that.userId,_that.grade,_that.comment,_t
 
 
 class _ReviewEntity implements ReviewEntity {
-  const _ReviewEntity({required this.id, required this.storeId, required this.userId, required this.grade, this.comment, required this.createdAt});
+  const _ReviewEntity({required this.id, required this.storeId, required this.userId, required this.orderId, required this.grade, this.comment, required this.createdAt, this.updatedAt});
   
 
 @override final  String id;
 @override final  String storeId;
 @override final  String userId;
+/// 자격 근거가 된 주문 (재주문 후 재평가 시 갱신).
+@override final  String orderId;
 @override final  StoreGrade grade;
 @override final  String? comment;
 @override final  DateTime createdAt;
+/// 수정된 적이 있을 때만 non-null.
+@override final  DateTime? updatedAt;
 
 /// Create a copy of ReviewEntity
 /// with the given fields replaced by the non-null parameter values.
@@ -231,16 +239,16 @@ _$ReviewEntityCopyWith<_ReviewEntity> get copyWith => __$ReviewEntityCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ReviewEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.grade, grade) || other.grade == grade)&&(identical(other.comment, comment) || other.comment == comment)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ReviewEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.grade, grade) || other.grade == grade)&&(identical(other.comment, comment) || other.comment == comment)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,storeId,userId,grade,comment,createdAt);
+int get hashCode => Object.hash(runtimeType,id,storeId,userId,orderId,grade,comment,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'ReviewEntity(id: $id, storeId: $storeId, userId: $userId, grade: $grade, comment: $comment, createdAt: $createdAt)';
+  return 'ReviewEntity(id: $id, storeId: $storeId, userId: $userId, orderId: $orderId, grade: $grade, comment: $comment, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -251,7 +259,7 @@ abstract mixin class _$ReviewEntityCopyWith<$Res> implements $ReviewEntityCopyWi
   factory _$ReviewEntityCopyWith(_ReviewEntity value, $Res Function(_ReviewEntity) _then) = __$ReviewEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String storeId, String userId, StoreGrade grade, String? comment, DateTime createdAt
+ String id, String storeId, String userId, String orderId, StoreGrade grade, String? comment, DateTime createdAt, DateTime? updatedAt
 });
 
 
@@ -268,15 +276,17 @@ class __$ReviewEntityCopyWithImpl<$Res>
 
 /// Create a copy of ReviewEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? storeId = null,Object? userId = null,Object? grade = null,Object? comment = freezed,Object? createdAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? storeId = null,Object? userId = null,Object? orderId = null,Object? grade = null,Object? comment = freezed,Object? createdAt = null,Object? updatedAt = freezed,}) {
   return _then(_ReviewEntity(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,storeId: null == storeId ? _self.storeId : storeId // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
+as String,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
 as String,grade: null == grade ? _self.grade : grade // ignore: cast_nullable_to_non_nullable
 as StoreGrade,comment: freezed == comment ? _self.comment : comment // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as DateTime,
+as DateTime,updatedAt: freezed == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
   ));
 }
 

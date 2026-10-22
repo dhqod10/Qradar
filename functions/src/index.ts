@@ -20,3 +20,4 @@ export { verifyKakaoToken } from "./verifyKakaoToken";
 export { onOrderCreated } from "./onOrderCreated";
 export { onOrderRefundRequested } from "./onOrderRefundRequested";
 export { onOrderStatusChanged } from "./onOrderStatusChanged";
+export { onReviewWritten } from "./onReviewWritten";

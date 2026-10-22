@@ -6,6 +6,7 @@ import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/common/favorite_toggle_icon_button.dart';
 import 'package:qradar/presentation/customer/home/widgets/grade_badge.dart';
+import 'package:qradar/presentation/customer/review/store_reviews_page.dart';
 
 class StoreMenuHeader extends StatelessWidget {
   const StoreMenuHeader({
@@ -40,7 +41,8 @@ class StoreMenuHeader extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 56, 20, 16),
+          // 배지 탭 영역(높이 44)을 확보하면서 시각 위치를 유지하기 위해 하단 padding 을 줄였다.
+          padding: const EdgeInsets.fromLTRB(20, 56, 20, 5),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,7 +68,6 @@ class StoreMenuHeader extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
               Row(
                 children: [
                   if (store.distanceKm != null) ...[
@@ -88,10 +89,7 @@ class StoreMenuHeader extends StatelessWidget {
                   ],
                   _OpenStatusText(hours: store.businessHours),
                   const Spacer(),
-                  GradeBadge(
-                    grade: store.grade,
-                    reviewCount: store.reviewCount,
-                  ),
+                  _TappableGradeBadge(store: store),
                 ],
               ),
             ],
@@ -124,6 +122,62 @@ class StoreMenuHeader extends StatelessWidget {
           Icons.storefront_outlined,
           color: AppColors.textMuted,
           size: 48,
+        ),
+      ),
+    );
+  }
+}
+
+/// 헤더 `GradeBadge` — 탭하면 매장 평가 목록으로 이동.
+/// 눌림 피드백은 ripple 대신 불투명도 0.85 (사진 위에서 ripple 이 어색함).
+class _TappableGradeBadge extends StatefulWidget {
+  const _TappableGradeBadge({required this.store});
+  final StoreEntity store;
+
+  @override
+  State<_TappableGradeBadge> createState() => _TappableGradeBadgeState();
+}
+
+class _TappableGradeBadgeState extends State<_TappableGradeBadge> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    return Semantics(
+      button: true,
+      label: store.reviewCount == 0
+          ? '아직 평가가 없는 매장. 평가 목록 보기'
+          : '${store.grade.label}, 평가 ${store.reviewCount}개. 평가 목록 보기',
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => StoreReviewsPage(store: store),
+          ),
+        ),
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44, minWidth: 48),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Align(
+              alignment: Alignment.centerRight,
+              widthFactor: 1,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 100),
+                opacity: _pressed ? 0.85 : 1,
+                child: GradeBadge(
+                  grade: store.grade,
+                  reviewCount: store.reviewCount,
+                  showChevron: true,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

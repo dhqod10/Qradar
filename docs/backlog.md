@@ -165,14 +165,18 @@ owner_sales 설계 중 발견. **이번에는 개명하지 않았다** — 주�
 
 ## 가치 확장 기능
 
-### 🔄 매장 평가 (store_reviews) — 설계 완료, 구현 예정
+### ✅ 매장 평가 (store_reviews) — 1차 구현 완료 (2026-10-22)
 
 > **2026-10-22 정정.** 기존 기술 "1~5점 + 텍스트 리뷰. 매장 상세 화면" 은 **두 군데가 틀렸다.**
 > ① 도메인은 1~5 별점이 아니라 **S/A/B/C 등급**이다 (`StoreGrade`, 내부 점수 S=4 A=3 B=2 C=1).
 > ② 고객용 **"매장 상세 화면" 은 존재하지 않는다** (가장 가까운 것은 `store_menu_page`).
 > 설계 중 실측으로 드러났다. 이번에도 backlog 가 코드보다 낡아 있었다.
 
-spec: `docs/tasks/store_reviews/spec.md` (D1~D6 / A1~A5 전건 확정)
+문서: `docs/tasks/store_reviews/{spec,design,implementation,test_report}.md` (D1~D6 / A1~A5 / Q1~Q3 전건 확정)
+
+**라이브 검증 전 구간 PASS** — 평가 작성 → CF 집계 → 등급 반영까지 닫혔다. 실결제 0회.
+`[onReviewWritten] recomputed. { reviewCount: 1, averageScore: 1 }` 로 전량 재계산 실증.
+Qradar 의 등급에 **입력원이 생겼다.**
 
 핵심 설계
 - 집계는 **CF `onReviewWritten` 전담** — `stores` update 화이트리스트에 `averageScore`/`reviewCount` 가 없어 클라이언트 집계가 **구조적으로 불가능**하다. Rules 완화는 점주의 자기 평점 조작을 허용하므로 기각.
