@@ -125,8 +125,9 @@ Log 탭은 `lib/presentation/customer/log/orders_page.dart` (`OrdersPage`) 를 �
 |---|---|---|
 | Q1 | `isTruncated` 가 `>=` 판정이라 정확히 1,000건일 때도 경고가 뜬다 | 보수적 오탐이라 숫자가 틀리지는 않는다. 정확히 하려면 `limit + 1` 로 조회해 초과 여부를 판정 |
 | Q2 | provider·위젯 계약 테스트 0건 | 있었다면 F2(재시도 시 skeleton 미표시)를 정적으로 잡았다. N1 과 함께 처리 |
-| Q3 | `test_rules` 에 `orders` 시드 + R13~R18 추가 | 점주 자기 매장 allow / 타 매장 deny / `storeId` 조건 없는 쿼리 deny / 고객 deny / pending 매장 allow / 비로그인 deny |
-| Q4 | 오프라인·재시도 경로 라이브 미검증 | `Source.server` 로 수정했으나 눈으로 확인하지 못했다. Wi-Fi 차단이 가능한 환경에서 확인 |
+| ~~Q3~~ | ~~`test_rules` 에 `orders` 시드 + R13~R18 추가~~ → **완료 (2026-10-22)** 18/18 PASS | — |
+| ~~Q4~~ | ~~오프라인·재시도 경로 라이브 미검증~~ → **완료 (2026-10-22)** Firestore 만 죽은 호스트로 돌려 검증. F1 은 캐시 데이터가 있는 날짜로 결정적 확인 | — |
+| Q5 | **오프라인에서 `다시 시도` 가 시각적 무반응** | 재시도가 3ms 만에 실패해 skeleton 이 한 프레임도 안 그려진다. 버튼이 고장난 것처럼 느껴진다. 개선안: ⓐ 최소 skeleton 노출 시간 보장 ⓑ 즉시 실패 시 SnackBar. 결함은 아니고 UX 흠결 |
 
 ### ⬜ `OrderRemoteDataSource.streamPaidByStore` 개명
 

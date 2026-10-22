@@ -1,10 +1,18 @@
 import { initializeTestEnvironment, assertFails, assertSucceeds }
   from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
 import fs from 'fs';
 
 const CUSTOMER = 'dUFcFv71FzVA4feodWnxv3k0MKF3';
 const OWNER    = '8gnNH8NAJNhu8sxomEkX38CMapL2';
+const OTHER    = 'otherOwnerUid000000000000000000';
+
+// owner_sales 시드용
+const S_A = 'store_a_approved';   // OWNER 소유, 승인됨
+const S_B = 'store_b_other';      // 타인 소유
+const S_P = 'store_p_pending';    // OWNER 소유, 승인 대기
+const DAY_START = new Date('2026-10-21T00:00:00+09:00');
+const DAY_END   = new Date('2026-10-22T00:00:00+09:00');
 
 const env = await initializeTestEnvironment({
   projectId: 'order-app-5957e',
@@ -16,7 +24,30 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, 'users', CUSTOMER), { uid: CUSTOMER, role: 'customer', displayName: 'dhqod13' });
   await setDoc(doc(db, 'users', OWNER),    { uid: OWNER,    role: 'owner',    displayName: 'owner'   });
+
+  // owner_sales: stores 3개 + orders 2개
+  await setDoc(doc(db, 'stores', S_A), { ownerId: OWNER, name: 'A', status: 'approved' });
+  await setDoc(doc(db, 'stores', S_B), { ownerId: OTHER, name: 'B', status: 'approved' });
+  await setDoc(doc(db, 'stores', S_P), { ownerId: OWNER, name: 'P', status: 'pending'  });
+  await setDoc(doc(db, 'orders', 'o_a1'), {
+    storeId: S_A, userId: CUSTOMER, status: 'completed', totalPrice: 10000,
+    createdAt: Timestamp.fromDate(new Date('2026-10-21T10:00:00+09:00')),
+  });
+  await setDoc(doc(db, 'orders', 'o_b1'), {
+    storeId: S_B, userId: CUSTOMER, status: 'completed', totalPrice: 20000,
+    createdAt: Timestamp.fromDate(new Date('2026-10-21T11:00:00+09:00')),
+  });
 });
+
+/// 앱과 동일한 형태의 기간 쿼리 (storeId == + createdAt 범위 + orderBy + limit)
+const periodQuery = (db, storeId) => query(
+  collection(db, 'orders'),
+  where('storeId', '==', storeId),
+  where('createdAt', '>=', Timestamp.fromDate(DAY_START)),
+  where('createdAt', '<', Timestamp.fromDate(DAY_END)),
+  orderBy('createdAt', 'desc'),
+  limit(1000),
+);
 
 const asCustomer = env.authenticatedContext(CUSTOMER).firestore();
 const results = [];
@@ -67,6 +98,31 @@ await run('타인 doc laterCount increment', 'deny', () =>
 await run('본인 doc laterCount + role 무단 변경 동반', 'deny', () =>
   updateDoc(doc(asCustomer, 'users', CUSTOMER), {
     notificationPermissionLaterCount: increment(1), role: 'admin' }));
+
+// ── owner_sales: 기간 쿼리 권한 (R13~R18) ─────────────────────────────
+const asOwner = env.authenticatedContext(OWNER).firestore();
+const asAnon  = env.unauthenticatedContext().firestore();
+
+await run('R13 점주가 자기 매장(승인됨) 기간 쿼리', 'allow', () =>
+  getDocs(periodQuery(asOwner, S_A)));
+
+await run('R14 점주가 타 매장 기간 쿼리', 'deny', () =>
+  getDocs(periodQuery(asOwner, S_B)));
+
+await run('R15 storeId 조건 없이 createdAt 범위만 쿼리', 'deny', () =>
+  getDocs(query(collection(asOwner, 'orders'),
+    where('createdAt', '>=', Timestamp.fromDate(DAY_START)),
+    where('createdAt', '<', Timestamp.fromDate(DAY_END)),
+    orderBy('createdAt', 'desc'), limit(1000))));
+
+await run('R16 고객이 타인 매장 기간 쿼리', 'deny', () =>
+  getDocs(periodQuery(asCustomer, S_A)));
+
+await run('R17 점주가 pending 매장 기간 쿼리', 'allow', () =>
+  getDocs(periodQuery(asOwner, S_P)));
+
+await run('R18 비로그인 기간 쿼리', 'deny', () =>
+  getDocs(periodQuery(asAnon, S_A)));
 
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
