@@ -40,7 +40,9 @@
 | create | `self(uid)` | **`role == 'customer'` 강제**, **`brandId` 필드 동시 포함 금지** (가입 시점 brandId 차단) |
 | update | `admin (전권) OR self(uid)` self 케이스: `onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationPermissionLaterCount', 'notificationSettings', 'updatedAt', 'brandId'])` + role 전이 화이트리스트 + `brandId` 는 empty→value 1회만 | 변경 가능: displayName, photoUrl, fcmToken, fcmTokenUpdatedAt, notificationPermissionPrompted(OS 권한 시트 소진 = 다이얼로그 `허용` 선택 시에만 true), notificationPermissionLaterCount(`나중에` 선택 횟수, `FieldValue.increment(1)`, 부재 시 0), notificationSettings(bool map, dot-path), role(허용 전이), brandId(최초 1회) |
 | delete | `admin` | — |
-| Cloud Function 전담 | 없음 (모든 작업 클라이언트에서 가능) | — |
+| Cloud Function 전담 | **`qoinBalance` 갱신** (`onOrderQoinSettled`) — §2.11 | — |
+
+⚠️ **`qoinBalance` 는 클라이언트가 쓸 수 없다.** create 에서 `!('qoinBalance' in request.resource.data)` 로 차단하고(막지 않으면 신규 계정이 `qoinBalance: 999999` 로 시작할 수 있다), update 는 self 화이트리스트에 없어 거부된다. 갱신은 `onOrderQoinSettled` 가 트랜잭션 안에서 **절대값**으로 쓴다 (`increment` 금지).
 
 **role 자가 전이 허용** ([`role_flows.md §3`](./role_flows.md) 참조): customer ↔ owner ↔ brand 임의 방향. admin 으로의 전이는 **모든 방향 차단**.
 
@@ -113,9 +115,10 @@
 |---|---|---|
 | read | `isSignedIn()` | (status=pending 도 read 가능, 클라이언트가 approved 필터링 — T7) |
 | create | `owner` + `ownerId == uid` + `status == 'pending'` | — |
-| update | `admin` OR `isStoreOwnerFieldUpdate(storeId)` OR `isStoreOwnerBrandUpdate()` | 화이트리스트: `name, imageUrl, location, phone, address, description, menuCategories, businessHours, isOpen, updatedAt, notice, tags` — **status / submittedBy / approvedBy 등 승인 메타는 admin 만** |
-| delete | `admin OR storeOwner(storeId)` | — |
-| Cloud Function 전담 | 없음 | — |
+| update | `admin` OR `isStoreOwnerFieldUpdate(storeId)` OR `isStoreOwnerBrandUpdate()` | 화이트리스트: `name, imageUrl, location, phone, address, description, menuCategories, businessHours, isOpen, updatedAt, notice, tags` — **status / submittedBy / approvedBy 등 승인 메타는 admin 만** / **`qoinAccrualRate` 는 모든 분기에서 차단** (§2.11) |
+| create | (위) | **`qoinAccrualRate` 포함 create 차단** (`!hasQoinRateOnCreate()`) |
+| delete | `admin OR storeOwner(storeId)` | ⚠️ 점주 삭제가 **열려 있다.** 같은 ID 로 재생성하면 `qoinAccrualRate` 개별 설정이 사라진다 (§2.11 의 알려진 경로). 재생성은 `status: 'pending'` 강제 → admin 재승인 전까지 주문·적립 불가. 삭제 자체는 **이력에 남지 않고** `qoinRateHistory` 서브컬렉션이 고아가 된다 |
+| Cloud Function 전담 | **`averageScore` / `reviewCount`** (`onReviewWritten`) · **`qoinAccrualRate`** (`setQoinAccrualRate` / `applyBrandQoinRate`) | — |
 
 **핵심 불일치** ([`entity_lifecycle.md §3.3`](./entity_lifecycle.md) 참조):
 - Repository 가 핵심 필드 수정 시 status='pending' 회귀를 의도하지만 Rules 화이트리스트에 `status` 없음 → 차단 가능성. 확인 필요.
@@ -152,6 +155,8 @@
 **brandKey** 는 admin 의 approveBrand 시점에 자동 발급 (`BR-` + 8자 alphabet). 한번 발급되면 변경 불가 (V1 불변성 — `BrandRepositoryImpl` 의 `coreChanged` 분기에서 `brandKey` 를 entity 에서 빼지 않으므로 보존됨).
 
 **Rules vs Repository drift** ([`entity_lifecycle.md §4.3`](./entity_lifecycle.md) 참조): brand 본인이 핵심 필드 변경 시 Repository 가 status='pending' 으로 회귀시키지만 Rules 화이트리스트에 `status` 없음 → 차단 가능성. 확인 필요.
+
+> **Qoin**: `brands/{brandId}.qoinAccrualRate` 는 **모든 분기(create·update·admin 전권)에서 클라이언트 차단**, CF 전담이다 (§2.11).
 
 ### 2.8 `brands/{brandId}/menuItems`, `/subCategories`, `/optionGroups`
 
@@ -194,7 +199,77 @@
 
 ⚠️ **`stores` 는 고객이 직접 쓸 수 없다.** `stores` update 화이트리스트에 `averageScore`/`reviewCount` 가 없고, Rules 를 완화하면 점주가 자기 매장 평점을 조작할 수 있게 된다. 그래서 집계를 Cloud Function 에 전담시켰다 (`stores` 블록은 **변경하지 않았다**).
 
-### 2.11 fallback
+### 2.11 Qoin — 적립률 / 전역 설정 / 변경 이력 / 원장
+
+`qoin`(1차) + `qoin_accrual_rate_hierarchy`(계층화) 의 소유권 정리. **적립률은 발행되는 돈의 계수**이므로 쓰기는 전부 Cloud Function 전담이고, 이력은 admin 에게도 쓰기를 주지 않는다.
+
+#### 2.11.1 적립률 필드 — `stores/{id}.qoinAccrualRate` / `brands/{id}.qoinAccrualRate` / `config/qoin.accrualRate`
+
+| 값 | 의미 |
+|---|---|
+| 필드 부재 | 상위 상속 (매장 → 브랜드 → 전역) |
+| `0` | **명시적 적립 중단.** 적립만 막고 **회수는 통과**한다 (막으면 환불 주문의 Qoin 이 남아 돈이 샌다) |
+| `0.001 ~ 0.2` | 0.1% ~ 20%. 범위 밖·비number 는 **fail-closed** (상위 폴백 없이 적립 중단) |
+
+| 작업 | 허용 | 비고 |
+|---|---|---|
+| read | `stores`/`brands` = `isSignedIn()` / `config` = `isSignedIn()` | 적립률은 고객에게 보여주는 혜택이라 공개를 수용 (spec §17 U1) |
+| create / update / delete | 🔒 **모든 역할 차단 (admin 전권 분기 포함)** | `touchesQoinRate()` / `hasQoinRateOnCreate()` / `config` 의 `accrualRate` 차단 + `config` delete `if false` |
+| 🛠 CF 전담 | `setQoinAccrualRate` (단건) · `applyBrandQoinRate` (브랜드 일괄) | admin role 을 **서버에서 재검증**하고 값 쓰기와 이력을 **같은 트랜잭션**에 둔다 → 이력 없는 변경이 구조적으로 불가능 |
+
+**알려진 쓰기 경로 (막을 수 없는 것 포함)**
+
+| 경로 | 상태 |
+|---|---|
+| Firebase Console / Admin SDK | ⚠️ **Rules 로 막을 수 없다.** `config/qoin` 은 `onQoinConfigWritten` 이 `source: 'direct'` 로 사후 기록. `stores`/`brands` 는 **감시 없음** (2차 N6) |
+| 점주의 `stores` delete → 같은 ID 재생성 | ⚠️ 개별 설정이 **제거**된다. 재승인 필요(`status: 'pending'`) → **수용된 경로** |
+| 발행 직전 경계 검증 | `onOrderQoinSettled` 가 저장된 값을 **믿지 않고** 범위를 재검사한다 (Console 편집 대비) |
+
+#### 2.11.2 `config/qoin` — 전역 기본값 + 비상 정지
+
+| 필드 | 작업 | 허용 |
+|---|---|---|
+| `accrualRate` | create / update / delete | 🔒 **차단** — 🛠 CF `setQoinAccrualRate` 전담 |
+| `enabled` (비상 정지, 적립·회수 **둘 다** 멈춤) | update | ✅ **admin 직접 쓰기 유지** |
+
+`enabled` 만 직접 쓰기를 남긴 이유: **CF 장애 중에도 끌 수 있어야 한다.** 이력은 `onQoinConfigWritten` 트리거가 남긴다. 행위자(`changedBy`)를 남기려면 같은 write 에 `enabledChangedBy == uid()` 를 Rules 로 강제한다 (`qoin_accrual_rate_hierarchy/spec.md` §19.3).
+
+#### 2.11.3 `{config/qoin | brands/{id} | stores/{id}}/qoinRateHistory/{autoId}` — 설정 변경 이력
+
+| 작업 | 허용 |
+|---|---|
+| read (전역) | `admin` |
+| read (브랜드) | `admin OR brandHolder(brandId)` |
+| read (매장) | `admin OR storeOwner(storeId) OR brandHolder(stores/{id}.brandId)` |
+| read (collection group `/{path=**}/qoinRateHistory/{id}`) | `admin` **만** (admin 전체 이력 화면) |
+| create / update / delete | 🔒 **전부 `if false` — admin 도 불가** |
+| 🛠 CF 전담 | `setQoinAccrualRate` · `applyBrandQoinRate` · `onQoinConfigWritten` |
+
+세 범위의 **컬렉션 이름이 같아야** collection group 조회가 성립한다. CG 쿼리(`orderBy changedAt desc`)는 **인덱스 배포가 선행**돼야 한다 (에뮬레이터는 인덱스를 강제하지 않는다).
+
+#### 2.11.4 `users/{uid}/qoinBalance` (필드) / `users/{uid}/qoinTransactions/{txId}` (원장)
+
+| 작업 | 허용 |
+|---|---|
+| read | `self(uid) OR admin` |
+| create / update / delete | 🔒 **전부 `if false` — append-only, admin 도 불가** |
+| 🛠 CF 전담 | `onOrderQoinSettled` (`* → completed` 적립 / `completed → refunded` 회수) |
+
+원장은 **당시 값을 박제**한다 (`accrualRate`, `accrualRateSource`, `orderTotalPrice`, `storeId`, `brandId`, `balanceAfter`). `brandId` 는 적립 비용 정산(`audit_trail.md` §5)의 선행 자산이며, **해석에 쓴 `stores/{id}.brandId`** 를 기록한다 (주문 문서의 `brandId` 는 클라이언트 값이라 금액·정산에 쓰지 않는다). 멱등 ID 는 `earn_{orderId}` / `clawback_{orderId}`.
+
+#### 2.11.5 `qoinSettlementIssues/{orderId}` — 적립 누락 기록 (설계 확정 / 미구현)
+
+적립률이 무효(Console 편집 등)여서 fail-closed 로 적립이 중단된 주문을 Firestore 에 남긴다. Cloud Logging 은 보존 기간이 있어 **고객 돈의 누락**을 담기에 부적절하다 (`audit_trail.md` §4-6).
+
+| 작업 | 허용 |
+|---|---|
+| read | `admin` |
+| create / update / delete | 🔒 `if false` |
+| 🛠 CF 전담 | `onOrderQoinSettled` (`skipped_invalid_rate` / `skipped_invalid_store` / `skipped_invalid_total`) |
+
+의도된 정책인 `skipped_rate_zero`(명시적 0%)는 기록하지 않는다. 상세: `qoin_accrual_rate_hierarchy/spec.md` §19.4.
+
+### 2.12 fallback
 
 `match /{document=**} { allow read, write: if false; }` — 명시되지 않은 모든 경로는 거부.
 
@@ -213,7 +288,14 @@
 | `verifyNaverToken` | 동일 | accessToken | 동일 (`naver_{naverUid}`) | 동일 |
 | `onReviewWritten` | customer (평가 작성·수정·삭제) | `reviews/{reviewId}` written 트리거 | 해당 `storeId` 의 리뷰를 `count()` + `sum('score')` 로 **전량 재계산**해 `stores.averageScore` / `reviewCount` **2필드만** overwrite | 1) 고객은 `stores` 를 쓸 권한이 없고, Rules 를 완화하면 **점주가 자기 평점을 조작**할 수 있다 2) 전량 재계산이라 멱등하고 시드 오염이 자기 치유되며, 수정·삭제가 생성과 같은 코드 경로를 타 **집계 보정 로직이 불필요**하다 |
 
+| `onOrderQoinSettled` | customer/owner (주문 status 전이) | `orders/{orderId}` updated 트리거 | 계층 해석(매장→브랜드→전역) 후 `users/{uid}/qoinTransactions/{txId}` create + `users/{uid}.qoinBalance` 절대값 갱신 (한 트랜잭션) | 1) 원장·잔액은 클라이언트 쓰기 `if false` 2) **적립률은 돈의 계수** — 저장값을 믿지 않고 발행 직전 경계 재검증 3) 멱등 가드(`earn_{orderId}`)가 서버에만 있을 수 있다 |
+| `setQoinAccrualRate` | admin (단건 설정) | `{scope, targetId, rate\|clear, reason?}` | `stores`/`brands`/`config` 의 적립률 1필드 + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) 이력을 클라이언트가 쓰면 **위조·누락** 가능 3) admin role **서버 재검증** + 범위 검증 |
+| `applyBrandQoinRate` | admin (브랜드 일괄) | `{brandId, rate\|clear, mode: preserve\|overwrite, reason?, resumeHistoryId?}` | 브랜드 값 1 write + 이력 선기록(한 트랜잭션) → (overwrite) 산하 매장 개별 설정 청크 삭제 + 매장별 이력 → 이력 마감 | 1) 500 batch 한도·권한 재검증·이력 위조 2) **A 가 쓴 문서로 B 소유 문서를 갱신** (§3 규칙) 3) 재개(`partial`) 멱등 처리 |
+| `onQoinConfigWritten` | 누구든 (`config/qoin` written) | `config/qoin` written 트리거 | `accrualRate`/`enabled` 변경을 `config/qoin/qoinRateHistory` 에 1건 기록 (callable 이 이미 남긴 건 skip) | **Console / Admin SDK 쓰기는 Rules 를 우회한다.** 직접 쓰기를 유지하는 `enabled` 와 콘솔 편집을 사후 포착하는 유일한 수단 |
+
 **규칙**: 결제 / 외부 OAuth / 다중 collection batch + 권한 재검증이 필요한 작업은 모두 Cloud Function.
+
+**추가 규칙 (2026-10-22, `qoin_accrual_rate_hierarchy`)**: **설정 변경 이력을 남겨야 하는 값은 쓰기도 Cloud Function 이다.** 값과 이력을 **같은 트랜잭션**에 두지 않으면 "변경됐는데 이력이 없는" 상태가 만들어진다. 이력 컬렉션은 **admin 에게도 쓰기를 주지 않는다** (`audit_trail.md` §4).
 
 **추가 규칙 (2026-10-22, `store_reviews`)**: **A 가 쓴 문서로 B 소유 문서의 집계값을 갱신해야 하면 Cloud Function 이다.** Rules 를 완화해 B 에게 직접 쓰기를 허용하면 B 가 자기 통계를 조작할 수 있다.
 `onReviewWritten` 이 `stores.updatedAt`(점주 운영 필드)과 `grade`(파생 필드)를 건드리지 않는 것도 같은 이유 — **소유권 경계를 넘는 쓰기는 최소 필드로 제한**한다.
@@ -258,6 +340,9 @@ flowchart TD
 | `stores/{storeId}/menuOverrides` Rules 는 owner 도 핵심 필드 write 허용 | Rules 가 느슨 | 점주가 마스터 가격을 임의로 set 가능성? |
 | ~~`reviews` Rules 만 있고 UI 없음 / `stores.averageScore`, `reviewCount` 갱신 경로 없음~~ | **해소 (2026-10-22)** `store_reviews` task — Rules 전면 교체 + `onReviewWritten` CF 집계 | — |
 | `users/{uid}/favoriteStores`, `/favoriteMenuItems` admin read 권한 명시 안 됨 | 정책 모호 | admin 운영 시 favorites 통계 못 봄 |
+| ~~Qoin 적립률 / `config/qoin` / `qoinRateHistory` / `qoinTransactions` 가 이 문서에 없음~~ | **해소 (2026-10-22)** `qoin_accrual_rate_hierarchy` tester F6 → §2.11 / §3 추가 | — |
+| `stores.delete` 가 점주에게 열려 있다 (삭제 이력 없음 / 서브컬렉션 고아 / 같은 ID 재생성으로 개별 설정 초기화) | **미해결 — backlog** | 소프트 삭제 또는 admin 전용 + 삭제 이력 필요. §2.5 / §2.11.1 참조 |
+| `stores`/`brands` 의 `qoinAccrualRate` Console 직접 편집 감시 없음 | 수용 (2차 N6) | 콘솔로 바꾸면 이력이 빈다. 전역(`config/qoin`)만 감시 중 |
 
 각 항목은 별도 spec.md 또는 추적 task 로 해결해야 한다.
 
@@ -270,4 +355,5 @@ flowchart TD
 - Repository 구현체: [`lib/data/repositories/*.dart`](../../lib/data/repositories/)
 - 역할 흐름: [`role_flows.md`](./role_flows.md)
 - 엔티티 lifecycle: [`entity_lifecycle.md`](./entity_lifecycle.md)
-- 관련 task: [`docs/tasks/firestore_security_rules/spec.md`](../tasks/firestore_security_rules/spec.md), [`docs/tasks/owner_store_registration/spec.md`](../tasks/owner_store_registration/spec.md)
+- 이력 / 감사 추적: [`audit_trail.md`](./audit_trail.md)
+- 관련 task: [`docs/tasks/firestore_security_rules/spec.md`](../tasks/firestore_security_rules/spec.md), [`docs/tasks/owner_store_registration/spec.md`](../tasks/owner_store_registration/spec.md), [`docs/tasks/qoin/spec.md`](../tasks/qoin/spec.md), [`docs/tasks/qoin_accrual_rate_hierarchy/spec.md`](../tasks/qoin_accrual_rate_hierarchy/spec.md)

@@ -70,10 +70,12 @@
 | 점주 노출 지점 | `owner/my_store/my_store_page.dart` 의 `_StoreInfoSection` |
 | 브랜드 노출 지점 | `brand/brand_info/brand_info_page.dart`, `brand/stores/brand_stores_page.dart` |
 
-### 1.5 주문 문서에 `brandId` 가 이미 있다
+### 1.5 주문 문서에 `brandId` 가 이미 있다 — ⚠️ **오판정. §19.1 에서 정정됐다**
 
 `verifyTossPayment.ts` L225/L252 가 `orders/{orderId}.brandId = cart.brandId ?? null` 로 기록하고, `OrderModel` 도 읽는다. 1차 F2 수정으로 **원장에도** `brandId` 가 박제된다.
 → **계층 해석에 매장 문서를 거쳐 브랜드를 역조인할 필요가 없다.** (§7.2 의 1 라운드트립 설계 근거)
+
+> ⚠️ **이 절은 틀렸다 (tester F1 / §19.1).** `CartEntity` 에 `brandId` 필드가 없고 `_cartToMap` 이 보내지 않으므로 `cart.brandId` 는 **항상 undefined** → 앱이 만든 주문의 `brandId` 는 **항상 null** 이다. 브랜드 단계는 실제 앱에서 한 번도 적용되지 않았다. 신뢰원은 **`stores/{storeId}.brandId`** 로 옮긴다 — **§19.1 을 따른다.**
 
 ### 1.6 현재 CF 가 읽는 문서 수 (실측 카운트)
 
@@ -131,6 +133,8 @@
 
 ### 3.1 인프라 (배포 필요)
 
+> ⚠️ **배포 순서는 §19.7 을 따른다**: `firestore:indexes` → `firestore:rules` + `functions` → 앱 빌드. **Rules 와 앱 빌드는 같은 배포**에 올린다(§19.3 의 `enabledChangedBy` 강제 때문).
+
 | 대상 | 변경 |
 |---|---|
 | `firestore.rules` | `config/{docId}` 블록 **수정**, `stores`/`brands` update 분기에 적립률 필드 차단 **추가**, `qoinRateHistory` 컬렉션 블록 **신규** + collection-group 블록 |
@@ -180,7 +184,7 @@
 | 안 | read | 라운드트립 | 판단 |
 |---|---|---|---|
 | 순차 (store 읽고 없으면 brand) | 2~3 | **2~3** | 지연 최악 |
-| **투기적 `getAll([config, store, brand?])`** | 2~3 | **1** | **채택**. `order.brandId` 가 있으므로(§1.5) 매장 경유 없이 함께 요청. brandId 가 null 이면 애초에 요청하지 않음 |
+| ~~투기적 `getAll([config, store, brand?])`~~ | 2~3 | ~~1~~ | ⚠️ **철회 (§19.1).** `order.brandId` 가 항상 null 이라 전제가 무효. **순차 2단**(`getAll([config, store])` → `brands/{store.brandId}`)으로 바꾼다. 총 라운드트립은 **현행과 같은 2**이고 비브랜드 매장은 1로 줄어든다 |
 | order 문서에 적립률 비정규화 | 1 | 1 | **기각** — 주문 생성 시점과 픽업 완료 시점이 다르다. 생성 시점 값을 박제하면 "오늘부터 5%" 가 어제 주문에 적용되지 않는 건 맞지만, 반대로 **며칠 전 주문이 옛 적립률로 적립**된다. 1차가 `* → completed` 를 트리거로 고른 설계와 충돌 |
 | 캐시 (CF 인스턴스 메모리) | 평균 감소 | 1 | **기각** — 적립률 변경이 즉시 반영되지 않는다. 돈 값에 stale 캐시는 쓰지 않는다 |
 
@@ -276,7 +280,7 @@ stores/{storeId}/qoinRateHistory/{autoId} ← 매장
 **추천**: 1차에서는 범위 무관 문구로 교체 — `픽업 완료 시 결제액의 일부가 적립돼요 (적립률은 매장마다 달라요)`. 매장별 숫자 표시는 N2(2차). `적립 중단` 분기(`_paused`)는 **전역 `enabled`/전역 기본값 기준 그대로 유지**한다.
 원장 기반 **과거 내역 문구는 손대지 않는다** (당시 값 박제 — `audit_trail.md` §4.3).
 
-### ⑩ `enabled` 토글의 이력 — **남긴다. 단 직접 쓰기는 유지**
+### ⑩ `enabled` 토글의 이력 — **남긴다. 단 직접 쓰기는 유지** (⚠️ 행위자 미기록 부분은 **§19.3 에서 정정**)
 
 `audit_trail.md` §4.1 기준 "돈·권한·정책 값" 이고, 1차 test_report §9 도 "비상 정지는 책임 추적 가치가 가장 크다" 고 지적했다. **남긴다.**
 
@@ -398,8 +402,10 @@ resolveEffectiveRate(storeRate, brandRate, globalRate) -> (rate, source) | INVAL
 2) config/qoin 읽기 → enabled 판정                   (현행 유지. 회수에도 적용)
 3) kind === 'clawback'  -> 적립률을 읽지 않고 현행 로직 그대로
 4) kind === 'earn'
-   refs = [stores/{after.storeId}]  (+ brands/{after.brandId} if brandId)
-   db.getAll(...refs)                                ← 1 라운드트립
+   # ⚠️ §19.1 에서 정정: 브랜드는 after.brandId 가 아니라 store.brandId 에서 얻는다
+   getAll([config/qoin, stores/{after.storeId}])      ← 1 라운드트립
+   brandId = storeSnap.get('brandId')                 ← 유일한 신뢰원 (order 값은 쓰지 않는다)
+   if brandId: get(brands/{brandId})                  ← 2번째 라운드트립 (수용, §19.1)
    resolveAccrualRate(...)  → INVALID 이면
         console.error('skipped_invalid_rate', {scope, storeId, brandId, values})  후 return
    rate === 0 이면
@@ -462,6 +468,8 @@ Firebase Console / Admin SDK 쓰기는 **Rules 를 우회한다**(§1.2). 전역
 ## 9. 보안 · 적립률 쓰기 경로 전수 (F1 재발 방지)
 
 설계 후 `qoinAccrualRate` / `config/qoin.accrualRate` 에 **쓸 수 있는 모든 경로**:
+
+> ⚠️ **12경로는 전수가 아니었다 (tester F4 / §19.4).** 13번째 경로가 있다 — 점주가 자기 매장을 `delete` 한 뒤 같은 ID 로 재생성하면 개별 설정이 **제거**된다. `status: 'pending'` 재승인이 필요하므로 **수용**하고 하네스로 동작을 고정한다. 아래 표의 "전수" 는 **13경로**로 읽는다.
 
 | # | 경로 | 결과 | 검증 |
 |---|---|---|---|
@@ -575,11 +583,11 @@ Dart·TS 두 구현은 드리프트 위험이다. 완화책:
 | # | 체크 | 결과 |
 |---|---|---|
 | 1 | 돈·권한·정책 값을 바꾸는가 → 설정 변경 이력 | **통과.** §5.2 의 `qoinRateHistory` 가 전역/브랜드/매장 + `enabled` 까지 커버. H7 의 7항목(누가/언제/범위/이전→새 값/사유/일괄 묶음/영향 수·덮어쓰기 여부) 전건 매핑 |
-| 2 | 덮어쓰기로 사라지는 값 | **통과.** callable 이 **같은 트랜잭션**에서 `before` 를 읽어 이력에 남긴다 → 이력 없는 변경이 구조적으로 불가능. H5 의 "개별 설정 초기화" 도 `clearedCount` 로 남는다 |
+| 2 | 덮어쓰기로 사라지는 값 | ⚠️ **FAIL (§19.2 에서 정정).** 원래 판정: **통과.** callable 이 **같은 트랜잭션**에서 `before` 를 읽어 이력에 남긴다 → 이력 없는 변경이 구조적으로 불가능. H5 의 "개별 설정 초기화" 도 `clearedCount` 로 남는다 → **이 부분이 오판정이다.** 일괄 덮어쓰기는 매장별 이전 값(3%/0%/무효)을 **어디에도** 남기지 않는다. §19.2 의 매장별 이력으로 고친다 |
 | 3 | 기록이 정책 값을 참조만 하는가 → 당시 값 박제 | **통과.** 원장은 1차대로 `accrualRate` 박제 + §5.3 `accrualRateSource` **추가**. 계층이 바뀌어도 과거 내역은 불변 |
-| 4 | "누가" 가 기록되는가 | **통과(한계 명시).** callable 경로는 `changedBy`=admin uid + `changedByRole`. **예외 2개**: ⓐ `enabled` 토글은 비상 정지 단순성을 위해 직접 쓰기를 유지하므로 `changedBy: null` / `source:'direct'` (§4-⑩ 의 의도된 타협) ⓑ Console 편집은 행위자를 알 수 없다. **둘 다 before/after/시각은 남는다** |
+| 4 | "누가" 가 기록되는가 | ⚠️ **ⓐ FAIL (§19.3 에서 정정).** 원래 판정: **통과(한계 명시).** callable 경로는 `changedBy`=admin uid + `changedByRole`. **예외 2개**: ⓐ `enabled` 토글은 비상 정지 단순성을 위해 직접 쓰기를 유지하므로 `changedBy: null` / `source:'direct'` (§4-⑩ 의 의도된 타협) → **이 타협은 거짓 이분법이었다.** 직접 쓰기를 유지하면서 `enabledChangedBy` 를 Rules 로 강제하면 행위자가 남는다 (§19.3) ⓑ Console 편집은 행위자를 알 수 없다. **둘 다 before/after/시각은 남는다** |
 | 5 | 일괄 처리 → 1건 + 영향 범위 | **통과.** `op:'bulkApply'` 1건에 `bulkMode / affectedCount / clearedCount / status / processedCount`. 수치는 **CF 가 실제 처리한 값** |
-| 6 | CF 로그에 의존하지 않는가 | **통과(한계 명시).** 설정 변경은 Firestore 에 영구 기록. **남는 로그 의존 2건**: ⓐ 적립 시 `skipped_rate_zero` / `skipped_invalid_rate` 는 Cloud Logging 뿐 (1차 보류 H2 와 동종 — N8) ⓑ `stores`/`brands` 의 Console 직접 편집 감시 없음 (N6) |
+| 6 | CF 로그에 의존하지 않는가 | ⚠️ **ⓐ FAIL (§19.4 H-2 에서 정정).** 원래 판정: **통과(한계 명시).** 설정 변경은 Firestore 에 영구 기록. **남는 로그 의존 2건**: ⓐ 적립 시 `skipped_rate_zero` / `skipped_invalid_rate` 는 Cloud Logging 뿐 (1차 보류 H2 와 동종 — N8) → **`skipped_invalid_*` 는 고객 돈의 누락이므로 로그만으로는 §4-6 위반.** `qoinSettlementIssues` 로 Firestore 기록한다 (§19.4). `skipped_rate_zero` 는 의도된 정책이라 로그 유지 ⓑ `stores`/`brands` 의 Console 직접 편집 감시 없음 (N6) |
 
 ---
 
@@ -819,3 +827,398 @@ H1~H7 은 확정이므로 재논의하지 않는다. 아래는 **이 설계 과�
 9. `flutter analyze` 무경고, `flutter test` 전건 PASS, `functions` 빌드 PASS
 10. `audit_trail.md` §4 6항목 통과 (§13) — 한계 2건이 spec 에 명시된 그대로
 11. **실결제 0회**
+
+---
+
+# 19. 재검토 — tester FAIL 6건 (2026-10-22, 배포 전)
+
+- 대상: `68ee77a`(백엔드) + `9068fa9`(앱/테스트). **미배포.** F1 때문에 배포를 멈춘 상태.
+- 입력: `test_report.md` (PASS 14 / FAIL 6 / 보류 3)
+- 이 절은 §1~§18 중 **틀린 판정을 정정**한다. 충돌하면 **이 절이 우선**이다. 정정 대상: §1.5 · §4-② · §4-⑩ · §7.2 · §9 · §13(체크 2·4·6).
+
+## 19.0 판정 요약
+
+| # | 항목 | 판정 | 배포 전/후 |
+|---|---|---|---|
+| F1 | 브랜드 단계 미적용 + 클라이언트 지정 `brandId` | **고친다** — 신뢰원을 `stores/{id}.brandId` 로 | **배포 전 (필수)** |
+| F2 | 덮어쓰기가 매장별 이전 값을 기록 없이 지움 | **고친다** — 매장별 이력 + 브랜드 이력 분류 집계 | **배포 전** |
+| F3 | `enabled` 이력에 `changedBy` 없음 | **고친다** (§4-⑩ 의 수용은 거짓 이분법이었다) | **배포 전** |
+| F4 | 매장 delete → 같은 ID 재생성으로 0% 해제 | **수용** (+ 하네스 케이스, §9 13경로로 정정) | 배포 전 (문서·테스트만) |
+| F5 | 일괄 적용 재개·동시 실행 보호 부족 | **고친다** — 브랜드 문서 잠금/포인터 1종 | **배포 전** |
+| F6 | `data_ownership.md` 공백 | **고쳤다** (이 커밋) | 완료 |
+| 부가 A | 오프-그리드 값 표시(`0.0015` → `0.2%`) | 고친다 | 배포 후 가능 |
+| 부가 B | 무효 값 이력 `before: null` | **고친다** (소급 불가) | **배포 전** |
+| H-1 | 0% 매장 덮어쓰기 정책 | **사용자 결정 대기** (추천 A + 서버 집행) | 결정 후 |
+| H-2 | 무효 값 fail-closed 시 소급 수단 없음 | 기록 수단은 **고친다** / 소급 도구는 backlog | **배포 전**(기록) |
+| H-3 | 허브 partial "조용히 생략" + 50건 | **결함이다 → 고친다** / 50건은 수용(+페이지네이션) | **배포 전**(구조) |
+
+---
+
+## 19.1 F1 — 적립률 계층의 브랜드 신뢰원을 `stores/{id}.brandId` 로 옮긴다
+
+### 정정: §1.5 는 틀렸다
+
+§1.5 는 "주문 문서에 `brandId` 가 이미 있다 → 매장 경유 역조인 불필요" 로 §7.2 의 1 라운드트립을 정당화했다. **사실이 아니다.** `CartEntity` 에 `brandId` 필드가 없고 `_cartToMap`(`payment_gateway_repository_impl.dart:175`)이 보내지 않으므로 `verifyTossPayment.ts:225,252` 의 `data.cart.brandId ?? null` 은 **항상 null** 이다. 주문 문서를 만드는 경로는 `verifyTossPayment.ts:263` 한 곳뿐이다. 따라서 `onOrderQoinSettled.ts:151` 이 읽는 `after.brandId` 는 언제나 null 이고, **브랜드 단계는 실제 앱에서 한 번도 적용되지 않는다.** 원장의 `brandId` 도 항상 null 이라 `audit_trail.md` §5(정산 대비)가 요구한 필드가 무효다.
+
+### 결정 — 신뢰원은 `stores/{storeId}.brandId`, 평가 시점은 **적립(완료) 시점**
+
+```
+earn 경로의 브랜드 결정:
+  storeSnap = stores/{after.storeId}            ← 이미 읽는다
+  brandId   = storeSnap.get('brandId')          ← 유일한 신뢰원
+  order.brandId / cart.brandId 는 금액 결정에 쓰지 않는다
+```
+
+근거 (세 가지):
+
+1. **결제 경로를 건드리지 않는다.** 돈이 오가는 `verifyTossPayment` 에 문서 읽기를 추가하지 않는다.
+2. **이미 생성된 주문(brandId null)도 함께 고쳐진다.** 박제 방식이면 과거 주문은 영구히 전역값으로 남는다.
+3. **스푸핑 차단.** `cart` 는 클라이언트 값이다. 앱을 우회해 callable 을 직접 호출하면 무관한 고효율 브랜드(최대 20%)를 지정해 요율을 얻을 수 있다. 이번 변경이 `order.brandId` 를 **금액 결정에 쓰기 시작하면서** 신뢰 경계가 됐다. 매장 문서를 신뢰원으로 쓰면 이 구멍이 닫힌다.
+
+### "주문 시점의 브랜드" vs "완료 시점의 브랜드" — 완료 시점이 맞다
+
+대안으로 검토한 것: `verifyTossPayment` 가 매장 문서를 읽어 **서버 권위로 `brandId` 를 박제**하고 CF 는 매장 문서 fallback. 적립은 결제가 아니라 **완료 시점**에 일어나므로 그 사이 매장이 브랜드를 떠나면 박제값이 낡는다. 비용 부담 주체 관점에서 판단한 결과 **기각**한다.
+
+| 관점 | 판단 |
+|---|---|
+| 설계 일관성 | §4-② 가 "적립률은 **완료 시점** 값" 을 이미 확정했다(주문에 요율 비정규화를 기각한 이유). 요율은 완료 시점인데 **소속 브랜드만 주문 시점**이면 해석 사슬이 내부적으로 불일치한다 — 매장 값은 최신, 소속은 박제 |
+| 비용 부담 | 비용을 부담하는 주체는 **그 Qoin 이 발행되는 순간의 가맹 관계**다. 매장이 브랜드를 떠난 뒤 발행되는 Qoin 을 옛 브랜드에 청구할 근거가 없다. 반대로 떠난 브랜드의 요율(최대 20%)이 계속 적용되는 쪽이 분쟁 소지가 크다 |
+| 괴리 창 | 결제 → 픽업 완료는 실무상 수 분~수 시간. 브랜드 이탈은 드문 행정 사건이고, 그 순간 처리 중인 주문이 걸릴 확률·금액은 1건 단위 |
+| 비용 | 박제안은 결제 CF 에 read +1(사용자가 대기하는 경로) + fallback 코드를 **영구히** 유지 + 기존 주문은 여전히 null. 이득이 없다 |
+
+→ **계층 전체를 적립 시점 기준으로 평가한다.** 매장 요율 · 매장의 브랜드 소속 · 브랜드 요율 · 전역 기본값 모두 "지금" 의 값.
+
+### 정정: 라운드트립 (§4-② / §7.2 / §1.6)
+
+brandId 를 매장 문서를 읽은 **뒤에** 알게 되므로 브랜드 소속 매장의 계층 해석은 **순차 2단**이 된다. 이 비용을 수용한다.
+
+- read 수는 §1.6 의 예측(earn 4~5)과 **동일**하다. 늘어나는 것은 지연뿐이다.
+- 적립은 픽업 완료 후 도는 **백그라운드 트리거**다. 사용자가 응답을 기다리는 경로가 아니고, 1차 설계가 `retry: true` 로 지연 허용을 이미 전제했다.
+- 권장 구현: `config/qoin` 읽기를 earn 경로에서 매장 읽기와 합친다.
+  - earn: `getAll([config/qoin, stores/{storeId}])` = 1 RT → brandId 있으면 `brands/{brandId}` = 1 RT → **총 2 RT** (현행 `loadConfig` 1 RT + `getAll` 1 RT 과 **같다**). 브랜드 없는 매장은 **1 RT 로 줄어든다**
+  - clawback: `config/qoin` 단독 1 RT (현행 유지, read 증가 0)
+  - 단 `enabled` kill switch 판정은 회수에도 유지한다(§4-② 불변). 합치는 것은 **읽기 묶음**뿐이고 판정 위치는 그대로다.
+- `storeSnap` 이 없거나(`!exists`) `brandId` 가 빈 문자열/비문자열이면 **브랜드 단계 없음**으로 보고 전역으로 간다(기존 `classifyRate` 의 "문서 부재 = 상속" 과 같은 규칙). `storeId` 자체가 빈 값이면 현행대로 `skipped_invalid_store` 로 중단.
+
+### 원장 `brandId`
+
+**해석에 쓴 값(= `stores/{id}.brandId`)을 쓴다.** `after.brandId` 를 쓰면 정산 집계의 브랜드와 요율을 결정한 브랜드가 달라져 정산이 성립하지 않는다(`audit_trail.md` §5 의 목적 자체가 깨진다). clawback 은 현행대로 earn 문서에서 상속한다(재계산 금지).
+
+### `order.brandId` / `orderLogs.brandId` 의 처리
+
+- **필드는 유지**한다(모델 호환). 다만 `verifyTossPayment` 는 `data.cart.brandId` 를 **읽지 않고** `brandId: null` 로 기록한다 — 1줄 변경, read 추가 0. 클라이언트 지정 값을 **저장 자체 하지 않음**으로써 "나중에 누가 다시 신뢰원으로 쓰는" 재발 경로를 끊는다.
+- 실측: `orders` 를 `brandId` 로 질의하는 코드는 없다(`where('brandId')` 는 `stores`/`brands` 컬렉션 조회 2곳뿐). 주문 화면이 브랜드를 보여줘야 하면 매장 문서에서 읽는다.
+- `CartEntity` 에 `brandId` 를 추가하지 않는다. 추가하면 "앱이 보내는 브랜드" 라는 **거짓 권위**가 다시 생긴다.
+
+### 이 결함이 테스트에 안 잡힌 이유 — 그리고 요구하는 테스트 (F1 본체보다 중요)
+
+원인: **모든 자동 테스트가 주문을 `brandId` 가 들어간 채로 직접 시드한다**(`emulator.test.mjs` L80 `completeOrder`). `앱 → verifyTossPayment → orders → 적립` 최종 경로를 지나는 테스트가 **하나도 없다**. 테스트가 "주문 문서의 모양" 을 손으로 쓸 수 있는 한, 앱이 그 모양을 만들지 못하는 사실은 영원히 보이지 않는다.
+
+필수 요구 (developer, 완료 기준에 추가):
+
+- **T1 — 주문 문서 구성의 단일 출처화.** `verifyTossPayment` 의 주문/로그 문서 구성을 순수 함수 `buildOrderData(cart, uid, paymentInfo)` / `buildOrderLogData(...)` 로 분리한다. **에뮬레이터 E2E 는 주문을 손으로 시드하지 않고 이 함수로 만든다.** Toss API 호출은 모킹 대상이라 callable 전체를 통과시키지는 않되, "테스트가 쓰는 주문" 과 "운영이 쓰는 주문" 의 모양이 **같은 코드에서 나오게** 한다. 이것이 F1 클래스를 구조적으로 막는 유일한 수단이다.
+- **T2 — cart 입력 계약 골든 테스트.** ⓐ Dart: `_cartToMap` 의 **키 집합**을 골든으로 고정. ⓑ TS: `verifyTossPayment` 가 `data.cart` 에서 **소비하는 키 집합**을 상수로 노출하고 골든으로 고정. ⓒ spec 의 대조표(아래)와 둘이 일치하는지 tester 가 확인. 한쪽만 바뀌면 골든이 깨져 대조가 강제된다.
+
+  | `_cartToMap` 이 보내는 키 | `verifyTossPayment` 가 쓰는 키 | 비고 |
+  |---|---|---|
+  | storeId / storeName / subtotal / discount / totalPrice / items | 동일 | 전건 일치 |
+  | (없음) | `brandId` | **이 행이 F1 이었다.** 수정 후 TS 쪽에서 제거 |
+
+- **T3 — 적립이 `order.brandId` 와 무관함 (3 케이스).**
+  1. `order.brandId = null` + `store.brandId = A`(5%) → 500 Qoin / `accrualRateSource: 'brand'` / 원장 `brandId = A`
+  2. `order.brandId = B`(20%) + `store.brandId = A`(5%) → **5% 적용** / 원장 `brandId = A` (스푸핑 차단 회귀)
+  3. `order.brandId = A` + `store.brandId` 부재 → 전역값 / 원장 `brandId = null`
+- **T4 — grep 체크(tester).** 금액·원장 경로에서 `after.brandId` / `data.cart.brandId` 참조 **0건**.
+
+---
+
+## 19.2 F2 + H-1 — 덮어쓰기 기록, 그리고 0% 보호
+
+### 정정: §13 체크 2 의 "통과" 판정은 사실과 다르다
+
+§13 체크 2(L578)는 개별 설정 초기화를 "`clearedCount` 로 남는다 → 통과" 로 판정했다. **오판정이다.** `applyBrandQoinRate.clearOverrides` 는 매장 `qoinAccrualRate` 를 `FieldValue.delete()` 하고 `stores/{id}/qoinRateHistory` 에는 **아무것도 쓰지 않는다**. 브랜드 이력에는 `clearedCount` 숫자만 남아 **어느 매장의 어떤 값(3% / 0% / 무효)이 지워졌는지 어디에도 없다.** `audit_trail.md` §4-2("덮어쓰기로 사라지는 값") 위반이고, 점주 입장에서는 **자기 매장 이력에 아무 기록 없이 적립률이 바뀐다.** → 체크 2 는 **FAIL**. 아래로 고친다.
+
+### 기록 설계 (고친다, 배포 전)
+
+1. **지우는 매장마다 매장 이력 1건.**
+
+```
+stores/{storeId}/qoinRateHistory/{autoId}
+  scope          'store'
+  targetId       storeId
+  field          'accrualRate'
+  op             'clearByBulk'                  ← 신규
+  before         number | null                  ← 지워진 값
+  beforeState    'value' | 'invalid'            ← 19.4-B 와 공용
+  beforeRaw      string | null
+  after          null                           ← 상속으로 되돌림
+  changedBy      실행 admin uid                  ← 일괄이라도 행위자는 있다
+  changedByRole  'admin'
+  source         'bulk'
+  bulkHistoryId  브랜드 이력 ID                   ← 신규. 브랜드 1건 ↔ 매장 N건 연결
+  bulkMode       'overwrite'
+  changedAt      serverTimestamp
+```
+
+점주의 "왜 내 매장 적립률이 바뀌었나" 가 이 1건으로 답된다(F2 재현 경로의 핵심 불만).
+
+2. **브랜드 이력에 분류 집계 추가**: `clearedZeroCount` / `clearedInvalidCount` / `clearedValueCount` (합 = `clearedCount`). 0% 수가 남아야 H-1 의 A/C 안 판단 근거가 생긴다.
+
+3. **구현 주의 — 배치 한도.** 매장 1건당 `update` 1 + 이력 `create` 1 = **2 write**. `CHUNK` 을 **450 → 225** 로 낮춘다(500 한도). 600매장 전체 덮어쓰기 시 write 1,200 — 운영자 행위 빈도이므로 비용 수용.
+
+4. 매장 이력 쓰기 주체는 CF 전담(Rules `if false`) — 기존 패턴 그대로.
+
+### H-1 — 0% 덮어쓰기 정책: **확정하지 않는다** (사용자 결정, Q1)
+
+`docs/backlog.md` 에 옵션 A~D 가 기록돼 있고 A 가 추천돼 있다. 사용자는 "해결책도 나중에 같이 구상하겠지?" 라고만 했고 **아직 안을 고르지 않았다.** 설계자가 임의 확정하지 않는다.
+
+**추천: A (0% 는 덮어쓰기에서도 제외) + 서버 집행.**
+
+- 0% 는 "값" 이 아니라 **의도(잠금)** 다. 3% → 5% 통일은 합리적이지만 0% → 5% 는 "적립 안 함" 결정의 무효화다. 돈이 **나가기 시작하는** 방향의 결정이므로 마찰이 타당하다.
+- **화면 경고로는 구조적으로 보장되지 않는다.** 현재 다이얼로그의 "적립 안 함 N곳도 다시 적립해요" 의 N 은 화면 스트림에서 센 값이라 실행 시점과 다를 수 있다(그 사이 다른 admin 이 0% 를 걸면 다이얼로그 숫자보다 많이 덮인다). 서버가 `qoinAccrualRate === 0` 을 **skip** 하면 다이얼로그 숫자 정확도와 무관하게 안전해진다.
+- A 를 택하면 다이얼로그 문구가 경고("…도 다시 적립해요" + 체크박스)에서 **정보**("적립 안 함 N곳은 그대로 유지돼요")로 바뀌어, 숫자가 틀려도 결과가 안전하다 → **스트림 숫자 괴리 문제가 같이 사라진다.** 체크박스는 제거 가능.
+
+**A 를 택하지 않을 경우의 괴리 처리(B/C/D 공통)**: 사전 숫자의 정확성은 분산 상태에서 보장할 방법이 없다. 따라서 ⓐ 다이얼로그 숫자는 "약" 임을 문구로 드러내고(`약 N곳`), ⓑ **서버가 실제로 덮은 수**(`clearedZeroCount`)를 응답으로 돌려 **완료 화면이 사후 확정 고지**("적립 안 함이었던 3곳이 다시 적립돼요"), ⓒ 매장별 이력(위)으로 사후 추적 — 세 겹으로 닫는다. **어느 안이든 ⓑ·ⓒ 와 매장별 이력은 필수다.**
+
+---
+
+## 19.3 F3 — `enabled` 토글의 행위자: **tester 가 맞다. 고친다**
+
+§4-⑩ / §13 체크 4-ⓐ 는 "CF 경유로 바꾸면 CF 장애 시 비상 정지가 불가능하다" 를 이유로 행위자 미기록을 수용했다. **이 수용은 거짓 이분법 위에 서 있었다.** 선택지는 "CF 경유" 와 "행위자 포기" 둘이 아니다. 제3안이 있고, 비용이 사실상 없다.
+
+### 제3안 — 직접 쓰기를 유지하면서 행위자를 남긴다
+
+```
+클라이언트(admin) 1회 write:
+  config/qoin  { enabled: false,
+                 enabledChangedBy: <auth.uid>,      ← 신규
+                 enabledChangedAt: request.time }   ← 신규
+
+Rules: config/qoin update 에서 enabled 가 바뀌면
+  request.resource.data.enabledChangedBy == request.auth.uid  강제
+
+onQoinConfigWritten: after.enabledChangedBy 가 있으면
+  changedBy = 그 uid / changedByRole = 'admin' / source = 'app_direct'
+                        없으면 (= Console 편집)
+  changedBy = null / source = 'direct'   ← 현행 유지
+```
+
+| 기준 | 결과 |
+|---|---|
+| 비상 정지의 단순성 | **보존.** 여전히 클라이언트 직접 쓰기 1회. CF 는 경로에 없다. CF 가 죽어 있어도 토글은 즉시 반영되고, 이력만 트리거 복구 후(재시도) 남는다 |
+| 행위자 | 남는다. Rules 가 `== auth.uid` 를 강제하므로 다른 admin 사칭 불가 |
+| 앱 토글 vs 콘솔 편집 구별 | **된다.** `source: 'app_direct'` vs `'direct'` — F3 가 요구한 것 그대로 |
+| 비용 | Rules 1분기 + 클라이언트 2필드 + 트리거 분기 1개 |
+
+→ **§4-⑩ / §13 체크 4-ⓐ / U3 을 정정한다.** 남는 한계는 ⓑ Console 편집의 행위자 미상 **1건뿐**이며, 그것은 Firebase 의 구조적 성질이다(§9-11 과 동급).
+
+**배포 전에 싣는다.** 이미 F1 로 배포가 멈춘 상태이므로 추가 비용이 없고, 지나간 이력은 소급 불가다(U7 과 같은 논리).
+
+> ⚠️ **배포 순서 제약**: Rules 가 `enabledChangedBy` 를 강제하므로 **Rules 와 앱 빌드를 같은 배포에** 올린다. Rules 를 먼저 올리면 구버전 앱의 토글이 거부된다 — **돈을 멈추는 스위치가 막히는** 최악의 순서다. 미배포 상태이므로 지금은 문제없고, §3.1 배포 목록에 순서를 명시한다.
+
+---
+
+## 19.4 F4 · 부가 판정
+
+### F4 — 매장 delete → 같은 ID 재생성: **수용** (고치지 않는다)
+
+| 근거 | 내용 |
+|---|---|
+| 돈으로 이어지지 않는다 | 재생성 문서는 Rules 가 `status: 'pending'` 을 강제한다. 재승인 전까지 주문을 받지 못하므로 **적립이 발생하지 않는다.** 0% 해제가 돈이 되려면 **admin 의 명시적 승인 행위**를 반드시 거친다 |
+| 방어선 위치 | 점주의 `stores.delete` 는 이 기능과 무관하게 **이미 매장 문서 전체를 파괴**한다(훨씬 큰 권한). 적립률 1필드만 따로 막는 것은 방어선의 위치가 틀렸다 |
+| 진짜 문제는 다른 것 | `stores.delete` 가 점주에게 열려 있고, 삭제가 **이력에 남지 않으며**, 이력 서브컬렉션이 고아가 된다. → **`stores.delete` 정책(소프트 삭제 / admin 전용 / 삭제 이력)** 으로 `backlog.md` 에 올린다. 이 spec 범위 밖 |
+
+**요구 (어느 쪽이든 필수)**: Rules 하네스에 이 경로 케이스를 추가한다 — ⓐ 점주 `delete` **ALLOWED** ⓑ 같은 ID 로 `status:'pending'` 재생성 **ALLOWED** ⓒ `qoinAccrualRate` 를 포함한 재생성 **DENIED**. 현재 동작을 명시적으로 고정해 다음 사람이 "전수" 를 다시 오해하지 않게 한다.
+**§9 정정**: "12경로 전수" → **13경로**. 13번 = 점주 delete + 재생성(**수용된 경로**, 재승인 필요). §18 완료 기준 2 의 "12경로" 도 13으로 읽는다.
+
+### 부가 A — 오프-그리드 값 표시 (배포 후 가능)
+
+Console 로 넣은 `0.0015` 는 CF 가 0.15% 로 정확히 계산하지만 화면은 `0.2%` 로 반올림 표시한다. **표시가 거짓**이므로 고친다(돈은 틀리지 않으므로 배포 차단 아님).
+정책: 저장값이 격자(1/1000 단위)와 **왕복 일치하지 않으면 반올림 표시를 금지**한다. 정확한 값(`0.15%`)을 보여주고 **admin 화면에만** `격자 밖 값 (콘솔 편집)` 배지를 붙인다. CF 계산은 변경 없음(유효 범위 안이면 그대로 발행 — fail-closed 대상 아님). 점주/고객 화면은 소수 둘째 자리까지 표기만 정확히 한다.
+
+### 부가 B — 무효 값의 이력 `before` (배포 전, 소급 불가)
+
+`setQoinAccrualRate` 가 이전 값이 무효(문자열 등)였을 때 이력 `before` 를 `null` 로 기록해 **"설정 없음(상속)" 과 구별되지 않는다.** 감사 정밀도 문제이고 **사후 복원이 불가능**하다(§5.2 가 `null` 의 뜻을 "설정 없음" 으로 정의해버렸다).
+→ 이력 스키마에 추가(callable 2개 + `onQoinConfigWritten` 공용):
+
+```
+beforeState  'absent' | 'invalid' | 'value'
+beforeRaw    string | null      ← 무효값의 원형 문자열 (최대 100자, 비number 만)
+```
+
+`before` 자체의 의미는 유지(number|null)하고 모호성만 제거한다. 기존 판독 코드는 `beforeState` 부재를 `'value'|'absent'` 로 관대히 해석한다.
+
+### H-2 — 무효 값 fail-closed 시 소급 적립: **기록은 지금, 소급 도구는 backlog**
+
+무효 값은 Console 편집으로만 생긴다. 그런데 그 사이 완료된 주문은 `skipped_invalid_rate` **로그만** 남기고 트리거가 `return` 으로 성공 처리되어 재시도되지 않는다. 값을 고쳐도 그 주문들은 영영 적립되지 않고, 근거는 Cloud Logging 보존 기간(30일)에만 있다 — `audit_trail.md` §4-6("영구 보존이 필요하면 Firestore") 위반이며, 사라지는 것이 **고객 돈**이다.
+
+**고친다 (배포 전, 기록 수단만)**: 적립이 중단된 주문을 Firestore 에 1건 기록한다.
+
+```
+qoinSettlementIssues/{orderId}        ← CF 전담 쓰기, read: admin
+  orderId / userId / storeId / brandId
+  reason     'invalid_rate' | 'invalid_store' | 'invalid_total'
+  scope      'store' | 'brand' | 'global' | null     ← 어느 단계가 무효였나
+  values     { store, brand, global }                ← 그때 본 원시 값
+  totalPrice number
+  occurredAt serverTimestamp
+  resolved   false
+```
+
+- `skipped_rate_zero` 는 **기록하지 않는다** — 의도된 정책이고 빈도가 높다(노이즈).
+- 멱등: 문서 ID 를 `orderId` 로 고정.
+- **소급 적립 도구 자체는 만들지 않는다.** "어느 시점 요율로 줄 것인가"(발생 시점 / 수정 후 / 전역 기본)는 정책 결정이 필요하다 → **Q2** + `backlog.md`. 다만 위 기록이 있으면 **나중에 만들 수 있다**. 지금 기록하지 않으면 그때 대상 목록 자체가 없다(F2·U7 과 같은 함정).
+
+---
+
+## 19.5 F5 + H-3 — 일괄 적용 서버 보호와 중단 가시성 (한 필드로 닫는다)
+
+### 판정 — tester 의 동시 실행 추론은 **코드 확인 결과 사실이다**
+
+`applyBrandQoinRate.ts` 실측: `running` 조회(`where status == 'in_progress'`)와 이력 생성이 **분리**돼 있고, 트랜잭션이 읽는 것은 `brands/{id}` **하나뿐**이다. 두 호출이 scan 구간에 겹치면 서로 충돌하지 않는다. 두 번째 호출은 브랜드 값이 이미 같으므로 `sameValue = true` 지만, `mode === 'overwrite'` 에서 **자기 스캔의 `scan.withOverride > 0`** 로 noop 분기를 빠져나가 **이력 2건 + `clearOverrides` 2중 실행 + 카운트 이중 보고**가 된다. → 고친다.
+
+### 해법 — 브랜드 문서에 잠금/포인터 필드 (추가 read 0)
+
+```
+brands/{brandId}
+  qoinBulkHistoryId : string | null
+  qoinBulkStatus    : 'in_progress' | 'partial' | null
+  qoinBulkAt        : timestamp
+```
+
+- 트랜잭션이 **이미 `brands/{id}` 를 읽고 있으므로 read 증가 0.** 트랜잭션 **안에서** `qoinBulkStatus == 'in_progress'` 이고 stale 아니면 거부 → 같은 문서 경합이므로 Firestore 가 직렬화한다. **이력 2건이 구조적으로 불가능**해진다 (현재의 트랜잭션 밖 사전 조회는 보조 수단으로만 남긴다).
+- `completed` 로 마감할 때 세 필드 제거, 실패 시 `'partial'` 유지.
+- **Rules**: 클라이언트 쓰기 차단. `stores`/`brands` 의 `qoinAccrualRate` 차단 분기에 이 3필드를 **같이** 넣는다(`touchesQoinRate()` 확장). create 경로도 동일.
+- `StoreModel`/`BrandModel` 의 쓰기 맵에 넣지 않는다(§16 규칙 그대로).
+
+### (a) 재개 재검증 — 고친다
+
+`resumeHistoryId` 경로가 트랜잭션 안에서 다음을 확인하고, 하나라도 어긋나면 `failed-precondition` 으로 **거부**한다("브랜드 값이 그 뒤에 변경됐어요. 다시 적용하세요"):
+
+1. `brands/{id}.qoinBulkHistoryId == resumeHistoryId`
+2. `brands/{id}.qoinAccrualRate` 가 그 이력의 `after` 와 일치 (부재 ↔ `after: null` 포함)
+
+이력에 `resumedAt` / `resumeCount` 를 기록한다. 이렇게 하면 "이력은 5% 로 덮어씀인데 실제 브랜드 값은 3%" 상태가 만들어지지 않는다.
+
+### (c) 일괄 진행 중 단건 변경 — 고친다 (저비용)
+
+`setQoinAccrualRate` 가 `scope: 'store'` 이고 그 매장에 `brandId` 가 있으면 브랜드 문서를 읽어 `qoinBulkStatus == 'in_progress'`(not stale) 이면 거부한다("이 브랜드에 일괄 적용이 진행 중이에요"). 매장 문서는 이미 읽으므로 **read +1**, 빈도는 운영자 행위 수준. 브랜드 단건 변경(`scope: 'brand'`)도 동일하게 막는다.
+
+### H-3 — "조용히 생략" 은 **그 자체로 결함이다** (판정)
+
+`admin_qoin_settings_page.dart` 의 `_PartialSection` 은 `asData?.value == null` 이면 `SizedBox.shrink()` 를 돌려준다(주석도 "실패·로딩이면 조용히 생략한다"). 이 표면은 **중단된 일괄 적용을 알리는 유일한 상시 표면**이다. 그것이 에러일 때 사라지면 화면상 **"중단 없음" 과 "알 수 없음" 이 구별되지 않는다.** 안전 측 실패가 아니다 — 특히 인덱스 미배포 상태에서는 CG 쿼리가 `failed-precondition` 으로 항상 실패하므로 **중단된 일괄 적용이 허브에 영원히 보이지 않는다.** → **결함으로 판정하고 고친다.**
+
+| # | 수정 | 배포 |
+|---|---|---|
+| D-1 | **구조**: 허브의 중단 판정을 CG 이력이 아니라 **`brands` 스트림의 `qoinBulkStatus`** 로 한다(위 포인터). 허브는 이미 `qoinAdminBrandsProvider` 를 쓰므로 **추가 조회 0**. 인덱스 미배포·50건 윈도우와 **무관하게** 중단이 보인다 | 배포 전 |
+| D-2 | **표면**: "최근 변경" 서브타이틀과 이력 화면은 에러를 **조용히 생략하지 않고** 에러 행("이력을 불러올 수 없어요 · 다시 시도")을 보인다. 로딩과 에러를 구별한다 | 배포 전 |
+| D-3 | **50건 한계는 수용.** 포인터가 "놓치면 위험한 것"(중단)을 떼어냈으므로 남는 것은 최신순 열람 편의다. 단 전체 이력 화면은 50건 고정이 아니라 **페이지네이션(더 보기)** 을 요구한다 — 600매장 초기 세팅에서 50건은 반나절 분량이다(tester §7 시나리오 1) | 전체 이력 페이지네이션은 배포 후 가능 |
+| D-4 | **배포 순서**: `firestore:indexes` 를 **앱 배포 전에** 올린다. CG 이력 쿼리가 인덱스를 요구한다(에뮬레이터는 인덱스를 강제하지 않아 테스트로 못 잡는다 — §7.5 의 교훈이 여기서 실제화됐다) | 배포 전 |
+
+---
+
+## 19.6 §13 감사 추적 체크리스트 — 재판정
+
+| # | 체크 | 1차 판정 | **재판정** |
+|---|---|---|---|
+| 1 | 설정 변경 이력 | 통과 | **통과** (변동 없음) |
+| 2 | 덮어쓰기로 사라지는 값 | 통과 | **FAIL → 19.2 로 수정.** 일괄 덮어쓰기가 매장별 이전 값을 기록 없이 지웠다. 매장별 이력 + 분류 집계로 통과시킨다 |
+| 3 | 당시 값 박제 | 통과 | **통과.** 단 원장 `brandId` 가 항상 null 이던 것은 **박제 실패**였다 → 19.1 로 수정(해석에 쓴 `store.brandId` 를 박제) |
+| 4 | "누가" | 통과(한계 2) | **ⓐ FAIL → 19.3 으로 수정**(`enabled` 행위자). ⓑ Console 편집 미상은 **수용 유지**(구조적). 일괄의 매장별 기록에도 실행 admin uid 를 남긴다(19.2) |
+| 5 | 일괄 = 1건 + 영향 범위 | 통과 | **통과 + 보강.** 브랜드 1건은 유지하고 매장별 1건을 **추가**한다(묶음은 `bulkHistoryId` 로 연결). 동시 실행 시 이력 2건 문제는 19.5 로 수정 |
+| 6 | CF 로그 의존 | 통과(한계 2) | **ⓐ FAIL → 19.4(H-2) 로 수정.** 적립 중단(= 고객 돈 누락)을 로그에만 남기는 것은 §4-6 위반. `qoinSettlementIssues` 로 Firestore 기록. `skipped_rate_zero` 는 의도된 정책이라 로그 유지(수용). ⓑ `stores`/`brands` Console 편집 감시 없음은 **수용 유지**(N6) |
+
+---
+
+## 19.7 배포 전 / 배포 후
+
+### 배포 전 필수 (이것들이 끝나야 배포)
+
+| # | 내용 | 이유 |
+|---|---|---|
+| 1 | **F1** — 브랜드 신뢰원 `store.brandId` + 원장 `brandId` 일치 + `cart.brandId` 미사용 | 이대로 배포하면 브랜드 단계가 죽은 채 화면만 "5%" 라 말한다. 클라이언트 지정 brandId 로 임의 요율 획득 가능 |
+| 2 | **F1 테스트** — T1(주문 구성 단일 출처) · T2(계약 골든) · T3(3 케이스) | 같은 클래스의 결함을 테스트가 못 보는 구조 자체가 결함 |
+| 3 | **F2** — 매장별 이력 + 분류 집계 (+ CHUNK 225) | 소급 불가. 지금 덮으면 지워진 값이 영구 소실 |
+| 4 | **F3** — `enabled` 행위자 (Rules + 앱 2필드 + 트리거) | 소급 불가. 배포가 이미 멈춘 상태라 추가 비용 0 |
+| 5 | **F5** — 브랜드 잠금/포인터 + 재개 재검증 + 진행 중 단건 차단 | 이력 중복·거짓 이력은 감사 자산을 오염시킨다 |
+| 6 | **H-3 D-1/D-2** — 허브 중단 판정을 포인터 기반으로, 에러 무음 제거 | 인덱스 미배포 구간에서 중단이 영원히 안 보인다 |
+| 7 | **부가 B** — `beforeState` / `beforeRaw` | 소급 불가 |
+| 8 | **H-2 기록** — `qoinSettlementIssues` | 소급 불가(대상 목록 자체가 사라진다) |
+| 9 | **F4 하네스 케이스** + §9 13경로 정정 | 코드 변경 없음. "전수" 주장의 정직성 |
+| 10 | **배포 순서**: `firestore:indexes` → `firestore:rules` + `functions` → 앱 빌드. **Rules 와 앱은 같은 배포**(F3) | D-4 / 19.3 |
+| 11 | **H-1 사용자 결정(Q1)** — 서버 집행이 필요하면 CF 변경이 생긴다 | 0% 를 덮는 것은 **돈이 나가기 시작하는** 방향 |
+
+### 배포 후 처리 가능
+
+| # | 내용 |
+|---|---|
+| 1 | **부가 A** — 오프-그리드 값 정확 표시 + `격자 밖 값` 배지 (돈은 정확하다) |
+| 2 | **H-3 D-3** — 전체 이력 화면 페이지네이션(더 보기) |
+| 3 | **H-2 소급 적립 도구** — 정책 결정(Q2) 후 |
+| 4 | `stores.delete` 정책 재설계 (소프트 삭제 / 삭제 이력) — `backlog.md` |
+| 5 | N6 — `stores`/`brands` Console 편집 감시 |
+
+---
+
+## 19.8 작업 분배
+
+### designer — **호출 필요** (소폭, 배포 전)
+
+`design.md` 에 증분 추가:
+
+1. **일괄 적용 다이얼로그** — H-1 결정(Q1)에 따라 분기. A 안이면 경고 줄("적립 안 함 N곳도 다시 적립해요") + 체크박스를 **정보 줄**("적립 안 함 N곳은 그대로 유지돼요")로 교체하고 체크박스 제거. A 안이 아니면 숫자에 "약" 표기 + **완료 화면의 사후 확정 고지**(서버가 실제로 덮은 0% 수)
+2. **허브** — partial 배너의 **에러 상태**(현재는 무음) + "최근 변경" 서브타이틀의 에러 행. 로딩/에러/없음 3상태 구분
+3. **매장 이력 화면** — `op: 'clearByBulk'` 행의 표기("브랜드 일괄 적용으로 초기화 · 이전 값 0%"), 브랜드 이력으로 가는 연결(`bulkHistoryId`)
+4. **`격자 밖 값(콘솔 편집)` 배지** (배포 후 가능) — admin 화면 전용
+5. 전체 이력 화면 **더 보기** (배포 후 가능)
+6. 제약 그대로: `AppColors` 만, 신규 색 토큰 0 목표
+
+### developer — **호출 필요** (파일 단위)
+
+**백엔드 (TS)**
+
+| 파일 | 작업 |
+|---|---|
+| `functions/src/onOrderQoinSettled.ts` | ① 브랜드를 `storeSnap.get('brandId')` 에서 얻는다(`after.brandId` 미사용) ② earn: `getAll([config/qoin, stores/{id}])` → brandId 있으면 `brands/{id}` 순차. clawback 의 config 단독 읽기 유지 ③ 원장 `brandId` = 해석에 쓴 `store.brandId` ④ `skipped_invalid_*` 에서 `qoinSettlementIssues/{orderId}` 기록(`skipped_rate_zero` 제외) |
+| `functions/src/verifyTossPayment.ts` | ① `data.cart.brandId` 참조 제거 → `brandId: null` (orders / orderLogs 둘 다) ② 주문·로그 문서 구성을 순수 함수 `buildOrderData` / `buildOrderLogData` 로 분리 + 소비 키 집합 상수 export (T1/T2) |
+| `functions/src/applyBrandQoinRate.ts` | ① 동시 보호를 **트랜잭션 안으로** — `brands/{id}.qoinBulkStatus/qoinBulkHistoryId/qoinBulkAt` ② 재개 재검증(포인터 일치 + 브랜드 값이 이력 `after` 와 일치) + `resumedAt`/`resumeCount` ③ `clearOverrides` 가 매장별 이력 1건 동시 생성, **CHUNK 450 → 225** ④ 브랜드 이력에 `clearedZeroCount`/`clearedInvalidCount`/`clearedValueCount` ⑤ 마감 시 포인터 제거 ⑥ (Q1 이 A/C 면) 0% skip 집행 |
+| `functions/src/setQoinAccrualRate.ts` | ① 일괄 진행 중이면 거부(brandId 있는 매장 / 해당 브랜드) ② 이력에 `beforeState`/`beforeRaw` |
+| `functions/src/onQoinConfigWritten.ts` | ① `after.enabledChangedBy` 를 `changedBy` 로, `source: 'app_direct'`, 없으면 현행 `'direct'` ② `beforeState`/`beforeRaw` |
+| `functions/src/qoinRate.ts` | 격자 왕복 판정 헬퍼(부가 A) — TS 쪽 상수는 여기 1곳 유지 |
+| `firestore.rules` | ① `config/qoin` update: `enabled` 변경 시 `enabledChangedBy == auth.uid` 강제 ② `touchesQoinRate()` 에 `qoinBulkHistoryId`/`qoinBulkStatus`/`qoinBulkAt` 추가(stores·brands, create/update 전 분기) ③ `qoinSettlementIssues`: `read: isAdmin()`, 쓰기 `if false` |
+| `firestore.indexes.json` | CG 이력 인덱스 확정 + **배포를 앱보다 먼저**(D-4) |
+
+**앱 (Dart)**
+
+| 파일 | 작업 |
+|---|---|
+| `lib/data/repositories/payment_gateway_repository_impl.dart` | `_cartToMap` 변경 없음. 키 집합 골든 테스트 대상(T2). `brandId` 를 **추가하지 않는다** |
+| `lib/presentation/admin/qoin/admin_qoin_settings_page.dart` | `_PartialSection` 판정을 `brands` 스트림의 `qoinBulkStatus` 로 교체 + 에러 상태 렌더 / `_historySubtitle` 에러 행 |
+| `lib/presentation/common/widgets/qoin/qoin_rate_confirm_dialog.dart` | H-1 결정에 따른 문구·체크박스 + 완료 사후 고지 |
+| `lib/domain/entities/qoin_rate_change_entity.dart`, `lib/data/models/qoin_rate_change_model.dart` | `beforeState` / `beforeRaw` / `bulkHistoryId` / `clearedZeroCount` 등 / `op: 'clearByBulk'` / `source: 'app_direct'` 매핑(미지값 관대 처리) |
+| `lib/data/models/brand_model.dart`, `store_model.dart` | 포인터 필드를 **쓰기 맵에 넣지 않는다**. 필요한 읽기만 노출 |
+| `lib/presentation/admin/qoin/*` (비상 정지 카드) | 토글 write 에 `enabledChangedBy`/`enabledChangedAt` 동시 기록 |
+| `lib/core/utils/qoin_policy.dart` | 격자 왕복 판정 + 격자 밖 값 표시(부가 A). 경계 상수는 여기 1곳 유지(§10) |
+| `lib/presentation/admin/qoin/admin_qoin_rate_history_page.dart` | 페이지네이션(배포 후 가능) |
+
+**테스트**
+
+- `functions/test/emulator.test.mjs`: 주문을 `buildOrderData` 로 생성(T1) / T3 3케이스 / 일괄 동시 호출 2회 → 이력 1건 / 재개 재검증 거부 / `clearOverrides` 가 매장 이력을 쓰는지 / `qoinSettlementIssues` 기록
+- `test_rules/rules.test.mjs`: F4 케이스 3건 / 포인터 3필드 차단(create·update·admin 전권) / `enabledChangedBy` 불일치 DENY · 일치 ALLOW / `qoinSettlementIssues` 쓰기 DENY
+- Dart: `_cartToMap` 키 골든(T2) / 격자 왕복 표시 / 이력 모델 신규 필드
+- 보고: 적립 1건당 **실제 read 수와 라운드트립 수**(브랜드 매장 / 비브랜드 매장 각각), Rules 하네스 전건 회귀, flutter test 전건 회귀
+
+### tester — 재검증 (developer 완료 후)
+
+중점: ① T1~T4 가 실제로 F1 클래스를 막는지(주문을 손으로 시드하는 테스트가 **남아 있지 않은지**) ② 매장별 이력의 `before` 정확성(0%·무효·유효 3종) ③ 동시 호출 2회 실제 재현(이번엔 추론이 아니라 재현) ④ 인덱스 미배포 상태에서 허브가 중단을 보여주는지(포인터 기반이므로 가능해야 한다) ⑤ `enabled` 토글의 `changedBy` 와 콘솔 편집 구별 ⑥ §19.6 재판정 6항목 ⑦ 실결제 0회
+
+---
+
+## 19.9 사용자 확인이 필요한 결정사항
+
+| # | 질문 | 선택지 | 추천 |
+|---|---|---|---|
+| **Q1** | 브랜드 일괄 **덮어쓰기**가 `적립 안 함(0%)` 매장을 덮어야 하는가? (`backlog.md` 옵션) | **A** 0% 는 제외(잠금) / **B** 0% 매장 목록 개별 체크 / **C** 3택(전체·0%제외·0%포함) / **D** 현재안(알림만) | **A.** 화면 숫자는 실행 시점과 어긋날 수 있어 경고로는 보장이 안 된다. 서버가 0% 를 skip 하면 숫자 정확도와 무관하게 안전하다. **돈이 나가기 시작하는** 방향의 결정만 막는다. 해제는 그 매장에서 명시적으로 풀게 한다. B 는 매장이 많으면 비현실적, C 는 선택지 1개 추가 비용 대비 이득이 작다 |
+| **Q2** | 무효 값 때문에 적립이 누락된 주문을 **소급 적립**할 것인가? 한다면 어느 요율로? | ⓐ 소급 안 함(기록만) / ⓑ **수정 후** 요율로 소급 / ⓒ 발생 시점의 **전역 기본값**으로 소급 | 지금은 **기록만** 만들고(배포 전) 도구는 backlog. 결정하면 ⓑ 가 설명하기 쉽다("정상값으로 고친 뒤 그 값으로 지급"). 다만 요율이 내려갔다면 고객에게 불리해질 수 있어 사용자 판단이 필요하다 |
+| **Q3** | F4(매장 delete → 같은 ID 재생성으로 0% 해제)를 **수용**해도 되는가? | ⓐ 수용(하네스로 동작 고정) / ⓑ 막는다(재생성 시 admin 승인 전까지 0% 복원 등) | **ⓐ 수용.** 재생성은 `status: pending` 이라 **admin 승인 없이는 적립이 발생하지 않는다.** 대신 `stores.delete` 정책(점주 삭제 허용 / 삭제 이력 없음 / 이력 고아)을 별도 과제로 backlog 에 올린다 |
+
