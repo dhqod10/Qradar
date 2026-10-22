@@ -222,6 +222,20 @@ class Phase1SeedData {
 
   // ── store ────────────────────────────────────────────────────────────────
   static Map<String, dynamic> storeDoc() => <String, dynamic>{
+        // brandId / status 를 명시한다. 시드는 StoreModel.toFirestoreForCreate 를
+        // 거치지 않고 맵을 직접 쓰므로, 앱이 항상 넣는 필드가 여기서 빠질 수 있다.
+        //
+        // brandId 부재는 보안 구멍이었다. Rules 의 `isBrandHolder` 가 12곳에서
+        // `isBrandHolder(get(stores/{id}).data.get('brandId',''))` 로 호출되는데,
+        // 필드가 없으면 인자가 `''` 이고 brandId 를 설정하지 않은 role='brand'
+        // 계정도 `''` 이라 `'' == ''` 로 통과했다. 그 매장의 메뉴와 menuOverrides
+        // (가격) 쓰기가 아무 계정에나 열린다
+        // (`docs/tasks/brand_authorization_hardening/spec.md` §2.3 · §11.3).
+        // null 값으로 **존재**해야 한다 — `'' == null` 은 거짓이다.
+        'brandId': null,
+        // status 부재는 T1 폴백(누락 → approved)에 기대고 있었다. 폴백은 과거
+        // 문서 구제용인데 실제 노출을 결정하는 유일한 근거가 돼 있었다.
+        'status': 'approved',
         'name': '큐레이더 시드 매장',
         'imageUrl':
             'https://images.unsplash.com/photo-1453614512568-c4024d13c247?w=800',
