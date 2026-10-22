@@ -32,6 +32,9 @@ abstract class StoreRepository {
   /// 매장 단건 조회 (admin 상세 진입용).
   Future<StoreEntity?> getById(String storeId);
 
+  /// 매장 단건 실시간 감시. 평가 반영(CF 집계) 같은 외부 갱신을 즉시 반영해야 할 때 쓴다.
+  Stream<StoreEntity?> watchById(String storeId);
+
   /// admin 전체 매장 실시간 감시 (status 무관).
   Stream<List<StoreEntity>> watchAllForAdmin();
 

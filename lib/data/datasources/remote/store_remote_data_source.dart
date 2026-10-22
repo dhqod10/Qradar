@@ -51,6 +51,16 @@ class StoreRemoteDataSource {
     return StoreModel.fromFirestore(doc);
   }
 
+  /// 매장 단건 실시간 감시.
+  ///
+  /// `onReviewWritten` CF 가 `averageScore` / `reviewCount` 를 갱신하므로,
+  /// 평가 직후 등급 변화를 보려면 단건 조회가 아니라 구독이 필요하다.
+  Stream<StoreModel?> watchById(String storeId) {
+    return _stores.doc(storeId).snapshots().map(
+          (doc) => doc.exists ? StoreModel.fromFirestore(doc) : null,
+        );
+  }
+
   /// 신규 매장 생성 (점주 등록 — brandId=null 강제). 생성된 문서 ID 반환.
   Future<String> create(StoreModel model) async {
     final ref = await _stores.add(model.toFirestoreForCreate());

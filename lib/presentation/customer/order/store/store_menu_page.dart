@@ -12,6 +12,7 @@ import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart'
 import 'package:qradar/presentation/customer/order/favorites/providers/favorites_providers.dart';
 import 'package:qradar/presentation/customer/order/menu/menu_item_detail_page.dart';
 import 'package:qradar/presentation/customer/order/store/providers/store_menu_providers.dart';
+import 'package:qradar/presentation/customer/review/providers/store_review_providers.dart';
 import 'package:qradar/presentation/customer/order/store/widgets/main_category_tabs.dart';
 import 'package:qradar/presentation/customer/order/store/widgets/menu_item_card.dart';
 import 'package:qradar/presentation/customer/order/store/widgets/store_menu_header.dart';
@@ -26,6 +27,11 @@ class StoreMenuPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final storeId = store.id;
+    // 평가 직후 CF 가 갱신한 등급·건수를 헤더 배지에 즉시 반영한다.
+    // 진입 시점 스냅샷만 쓰면 평가를 남겨도 `미평가` 로 남아 사용자가
+    // "반영이 안 됐다" 고 오인한다.
+    final liveStore =
+        ref.watch(watchedStoreProvider(storeId)).asData?.value ?? store;
     final menuAsync = ref.watch(storeMenuItemsProvider(storeId));
     final selectedMain = ref.watch(selectedMainCategoryProvider);
     final selectedSubId = ref.watch(selectedSubCategoryIdProvider);
@@ -47,15 +53,15 @@ class StoreMenuPage extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: menuAsync.when(
-        loading: () => _LoadingShimmer(store: store),
+        loading: () => _LoadingShimmer(store: liveStore),
         error: (err, _) => _ErrorView(
-          store: store,
+          store: liveStore,
           message: err.toString(),
           onRetry: () => ref.invalidate(storeMenuItemsProvider(storeId)),
         ),
         data: (allItems) {
           if (allItems.isEmpty) {
-            return _EmptyView(store: store);
+            return _EmptyView(store: liveStore);
           }
           return CustomScrollView(
             slivers: [
@@ -142,6 +148,9 @@ class _AppBar extends ConsumerWidget {
     final favoriteIds =
         ref.watch(favoriteStoreIdsProvider).asData?.value ?? const <String>{};
     final isFavorite = favoriteIds.contains(store.id);
+    // 헤더 배지는 평가 반영(CF 집계)을 즉시 보여야 하므로 구독값을 쓴다.
+    final liveStore =
+        ref.watch(watchedStoreProvider(store.id)).asData?.value ?? store;
     return SliverAppBar(
       pinned: true,
       expandedHeight: 200,
@@ -170,7 +179,7 @@ class _AppBar extends ConsumerWidget {
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: StoreMenuHeader(
-          store: store,
+          store: liveStore,
           isFavorite: isFavorite,
           onFavoriteTap: () => _onToggleStoreFavorite(context, ref, store.id),
         ),

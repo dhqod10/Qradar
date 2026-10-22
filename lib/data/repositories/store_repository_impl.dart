@@ -94,6 +94,11 @@ class StoreRepositoryImpl implements StoreRepository {
   }
 
   @override
+  Stream<StoreEntity?> watchById(String storeId) {
+    return _dataSource.watchById(storeId).map((model) => model?.toEntity());
+  }
+
+  @override
   Stream<List<StoreEntity>> watchAllForAdmin() {
     return _dataSource
         .streamAll()
