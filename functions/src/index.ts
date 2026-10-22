@@ -28,3 +28,6 @@ export { applyBrandQoinRate } from "./applyBrandQoinRate";
 export { onQoinConfigWritten } from "./onQoinConfigWritten";
 // TRANSITIONAL(spec §20.4.5): 마이그레이션 0건 확인 후 정리 커밋에서 삭제
 export { migrateQoinZeroRates } from "./migrateQoinZeroRates";
+export { claimSubmittedBrand } from "./claimSubmittedBrand";
+// TRANSITIONAL(brand_authorization_hardening §4): 정리 커밋에서 삭제
+export { auditBrandLinks } from "./auditBrandLinks";

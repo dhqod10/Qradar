@@ -360,3 +360,48 @@ match /roleHistory/{historyId} {
 | # | 질문 |
 |---|---|
 | **Q-S1** | §8-B1 — **결제 시점에 매장 `status == 'approved'` 를 서버가 강제할까?** 지금은 `verifyTossPayment` 가 `stores` 를 전혀 읽지 않아 `pending`(미승인·재제출 중) 매장도 callable 직접 호출로 결제가 성립하고 적립도 발생한다. UI 에서만 막힌다. ⓐ **이번 배포에 포함** — 구멍이 닫히지만 매장 `status` 데이터가 틀어진 경우 **정상 결제가 거부**되고(돈이 멈추는 방향) Qoin spec §20.5.6 #13·Q3 의 수용 근거가 서버 보증으로 승격된다 ⓑ **별도 task** — 이번 배포 범위를 늘리지 않는다. 그 대신 Q3/F4 의 수용 근거는 "UI 보증뿐" 으로 **약화된 채 문서에 남는다**. 설계자 추천은 **ⓑ** 다: 이 구멍은 Qoin 과 무관하게 1차 결제부터 있었고, 이번 배포는 이미 Rules·CF·앱·마이그레이션이 한 창에 들어가 있어 결제 경로를 같이 건드리면 실패 시 원인 분리가 어렵다 |
+
+---
+
+## 11. 운영 현황 기준선 (2026-10-22, 사용자가 Console 에서 직접 확인)
+
+`auditBrandLinks` 결과를 해석하려면 **점검 카드를 배포하기 전의 상태**를 알아야 한다. 그래야
+나온 숫자가 "원래 그랬던 것" 인지 "그 사이에 일어난 것" 인지 구분된다. 설계자·구현자는 운영
+Firestore 를 읽을 수 없으므로 사용자가 Console 에서 확인한 값을 그대로 기록한다.
+
+### 11.1 브랜드 계정 — 2건, 둘 다 `ok`
+
+| users 문서 | provider | brandId | brands 문서의 `submittedBy` | 판정 |
+|---|---|---|---|---|
+| `kakao_4831227666` | kakao | `M2aQWF5fl3TlkSeDSw2D` (ChaCha) | `kakao_4831227666` | **일치** |
+| `Sm8uaPqk3iYmj9mj60vfWL303C92` | email | `dPIJwOOw6z9UAQEZ6edm` (낫심플) | `Sm8uaPqk3iYmj9mj60vfWL303C92` | **일치** |
+
+**D1 설계가 기존 데이터에서 성립한다.** 두 브랜드 모두 `submittedBy` 가 존재하고 값이 맞으므로
+`claimSubmittedBrand` 의 검증이 과거 문서에도 통한다. 둘 중 하나라도 `submittedBy` 가 없었다면
+"기존 계정은 자동 복구가 불가능" 이라는 예외 설계가 따로 필요했을 것이다.
+
+### 11.2 예상되는 점검 결과
+
+- `ok` **2** (위 2건)
+- `orphan_brand` **1** — `phase3_seed_brand_001`. 어떤 `role=='brand'` 계정도 이 브랜드를
+  가리키지 않는다(브랜드 계정은 위 2개뿐). **시드 데이터이고 정상이다.** 점검 카드가 이 1건을
+  보고하는 것이 기준선이며, 0 이 되거나 2 이상이 되면 그때 들여다본다.
+- 나머지 분류(`dangling` / `mismatch` / `duplicate` / `store_dangling_brand` /
+  `store_unapproved_brand`)는 **0 이 기준선**이다.
+
+### 11.3 구멍이 실제로 열려 있었다는 증거
+
+`stores/phase1_seed_store_001` 에 **`brandId` 필드 자체가 없었다**(값이 null 인 것이 아니라 부재).
+D2 가 막는 `'' == ''` 매칭이 가설이 아니라 운영에서 성립하던 상태였다는 뜻이다. 앱으로 등록한
+매장은 `StoreModel.toFirestoreForCreate` 가 `'brandId': brandId` 를 명시해 넣어 안전했고,
+위험한 것은 시드·Console 로 만들어진 문서였다.
+
+같은 문서에 **`status` 필드도 없었다.** 코드가 누락된 `status` 를 `approved` 로 폴백하므로
+(T1 레거시 호환) 이 매장은 고객 앱에 노출되는 상태였다. 폴백은 과거 문서 구제용으로 만든
+것인데 실제 노출을 결정하는 유일한 근거가 돼 있었다. 두 필드 모두 Console 에서 명시값으로
+채워 즉시 닫는다 — 코드 수정이나 배포를 기다릴 이유가 없다.
+
+`stores/ruMbvhT9FkkxrnVF8JMi` 는 Console 에서 **기울임꼴**로 표시된다. 문서는 없고 하위
+컬렉션만 남은 상태다. Rules 의 `get()` 이 없는 문서에서 평가 오류를 내 거부되므로 이 경로는
+악용되지 않는다. 다만 `docs/backlog.md` 의 `stores.delete` 정책 과제가 지적한 **"이력 고아"**
+가 운영에서 실제로 발생한 사례이므로 그 과제의 근거로 쓴다.

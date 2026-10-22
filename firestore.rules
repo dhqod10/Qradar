@@ -49,8 +49,16 @@ service cloud.firestore {
 
     // 특정 brandId 의 브랜드 보유자인지 확인.
     // users/{uid}.role == 'brand' && users/{uid}.brandId == brandId
+    //
+    // **공백 매칭 차단 (brand_authorization_hardening D2)**: 인자가 비어 있거나(null·부재·'') 문자열이 아니면 거짓이다.
+    // 이 가드가 없으면 `stores/{id}` 에 brandId 필드가 없는 매장(시드·Console 생성·과거 스키마)의 인자가 ''
+    // 가 되고, brandId 를 설정하지 않은 role='brand' 계정의 userDoc().get('brandId','') 도 '' 라 `'' == ''` 가 참이 된다.
+    // 호출 지점 12곳 전부에 한 번에 걸린다 (get() 추가 0). 엄격화 전용 — 실제 brandId 는 비어있지 않은 auto-id 다.
     function isBrandHolder(brandId) {
-      return isBrand() && userDoc().get('brandId', '') == brandId;
+      return isBrand()
+        && brandId is string
+        && brandId != ''
+        && userDoc().get('brandId', '') == brandId;
     }
 
     // update 시 허용된 필드만 변경되었는지 검증 (top-level 기준)
@@ -109,13 +117,17 @@ service cloud.firestore {
                     || isSelfProfileUpdate(userId);
 
       // ── 내부 함수: 본인 프로필 update ───────────────────────────────────────
-      // 변경 가능 필드: role (허용된 전이만), displayName, photoUrl, fcmToken, brandId
-      // brandId: 최초 1회만 설정 가능 (empty → value). 이미 설정된 brandId 변경 불가.
+      // 변경 가능 필드: role (허용된 전이만), displayName, photoUrl, fcmToken ...
+      // **brandId 는 화이트리스트에 없다** (brand_authorization_hardening D1): brandId 는 브랜드 트리와 산하 매장의
+      // 쓰기 권한을 결정하는 권한 값이라 본인이 선언할 수 없다. Cloud Function `claimSubmittedBrand` 가
+      // brands/{id}.submittedBy == uid 를 검증하고 쓴다 (Admin SDK). 교정은 admin 전권 update 뿐이다 (D4).
+      // ⚠️ 'submittedBy == uid() 를 Rules 의 get() 으로 검사' 하는 안은 기각됐다 — upsertBrand 가 브랜드 문서 create 와
+      //    users.brandId 를 한 batch 로 보내는데 get() 은 batch 적용 전 상태를 봐서 신규 등록이 전면 실패한다.
       // immutable 필드: uid, createdAt, provider — 본인이 수정 불가
       function isSelfProfileUpdate(userId) {
         return isSignedIn()
           && uid() == userId
-          && onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationPermissionLaterCount', 'notificationSettings', 'updatedAt', 'brandId'])
+          && onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationPermissionLaterCount', 'notificationSettings', 'updatedAt'])
           && (
             // role 변경 없음 (다른 필드만 업데이트)
             request.resource.data.get('role', 'customer') == resource.data.get('role', 'customer')
@@ -124,11 +136,6 @@ service cloud.firestore {
                 resource.data.get('role', 'customer'),
                 request.resource.data.get('role', 'customer')
               )
-          )
-          // brandId: 현재 비어있을 때만 설정 허용. 임의 변경 차단.
-          && (
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['brandId'])
-            || resource.data.get('brandId', '') == ''
           );
       }
 
@@ -164,6 +171,13 @@ service cloud.firestore {
         allow create: if false; // Cloud Function (Admin SDK) 만 가능
         allow update: if false; // append-only
         allow delete: if false; // append-only
+      }
+
+      // ── users/{uid}/roleHistory/{historyId} ───────────────────────────────
+      // 권한 값(users.brandId) 변경 이력. 쓰기는 Cloud Function(claimSubmittedBrand) 전담 (brand_authorization_hardening §6).
+      match /roleHistory/{historyId} {
+        allow read: if isAdmin() || (isSignedIn() && uid() == userId);
+        allow create, update, delete: if false;
       }
 
       // ── users/{uid}/favoriteStores/{storeId} ──────────────────────────────
@@ -281,10 +295,17 @@ service cloud.firestore {
 
       // create: owner role 사용자가 본인 ownerId 로 등록. status 는 'pending' 으로 시작.
       // Qoin 관리 필드(적립률·스위치·잠금 포인터)는 create 로도 심을 수 없다 (CF 전담).
+      //
+      // brandId 얕은 검증 (brand_authorization_hardening D5): 지정했다면 존재하는 status=='approved' 브랜드여야 한다.
+      // 오타·없는 ID·반려/대기 브랜드를 막는다. "진짜 가맹점인가" 는 Rules 로 증명할 수 없다(brandKey 는 공개) —
+      // 주 통제는 admin 승인이다. 남의 approved 브랜드 지정은 이 규칙이 막지 않는다 (RM18 이 의도로 고정).
       allow create: if isOwner()
                     && request.resource.data.ownerId == uid()
                     && request.resource.data.get('status', 'pending') == 'pending'
-                    && !hasQoinManagedOnCreate();
+                    && !hasQoinManagedOnCreate()
+                    && (!('brandId' in request.resource.data)
+                        || request.resource.data.brandId == null
+                        || get(/databases/$(database)/documents/brands/$(request.resource.data.brandId)).data.get('status', '') == 'approved');
 
       // delete: 점주 본인 또는 admin
       allow delete: if isAdmin() || isStoreOwner(storeId);
@@ -622,10 +643,14 @@ service cloud.firestore {
                     && !('accrualRate' in request.resource.data)
                     && (!('enabled' in request.resource.data)
                         || request.resource.data.get('enabledChangedBy', '') == uid());
+      // **enabledChangedAt == request.time**: `enabled` 를 바꾸는 update 는 서버 시각 마커를 반드시 동반한다 (생략 불가).
+      // 생략을 허용하면 행위자(enabledChangedBy)가 지워진 채 Console 편집과 구별되지 않는 이력이 남는다 (audit_trail §4-4).
       allow update: if isAdmin()
                     && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['accrualRate'])
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['enabled', 'enabledChangedBy'])
-                        || request.resource.data.get('enabledChangedBy', '') == uid());
+                        || request.resource.data.get('enabledChangedBy', '') == uid())
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['enabled'])
+                        || request.resource.data.get('enabledChangedAt', null) == request.time);
       allow delete: if false;
 
       // config/qoin/qoinRateHistory/{id} — 전역 적립률 / 비상 정지 변경 이력. CF 전담 쓰기.

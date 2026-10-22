@@ -10,6 +10,8 @@
  * 클라이언트 쓰기 전 역할 차단(Rules) · 서버 admin 재검증 · 값과 이력 1건을 **같은 트랜잭션** · 값이 같으면 아무것도
  * 쓰지 않는다 · 일괄 적용 진행 중 거부 (매장이면 소속 브랜드, 브랜드면 자신).
  * 일괄 적용(`applyBrandQoinRate`)은 이 필드를 읽지도 쓰지도 않는다 (Q1 — 덮어쓰기가 스키마 차원에서 불가능).
+ * 브랜드 scope 에서 `partial` 포인터가 있으면 값 변경 성공 시 같은 트랜잭션에서 옛 이력을 `superseded` 로 마감하고
+ * 포인터를 `superseded` 로 전이한다 (spec §21.2). 값이 같은 noop 은 닫지 않는다.
  */
 
 import * as admin from "firebase-admin";
@@ -20,9 +22,13 @@ import {
   BULK_IN_PROGRESS_MESSAGE,
   historyCollection,
   isBulkInProgress,
+  isBulkPartial,
   parseReason,
+  readPartialHistory,
   REGION,
   requireAdmin,
+  supersededPointerFields,
+  supersedePartialHistory,
   switchBeforeInfo,
 } from "./qoinAdmin";
 
@@ -62,10 +68,13 @@ export const setQoinAccrualEnabled = onCall({ region: REGION }, async (request) 
     const snap = await t.get(targetRef);
     if (!snap.exists) throw new HttpsError("not-found", "target not found");
 
+    let oldPartial: admin.firestore.DocumentSnapshot | null = null;
     if (scope === "brand") {
       if (isBulkInProgress(snap, BULK_STALE_MS)) {
         throw new HttpsError("failed-precondition", BULK_IN_PROGRESS_MESSAGE);
       }
+      // partial 이면 옛 이력도 읽는다 (read 는 write 앞). partial 이 아니면 추가 read 0.
+      oldPartial = await readPartialHistory(t, snap, historyCollection(db, "brand", targetId));
     } else {
       const brandId = snap.get("brandId");
       if (typeof brandId === "string" && brandId.length > 0) {
@@ -85,7 +94,11 @@ export const setQoinAccrualEnabled = onCall({ region: REGION }, async (request) 
       return { changed: false as const, before: info.before, after };
     }
 
-    t.update(targetRef, { qoinAccrualEnabled: enabled ? FieldValue.delete() : false });
+    t.update(targetRef, {
+      qoinAccrualEnabled: enabled ? FieldValue.delete() : false,
+      ...(scope === "brand" && isBulkPartial(snap) ? supersededPointerFields() : {}),
+    });
+    supersedePartialHistory(t, oldPartial, uid, null);
     t.set(historyRef, {
       scope,
       targetId,

@@ -478,7 +478,10 @@ await check('CH22 일괄 preserve: 브랜드 값만 1 write, 개별 설정 보�
   eq([h.op, h.bulkMode, h.status, h.affectedCount, h.clearedCount, h.preservedCount, h.before, h.after, h.changedBy, h.reason, h.source, h.targetName],
      ['bulkApply', 'preserve', 'completed', 7, 0, 3, null, 0.05, ADMIN, '일괄', 'bulk', 'P브랜드']);
   eq([h.beforeState, h.disabledUntouchedCount, h.brandDisabled], ['absent', 2, false]);
-  eq((await db.collection('brands').doc(brandId).get()).get('qoinBulkStatus'), undefined, 'preserve 는 잠금 포인터를 남기지 않는다');
+  // S2: 포인터는 지워지지 않는다 — preserve 도 `completed` 포인터를 남기고, 판정 함수는 이를 '중단 없음' 으로 읽는다.
+  const pb = await db.collection('brands').doc(brandId).get();
+  eq([pb.get('qoinBulkStatus'), pb.get('qoinBulkHistoryId')], ['completed', h.id], 'preserve 는 completed 포인터를 남긴다');
+  ok(pb.get('qoinBulkAt'), 'qoinBulkAt');
   // 같은 호출 재시도 → no-op, 이력 중복 없음
   const r2 = await call('applyBrandQoinRate', { brandId, rate: 0.05, mode: 'preserve' }, ADMIN);
   eq(r2.result.changed, false); eq((await brandHist(brandId).get()).size, 1);
@@ -513,7 +516,8 @@ await check('CH23 일괄 overwrite (매장 600개): 청크 처리, affectedCount
   eq([hs[0].before, hs[0].after, hs[0].status, hs[0].processedCount, hs[0].bulkMode], [0.02, 0.06, 'completed', 200, 'overwrite']);
   // F2: 지워진 매장마다 매장 이력 1건 (clearByBulk), 행위자·이전 값·연결 키 포함
   const brandSnap = (await db.collection('brands').doc(brandId).get());
-  eq([brandSnap.get('qoinBulkHistoryId'), brandSnap.get('qoinBulkStatus'), brandSnap.get('qoinBulkAt')], [undefined, undefined, undefined], '마감 시 잠금 포인터 제거');
+  eq([brandSnap.get('qoinBulkHistoryId'), brandSnap.get('qoinBulkStatus')], [hs[0].id, 'completed'], '마감 시 포인터는 삭제가 아니라 completed 전이 (S2)');
+  ok(brandSnap.get('qoinBulkAt'), 'qoinBulkAt');
   const sh = await db.collectionGroup('qoinRateHistory').where('bulkHistoryId', '==', hs[0].id).get();
   eq(sh.size, 200, '매장별 이력 200건');
   const one = sh.docs.find((d) => d.get('before') === 0.1).data();
@@ -550,7 +554,7 @@ await check('CH24 중단 후 resumeHistoryId 재개: 멱등, 중복 이력 없�
   const h = (await hRef.get()).data();
   eq([h.status, h.resumeCount], ['completed', 1]); ok(h.resumedAt, 'resumedAt');
   const b = (await db.collection('brands').doc(brandId).get());
-  eq(b.get('qoinAccrualRate'), 0.06, '브랜드 값 불변'); eq(b.get('qoinBulkStatus'), undefined, '포인터 제거');
+  eq(b.get('qoinAccrualRate'), 0.06, '브랜드 값 불변'); eq([b.get('qoinBulkStatus'), b.get('qoinBulkHistoryId')], ['completed', hRef.id], '포인터 completed 전이 (삭제 아님)');
   // 이번 실행이 지운 2곳(8, 9)의 매장 이력 — 결정적 ID 로 중복 없음
   const sh = await db.collectionGroup('qoinRateHistory').where('bulkHistoryId', '==', hRef.id).get();
   eq(sh.size, 2, '재개분 매장 이력 2건');
@@ -565,7 +569,8 @@ await check('F5-(a) 재개 재검증: 브랜드 값이 그 뒤에 바뀌었으�
   eq(r.error, 'FAILED_PRECONDITION', '값이 바뀐 뒤 재개 거부');
   const left = (await db.collection('stores').where('brandId', '==', brandId).get()).docs.filter((d) => d.get('qoinAccrualRate') !== undefined).length;
   eq(left, 2, '거부된 재개는 매장 개별 설정을 지우지 않는다');
-  eq((await hRef.get()).get('status'), 'partial', '이력 상태 불변');
+  // S2: 단건 변경이 성공하면 옛 중단 기록은 같은 트랜잭션에서 superseded 로 마감된다 (재개 대상이 아니다).
+  eq((await hRef.get()).get('status'), 'superseded', '단건 변경으로 마감됨');
   // 포인터 불일치
   const brandId2 = nid('brq2'); const h2 = await seedPartial(brandId2);
   await db.collection('brands').doc(brandId2).update({ qoinBulkHistoryId: 'other' });
@@ -581,12 +586,14 @@ await check('F5-(b) 동시 시작: 이중 실행·이중 보고가 없다 (매�
   const cleared = results.filter((r) => r.result).reduce((a, r) => a + r.result.clearedCount, 0);
   eq(cleared, 1500, '보고된 clearedCount 합 = 실제 (이중 보고 없음)');
   const hs = await brandHist(brandId).get();
+  // S3-a: 이전 단언은 `clearedCount>0` 인 이력만 세어 빈 이력 2건을 못 잡았다. **브랜드 이력 문서 수 자체**를 센다.
+  eq(hs.size, 1, '브랜드 이력 문서는 정확히 1건 (빈 이력 0)');
   const bulkIds = hs.docs.filter((d) => d.get('clearedCount') > 0).map((d) => d.id);
   eq(bulkIds.length, 1, '실제로 지운 이력은 1건');
   const sh = await db.collectionGroup('qoinRateHistory').where('bulkHistoryId', '==', bulkIds[0]).get();
   eq(sh.size, 1500, '매장 이력 1500건 (중복 없음)');
   const b = await db.collection('brands').doc(brandId).get();
-  eq([b.get('qoinBulkStatus'), b.get('qoinAccrualRate')], [undefined, 0.06], '포인터 해제 / 브랜드 값');
+  eq([b.get('qoinBulkStatus'), b.get('qoinBulkHistoryId'), b.get('qoinAccrualRate')], ['completed', bulkIds[0], 0.06], '포인터 completed / 브랜드 값');
   console.log(`     [F5-b] 응답: ${results.map((r) => r.error ?? (r.result.changed ? 'changed' : 'noop')).join(', ')} / 브랜드 이력 ${hs.size}건`);
 });
 await check('F5-(c) 일괄 진행 중 단건 변경 거부: 브랜드 단건 / 매장 단건 / 스위치(매장·브랜드) 전부', async () => {
@@ -920,6 +927,261 @@ await check('F3-2 전역 accrualRate Console 편집 시 beforeState/beforeRaw (�
     const r = (await histories(globalHist())).filter((h) => h.field === 'accrualRate' && h.source === 'direct'); return r.length ? r : null; });
   ok(x, '이력 없음'); eq([x[0].before, x[0].beforeState, x[0].beforeRaw, x[0].after], [null, 'invalid', '"oops"', 0.04]);
   await setGlobal({ accrualRate: 0.03 }); await sleep(2500);
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// K. 중단 포인터의 상태 기계 (spec §21.2 S2) + 오래된 스캔 가드 (§21.3-a S3) + 단건 레거시 0 가드 (§21.9-2)
+//    "이력을 문서 수로 센다" — 이전 단언(clearedCount>0 만 셈)은 빈 이력을 통과시켰다.
+// ═════════════════════════════════════════════════════════════════════════
+console.log('\n── K. 포인터 종결 · staleScan · 단건 레거시 0 ──');
+const ptr = async (brandId) => {
+  const d = (await db.collection('brands').doc(brandId).get());
+  return { id: d.get('qoinBulkHistoryId'), st: d.get('qoinBulkStatus'), at: d.get('qoinBulkAt') };
+};
+await check('K1 종결 경로 ① partial 뒤 새 overwrite(다른 값): 옛 이력 superseded(supersededBy=새 id) + 포인터 새 시도로 교체 → completed. 이력 문서 2건', async () => {
+  const brandId = nid('kb1'); const old = await seedPartial(brandId);
+  const r = await call('applyBrandQoinRate', { brandId, rate: 0.04, mode: 'overwrite' }, ADMIN);
+  eq([r.result.changed, r.result.status], [true, 'completed']);
+  const o = (await old.get()).data();
+  eq([o.status, o.supersededBy, o.supersededByUid], ['superseded', r.result.historyId, ADMIN]); ok(o.supersededAt, 'supersededAt');
+  eq((await brandHist(brandId).get()).size, 2, '이력 문서 2건 (옛 1 + 새 1)');
+  const p = await ptr(brandId); eq([p.id, p.st], [r.result.historyId, 'completed']);
+});
+await check('K2 종결 경로 ② partial 뒤 preserve: 옛 이력 superseded + 포인터 completed(새 id)', async () => {
+  const brandId = nid('kb2'); const old = await seedPartial(brandId);
+  const r = await call('applyBrandQoinRate', { brandId, rate: 0.04, mode: 'preserve' }, ADMIN);
+  eq(r.result.changed, true);
+  eq([(await old.get()).get('status'), (await old.get()).get('supersededBy')], ['superseded', r.result.historyId]);
+  const p = await ptr(brandId); eq([p.id, p.st], [r.result.historyId, 'completed']);
+  const left = (await db.collection('stores').where('brandId', '==', brandId).get()).docs.filter((d) => d.get('qoinAccrualRate') !== undefined).length;
+  eq(left, 2, 'preserve 는 개별 설정을 지우지 않는다');
+});
+await check('K3 종결 경로 ③ partial 뒤 브랜드 단건 변경: 옛 이력 superseded(supersededBy null) + 포인터 superseded(id 는 옛 시도 유지). 값이 같은 noop 은 닫지 않는다', async () => {
+  const brandId = nid('kb3'); const old = await seedPartial(brandId);
+  const noop = await call('setQoinAccrualRate', { scope: 'brand', targetId: brandId, rate: 0.06 }, ADMIN);
+  eq(noop.result.changed, false); eq((await old.get()).get('status'), 'partial', 'noop 은 닫지 않는다'); eq((await ptr(brandId)).st, 'partial');
+  const r = await call('setQoinAccrualRate', { scope: 'brand', targetId: brandId, rate: 0.05 }, ADMIN);
+  eq(r.result.changed, true);
+  const o = (await old.get()).data(); eq([o.status, o.supersededBy, o.supersededByUid], ['superseded', null, ADMIN]);
+  const p = await ptr(brandId); eq([p.id, p.st], [old.id, 'superseded']);
+});
+await check('K4 종결 경로 ④ partial 뒤 브랜드 스위치 변경: 옛 이력 superseded + 포인터 superseded. 스위치 noop 은 닫지 않는다', async () => {
+  const brandId = nid('kb4'); const old = await seedPartial(brandId);
+  const noop = await call('setQoinAccrualEnabled', { scope: 'brand', targetId: brandId, enabled: true }, ADMIN);
+  eq(noop.result.changed, false); eq((await ptr(brandId)).st, 'partial', 'noop 은 닫지 않는다');
+  const r = await call('setQoinAccrualEnabled', { scope: 'brand', targetId: brandId, enabled: false }, ADMIN);
+  eq(r.result.changed, true);
+  eq([(await old.get()).get('status'), (await old.get()).get('supersededBy')], ['superseded', null]);
+  const p = await ptr(brandId); eq([p.id, p.st], [old.id, 'superseded']);
+  // 매장 단건은 브랜드 포인터를 건드리지 않는다
+  const brand2 = nid('kb4b'); const old2 = await seedPartial(brand2);
+  await call('setQoinAccrualRate', { scope: 'store', targetId: `${brand2}_s0008`, rate: 0.09 }, ADMIN);
+  eq([(await ptr(brand2)).st, (await old2.get()).get('status')], ['partial', 'partial'], '매장 단건은 브랜드 중단 기록과 무관');
+});
+await check('K5 nothing_left: partial + 같은 값 + 지울 개별 설정 0 → {changed:false, closed:true}, 새 이력 0, 옛 이력 completed(closedReason, closedBy), 포인터 completed', async () => {
+  const brandId = nid('kb5'); const old = await seedPartial(brandId);
+  // 남은 개별 설정 2곳(8, 9)을 직접 지워 "남은 일 0" 으로 만든다
+  for (const i of [8, 9]) await db.collection('stores').doc(`${brandId}_s000${i}`).update({ qoinAccrualRate: FieldValue.delete() });
+  const r = await call('applyBrandQoinRate', { brandId, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r.result.changed, r.result.closed], [false, true]);
+  eq((await brandHist(brandId).get()).size, 1, '새 이력을 만들지 않는다');
+  const o = (await old.get()).data(); eq([o.status, o.closedReason, o.closedBy], ['completed', 'nothing_left', ADMIN]); ok(o.closedAt, 'closedAt');
+  const p = await ptr(brandId); eq([p.id, p.st], [old.id, 'completed']);
+  const r2 = await call('applyBrandQoinRate', { brandId, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r2.result.changed, r2.result.closed], [false, undefined], '두 번째는 평범한 noop');
+  // 지울 것이 남아 있으면 닫지 않고 진행한다 (partial 은 가드/종결 대상이 아니다)
+  const brand2 = nid('kb5b'); const old2 = await seedPartial(brand2);
+  const r3 = await call('applyBrandQoinRate', { brandId: brand2, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r3.result.changed, r3.result.closed, r3.result.clearedCount], [true, undefined, 2], '남은 일이 있으면 진행');
+  eq((await old2.get()).get('status'), 'superseded');
+});
+await check('K6 completed 포인터 뒤 같은 값 재적용(스캔 신선): 정상 진행. 이력 문서 수로 확인', async () => {
+  const brandId = nid('kb6'); await db.collection('brands').doc(brandId).set({ name: 'K6', status: 'approved' });
+  await seedBrandStores(brandId, 6, { 1: 0.1, 3: 0.1 });
+  const a = await call('applyBrandQoinRate', { brandId, rate: 0.05, mode: 'overwrite' }, ADMIN);
+  eq([a.result.changed, a.result.clearedCount], [true, 2]);
+  await db.collection('stores').doc(`${brandId}_s0002`).update({ qoinAccrualRate: 0.12 }); // 완료 후 새 개별 설정
+  const b = await call('applyBrandQoinRate', { brandId, rate: 0.05, mode: 'overwrite' }, ADMIN);
+  eq([b.result.changed, b.result.clearedCount], [true, 1], 'completed 포인터는 진행을 막지 않는다');
+  eq((await brandHist(brandId).get()).size, 2, '이력 2건 (각각 실제 일을 한 호출)');
+});
+await check('K7 staleScan 가드: 종결 포인터 + qoinBulkAt > 스캔 시작 + 같은 값 → {changed:false, staleScan:true}, 이력 0·매장 불변. partial 은 가드하지 않는다', async () => {
+  const brandId = nid('kb7'); await db.collection('brands').doc(brandId).set({
+    name: 'K7', status: 'approved', qoinAccrualRate: 0.06, qoinBulkHistoryId: 'prev', qoinBulkStatus: 'completed', qoinBulkAt: Timestamp.fromMillis(Date.now() + 60_000) });
+  await seedBrandStores(brandId, 5, { 3: 0.1 });
+  const r = await call('applyBrandQoinRate', { brandId, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r.result.changed, r.result.staleScan, r.result.closed], [false, true, undefined]);
+  eq((await brandHist(brandId).get()).size, 0, '빈 이력을 만들지 않는다');
+  eq((await db.collection('stores').doc(`${brandId}_s0003`).get()).get('qoinAccrualRate'), 0.1, '매장 불변');
+  // superseded 도 같은 가드
+  await db.collection('brands').doc(brandId).update({ qoinBulkStatus: 'superseded' });
+  eq((await call('applyBrandQoinRate', { brandId, rate: 0.06, mode: 'overwrite' }, ADMIN)).result.staleScan, true);
+  // 값이 다르면 가드는 해당 없음
+  const d = await call('applyBrandQoinRate', { brandId, rate: 0.07, mode: 'overwrite' }, ADMIN);
+  eq([d.result.changed, d.result.staleScan, d.result.clearedCount], [true, undefined, 1], '다른 값은 정상 진행');
+  // 포인터가 과거에 종결됐으면(스캔보다 앞) 가드가 아니라 정상 경로
+  const b2 = nid('kb7b'); await db.collection('brands').doc(b2).set({
+    name: 'K7b', status: 'approved', qoinAccrualRate: 0.06, qoinBulkHistoryId: 'prev', qoinBulkStatus: 'completed', qoinBulkAt: Timestamp.fromMillis(Date.now() - 60_000) });
+  await seedBrandStores(b2, 5, { 3: 0.1 });
+  const r2 = await call('applyBrandQoinRate', { brandId: b2, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r2.result.changed, r2.result.staleScan, r2.result.clearedCount], [true, undefined, 1], '과거 종결 포인터는 가드 대상이 아니다');
+  // partial 은 가드에 넣지 않는다 (실제로 남은 일이 있다)
+  const b3 = nid('kb7c'); const old = await seedPartial(b3);
+  await db.collection('brands').doc(b3).update({ qoinBulkAt: Timestamp.fromMillis(Date.now() + 60_000) });
+  const r3 = await call('applyBrandQoinRate', { brandId: b3, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r3.result.changed, r3.result.staleScan, r3.result.clearedCount], [true, undefined, 2], 'partial 은 가드하지 않는다');
+  eq((await old.get()).get('status'), 'superseded');
+});
+await check('K8 동시 호출 3×(1500곳): **브랜드 이력 문서 수 = 1**, 보고된 clearedCount 합 = 1500, 응답은 changed/거부/noop 뿐 (빈 이력 0)', async () => {
+  const brandId = nid('kb8'); await db.collection('brands').doc(brandId).set({ name: 'K8', status: 'approved', qoinAccrualRate: 0.02 });
+  const ov = {}; for (let i = 0; i < 1500; i++) ov[i] = 0.1;
+  await seedBrandStores(brandId, 1500, ov);
+  const rs = await Promise.all([1, 2, 3].map(() => call('applyBrandQoinRate', { brandId, rate: 0.06, mode: 'overwrite' }, ADMIN)));
+  for (const r of rs) ok(r.error === undefined || r.error === 'FAILED_PRECONDITION', `예상 밖 오류 ${r.error} ${r.message}`);
+  eq((await brandHist(brandId).get()).size, 1, '이력 문서 수 자체');
+  eq(rs.filter((r) => r.result).reduce((a, r) => a + r.result.clearedCount, 0), 1500);
+  eq(rs.filter((r) => r.result && r.result.changed).length, 1, 'changed:true 는 정확히 1건');
+  console.log(`     [K8] 응답: ${rs.map((r) => r.error ?? (r.result.changed ? 'changed' : r.result.staleScan ? 'staleScan' : 'noop')).join(', ')}`);
+});
+await check('K9 단건 setQoinAccrualRate 레거시 0 가드 (매장·브랜드, 변경/초기화 모두): FAILED_PRECONDITION + details, 쓰기 0 (TRANSITIONAL)', async () => {
+  const brandId = nid('kb9'); await db.collection('brands').doc(brandId).set({ name: 'K9', status: 'approved', qoinAccrualRate: 0 });
+  const storeId = nid('st9'); await db.collection('stores').doc(storeId).set({ name: 'S9', brandId, qoinAccrualRate: 0 });
+  for (const body of [{ rate: 0.05 }, { clear: true }]) {
+    const rs = await call('setQoinAccrualRate', { scope: 'store', targetId: storeId, ...body }, ADMIN);
+    eq(rs.error, 'FAILED_PRECONDITION', `store ${JSON.stringify(body)}`);
+    const det = Array.isArray(rs.details) ? rs.details[0] : rs.details;
+    eq([det?.legacyZeroCount, det?.storeIds], [1, [storeId]]);
+    eq((await call('setQoinAccrualRate', { scope: 'brand', targetId: brandId, ...body }, ADMIN)).error, 'FAILED_PRECONDITION', `brand ${JSON.stringify(body)}`);
+  }
+  eq([(await db.collection('stores').doc(storeId).get()).get('qoinAccrualRate'), (await db.collection('brands').doc(brandId).get()).get('qoinAccrualRate')], [0, 0], '값 불변');
+  eq([(await storeHist(storeId).get()).size, (await brandHist(brandId).get()).size], [0, 0], '이력 0');
+  // 정상 값(무효 문자열 포함)은 가드 대상이 아니다
+  const s2 = nid('st9b'); await db.collection('stores').doc(s2).set({ name: 'S9b', qoinAccrualRate: '3' });
+  eq((await call('setQoinAccrualRate', { scope: 'store', targetId: s2, rate: 0.05 }, ADMIN)).result.changed, true);
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// L. brand_authorization_hardening — claimSubmittedBrand (CF1~CF6) · auditBrandLinks (CF7·CF8)
+// ═════════════════════════════════════════════════════════════════════════
+console.log('\n── L. claimSubmittedBrand · auditBrandLinks ──');
+const roleHist = (uid) => db.collection('users').doc(uid).collection('roleHistory');
+async function brandAccount(extraUser = {}, brandExtra = {}) {
+  const uid = nid('bu'); const brandId = nid('bb');
+  await seedUser(uid, { role: 'brand', ...extraUser });
+  await db.collection('brands').doc(brandId).set({ name: `브랜드_${brandId}`, status: 'pending', submittedBy: uid, brandKey: '', ...brandExtra });
+  return { uid, brandId };
+}
+await check('CF1 submittedBy != uid 인 브랜드로 호출 → PERMISSION_DENIED, users·roleHistory 불변 (+ 인증/인자 경계)', async () => {
+  const a = await brandAccount(); const b = await brandAccount();
+  eq((await call('claimSubmittedBrand', { brandId: b.brandId }, a.uid)).error, 'PERMISSION_DENIED');
+  eq((await db.collection('users').doc(a.uid).get()).get('brandId'), undefined, 'users 불변');
+  eq((await roleHist(a.uid).get()).size, 0);
+  eq((await call('claimSubmittedBrand', { brandId: a.brandId }, undefined)).error, 'UNAUTHENTICATED');
+  for (const brandId of [undefined, '', 5, 'a/b']) eq((await call('claimSubmittedBrand', { brandId }, a.uid)).error, 'INVALID_ARGUMENT', `brandId=${brandId}`);
+  // submittedBy 가 없는(레거시) 브랜드도 남의 것으로 취급한다
+  const legacy = nid('bl'); await db.collection('brands').doc(legacy).set({ name: 'L', status: 'approved' });
+  eq((await call('claimSubmittedBrand', { brandId: legacy }, a.uid)).error, 'PERMISSION_DENIED', 'submittedBy 부재 거부');
+});
+await check('CF2 정상 호출 → users.brandId 설정 + roleHistory 1건(changedBy == uid, field brandId, before null, after id, changedByRole self, source callable)', async () => {
+  const a = await brandAccount();
+  const r = await call('claimSubmittedBrand', { brandId: a.brandId }, a.uid);
+  eq([r.result.changed, r.result.brandId], [true, a.brandId]);
+  eq((await db.collection('users').doc(a.uid).get()).get('brandId'), a.brandId);
+  const hs = await histories(roleHist(a.uid)); eq(hs.length, 1);
+  eq([hs[0].field, hs[0].before, hs[0].after, hs[0].changedBy, hs[0].changedByRole, hs[0].source], ['brandId', null, a.brandId, a.uid, 'self', 'callable']);
+  ok(hs[0].changedAt, 'changedAt');
+});
+await check('CF3 같은 호출 2회·동시 5회 → changed:false, **이력 1건** (멱등, 문서 수로 센다)', async () => {
+  const a = await brandAccount();
+  const r1 = await call('claimSubmittedBrand', { brandId: a.brandId }, a.uid);
+  const r2 = await call('claimSubmittedBrand', { brandId: a.brandId }, a.uid);
+  eq([r1.result.changed, r2.result.changed], [true, false]); eq((await roleHist(a.uid).get()).size, 1);
+  const b = await brandAccount();
+  const rs = await Promise.all([1, 2, 3, 4, 5].map(() => call('claimSubmittedBrand', { brandId: b.brandId }, b.uid)));
+  for (const r of rs) ok(r.result, `동시 호출 오류 ${r.error} ${r.message}`);
+  eq(rs.filter((r) => r.result.changed).length, 1, 'changed:true 는 1건'); eq((await roleHist(b.uid).get()).size, 1, '동시 호출에도 이력 1건');
+});
+await check('CF4 이미 다른 brandId 가 있는 계정 → FAILED_PRECONDITION, 기존 값·이력 불변 (조용한 재연결 금지)', async () => {
+  const a = await brandAccount({ brandId: 'someone_elses' });
+  eq((await call('claimSubmittedBrand', { brandId: a.brandId }, a.uid)).error, 'FAILED_PRECONDITION');
+  eq((await db.collection('users').doc(a.uid).get()).get('brandId'), 'someone_elses'); eq((await roleHist(a.uid).get()).size, 0);
+});
+await check('CF5 없는 brandId → NOT_FOUND', async () => {
+  const a = await brandAccount();
+  eq((await call('claimSubmittedBrand', { brandId: nid('ghost') }, a.uid)).error, 'NOT_FOUND');
+});
+await check('CF6 role != brand 계정 → FAILED_PRECONDITION, users 불변', async () => {
+  const uid = nid('cu'); const brandId = nid('cb');
+  await seedUser(uid, { role: 'customer' });
+  await db.collection('brands').doc(brandId).set({ name: 'C', status: 'pending', submittedBy: uid });
+  eq((await call('claimSubmittedBrand', { brandId }, uid)).error, 'FAILED_PRECONDITION');
+  eq((await db.collection('users').doc(uid).get()).get('brandId'), undefined); eq((await roleHist(uid).get()).size, 0);
+});
+async function fingerprint() {
+  // 모든 문서의 updateTime — 어떤 쓰기든 이 값이 바뀐다 (users·brands·stores + 이력 collection group)
+  const out = {};
+  for (const c of ['users', 'brands', 'stores']) {
+    const s = await db.collection(c).get();
+    for (const d of s.docs) out[`${c}/${d.id}`] = d.updateTime.toMillis();
+  }
+  for (const g of ['qoinRateHistory', 'roleHistory']) {
+    const s = await db.collectionGroup(g).get();
+    for (const d of s.docs) out[d.ref.path] = d.updateTime.toMillis();
+  }
+  return out;
+}
+await check('CF7 auditBrandLinks: 분류 정확 + **쓰기 0** (실행 전후 전 문서 updateTime 동일)', async () => {
+  const tag = nid('au');
+  // ok
+  const okA = await brandAccount({}, { status: 'approved' });
+  await db.collection('users').doc(okA.uid).update({ brandId: okA.brandId });
+  // ok_onboarding
+  const onb = nid(`${tag}_onb`); await seedUser(onb, { role: 'brand' });
+  // dangling
+  const dang = nid(`${tag}_dang`); await seedUser(dang, { role: 'brand', brandId: nid('nowhere') });
+  // mismatch (레거시 수동 발급)
+  const mis = await brandAccount({}, { submittedBy: 'someone_else', status: 'approved' });
+  await db.collection('users').doc(mis.uid).update({ brandId: mis.brandId });
+  // duplicate (같은 브랜드에 두 계정)
+  const dup1 = await brandAccount({}, { status: 'approved' });
+  await db.collection('users').doc(dup1.uid).update({ brandId: dup1.brandId });
+  const dup2 = nid(`${tag}_dup2`); await seedUser(dup2, { role: 'brand', brandId: dup1.brandId });
+  // orphan_brand (아무도 안 가리킴)
+  const orphan = nid(`${tag}_orph`); await db.collection('brands').doc(orphan).set({ name: 'orphan', status: 'pending', submittedBy: 'ghost_user' });
+  // store_dangling_brand / store_unapproved_brand / 정상 / 개인 매장
+  const pendingBrand = await brandAccount({}, { status: 'pending' });
+  await db.collection('users').doc(pendingBrand.uid).update({ brandId: pendingBrand.brandId });
+  const sDang = nid(`${tag}_sd`); await db.collection('stores').doc(sDang).set({ name: 'SD', brandId: nid('gone') });
+  const sUna = nid(`${tag}_su`); await db.collection('stores').doc(sUna).set({ name: 'SU', brandId: pendingBrand.brandId });
+  const sOk = nid(`${tag}_so`); await db.collection('stores').doc(sOk).set({ name: 'SO', brandId: okA.brandId });
+  const sPersonal = nid(`${tag}_sp`); await db.collection('stores').doc(sPersonal).set({ name: 'SP', brandId: null });
+  const sNoField = nid(`${tag}_sn`); await db.collection('stores').doc(sNoField).set({ name: 'SN' });
+  await sleep(4000); // 트리거(이력 생성 등)가 가라앉기를 기다린 뒤 지문을 뜬다
+  const before = await fingerprint();
+  const r = await call('auditBrandLinks', {}, ADMIN);
+  ok(r.result, `호출 실패 ${r.error} ${r.message}`);
+  const after = await fingerprint();
+  eq(JSON.stringify(after), JSON.stringify(before), '쓰기 0 — 문서 지문 동일');
+  const { counts, items } = r.result;
+  const has = (cls, pred) => items[cls].some(pred);
+  ok(has('dangling', (x) => x.uid === dang), 'dangling'); ok(!has('dangling', (x) => x.uid === okA.uid), 'ok 가 dangling 에 없다');
+  ok(has('mismatch', (x) => x.uid === mis.uid && x.submittedBy === 'someone_else'), 'mismatch');
+  ok(has('duplicate', (x) => x.uid === dup1.uid) && has('duplicate', (x) => x.uid === dup2), 'duplicate 양쪽 모두');
+  ok(has('orphan_brand', (x) => x.brandId === orphan), 'orphan_brand');
+  ok(!has('orphan_brand', (x) => x.brandId === okA.brandId), '가리키는 계정이 있는 브랜드는 고아가 아니다');
+  ok(has('store_dangling_brand', (x) => x.storeId === sDang), 'store_dangling_brand');
+  ok(has('store_unapproved_brand', (x) => x.storeId === sUna), 'store_unapproved_brand');
+  ok(!['store_dangling_brand', 'store_unapproved_brand'].some((c) => has(c, (x) => x.storeId === sOk || x.storeId === sPersonal || x.storeId === sNoField)), '정상·개인 매장은 어느 분류에도 없다');
+  ok(counts.ok >= 1 && counts.ok_onboarding >= 1, 'ok / ok_onboarding 건수');
+  eq([items.ok, items.ok_onboarding], [[], []], 'ok·ok_onboarding 은 건수만 (목록 없음)');
+  eq(Object.keys(counts).sort(), ['dangling', 'duplicate', 'mismatch', 'ok', 'ok_onboarding', 'orphan_brand', 'store_dangling_brand', 'store_unapproved_brand']);
+  // 인자 없이도, 어떤 인자(dryRun 등)를 줘도 쓰지 않는다
+  const r2 = await call('auditBrandLinks', { dryRun: false, fix: true }, ADMIN);
+  ok(r2.result, '인자 무시'); eq(JSON.stringify(await fingerprint()), JSON.stringify(before), '인자를 줘도 쓰기 0');
+});
+await check('CF8 auditBrandLinks: non-admin → PERMISSION_DENIED, 비로그인 → UNAUTHENTICATED', async () => {
+  eq((await call('auditBrandLinks', {}, NONADMIN)).error, 'PERMISSION_DENIED');
+  eq((await call('auditBrandLinks', {}, undefined)).error, 'UNAUTHENTICATED');
 });
 
 // ═════════════════════════════════════════════════════════════════════════

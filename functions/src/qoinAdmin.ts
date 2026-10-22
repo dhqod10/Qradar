@@ -5,6 +5,7 @@
  */
 
 import * as admin from "firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { CallableRequest, HttpsError } from "firebase-functions/v2/https";
 
 export const REGION = "asia-northeast3";
@@ -104,3 +105,86 @@ export function isBulkInProgress(brandSnap: admin.firestore.DocumentSnapshot, bu
 }
 
 export const BULK_IN_PROGRESS_MESSAGE = "이 브랜드에 일괄 적용이 진행 중이에요";
+
+// ── 일괄 적용 포인터 상태 기계 (spec §21.2) ─────────────────────────────────────
+
+/**
+ * 브랜드 문서 포인터 `qoinBulkStatus` 의 값. **포인터는 지워지는 값이 아니라 상태 기계다** —
+ * 3필드(`qoinBulkHistoryId/Status/At`)를 삭제하지 않고 종결 상태로 전이시킨다.
+ * Dart 쪽 출처는 `QoinBulkStatus` enum 1곳. 구버전 앱은 모르는 코드를 null(= 중단 없음)로 읽는다.
+ */
+export const BULK_STATUS = {
+  inProgress: "in_progress",
+  partial: "partial",
+  completed: "completed",
+  superseded: "superseded",
+} as const;
+
+/** 포인터가 `partial` (중단됨, 실제로 남은 일이 있다) 인가. */
+export function isBulkPartial(brandSnap: admin.firestore.DocumentSnapshot): boolean {
+  return brandSnap.exists && brandSnap.get("qoinBulkStatus") === BULK_STATUS.partial;
+}
+
+/** 포인터가 종결 상태(`completed` / `superseded`) 인가. `partial` 은 종결이 아니다. */
+export function isBulkTerminal(brandSnap: admin.firestore.DocumentSnapshot): boolean {
+  if (!brandSnap.exists) return false;
+  const st = brandSnap.get("qoinBulkStatus");
+  return st === BULK_STATUS.completed || st === BULK_STATUS.superseded;
+}
+
+/**
+ * 트랜잭션 안에서 `partial` 포인터가 가리키는 옛 이력 문서를 읽는다. **모든 write 보다 먼저 호출해야 한다**
+ * (Firestore 트랜잭션은 read 가 write 앞이어야 한다). `partial` 이 아니거나 id 가 없으면 null.
+ */
+export async function readPartialHistory(
+  t: admin.firestore.Transaction,
+  brandSnap: admin.firestore.DocumentSnapshot,
+  histCol: admin.firestore.CollectionReference
+): Promise<admin.firestore.DocumentSnapshot | null> {
+  if (!isBulkPartial(brandSnap)) return null;
+  const id = brandSnap.get("qoinBulkHistoryId");
+  if (typeof id !== "string" || id.length === 0) return null;
+  return t.get(histCol.doc(id));
+}
+
+/**
+ * `partial` 뒤에 어떤 설정이 성공했을 때 옛 이력을 `superseded` 로 마감한다 (이력 문서는 삭제하지 않는다 — append-only 성질).
+ * `supersededBy` = 새 일괄 적용의 historyId, 단건·스위치는 null. 같은 트랜잭션에서 포인터 전이와 함께 쓴다.
+ */
+export function supersedePartialHistory(
+  t: admin.firestore.Transaction,
+  oldHist: admin.firestore.DocumentSnapshot | null,
+  uid: string,
+  supersededBy: string | null
+): void {
+  if (!oldHist || !oldHist.exists) return;
+  t.update(oldHist.ref, {
+    status: "superseded",
+    supersededBy,
+    supersededAt: FieldValue.serverTimestamp(),
+    supersededByUid: uid,
+  });
+}
+
+/** 같은 값 + 지울 개별 설정 0 + `partial`: 남은 일이 없으므로 옛 이력을 `completed` 로 마감한다 (`nothing_left`). */
+export function completePartialHistoryNothingLeft(
+  t: admin.firestore.Transaction,
+  oldHist: admin.firestore.DocumentSnapshot | null,
+  uid: string
+): void {
+  if (!oldHist || !oldHist.exists) return;
+  t.update(oldHist.ref, {
+    status: "completed",
+    closedReason: "nothing_left",
+    closedBy: uid,
+    closedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+/** 단건 적립률·스위치 성공 시 `partial` 포인터를 `superseded` 로 전이시키는 브랜드 문서 쓰기 필드. */
+export function supersededPointerFields(): Record<string, unknown> {
+  return { qoinBulkStatus: BULK_STATUS.superseded, qoinBulkAt: FieldValue.serverTimestamp() };
+}
+
+// TRANSITIONAL(spec §20.4.5): 레거시 `qoinAccrualRate: 0` 가드 문구 — 일괄·단건 두 경로가 공유한다 (보호가 한 경로에만 걸리지 않게).
+export const LEGACY_MESSAGE_PREFIX = "레거시 0% 매장이 있어요. Qoin 설정 허브에서 마이그레이션을 먼저 실행하세요";

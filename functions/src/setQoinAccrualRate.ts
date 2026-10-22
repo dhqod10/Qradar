@@ -15,6 +15,11 @@
  * 이전 값이 무효(문자열 등)였으면 `beforeState: 'invalid'` + `beforeRaw` 로 구별해 남긴다 (부가 B).
  *
  * 쓰는 필드: 매장/브랜드는 `qoinAccrualRate` 1개만 (status / updatedAt 불변 — 소유권 경계를 넘는 쓰기는 최소 필드).
+ *   예외: 브랜드 scope 에서 `partial` 포인터가 있으면 같은 트랜잭션에서 옛 이력을 `superseded` 로 마감하고 포인터를
+ *   `superseded` 로 전이한다 (spec §21.2 — 설정을 바꾸면 중단 안내가 저절로 닫힌다). 값이 같은 noop 은 닫지 않는다.
+ *
+ * TRANSITIONAL(spec §20.4.5 / §21.9-2): 대상의 현재 값이 레거시 `qoinAccrualRate: 0` 이면 덮어쓰지 않고 멈춘다.
+ *   0 은 "적립 안 함" 이었으므로 숫자로 덮으면 의도적으로 꺼 둔 곳이 조용히 켜진다. 일괄 경로(applyBrandQoinRate)와 같은 보호.
  */
 
 import * as admin from "firebase-admin";
@@ -25,11 +30,16 @@ import {
   BULK_IN_PROGRESS_MESSAGE,
   historyCollection,
   isBulkInProgress,
+  isBulkPartial,
+  LEGACY_MESSAGE_PREFIX,
   parseReason,
   rateBeforeInfo,
+  readPartialHistory,
   REGION,
   requireAdmin,
   Scope,
+  supersededPointerFields,
+  supersedePartialHistory,
 } from "./qoinAdmin";
 
 const LOG = "[setQoinAccrualRate]";
@@ -96,10 +106,13 @@ export const setQoinAccrualRate = onCall({ region: REGION }, async (request) => 
       throw new HttpsError("not-found", "target not found");
     }
     // F5-(c): 일괄 적용 진행 중 거부. 매장이면 소속 브랜드 문서, 브랜드면 이미 읽은 자기 문서.
+    let oldPartial: admin.firestore.DocumentSnapshot | null = null;
     if (s === "brand") {
       if (isBulkInProgress(snap, BULK_STALE_MS)) {
         throw new HttpsError("failed-precondition", BULK_IN_PROGRESS_MESSAGE);
       }
+      // partial 이면 옛 이력도 읽는다 (read 는 write 앞). partial 이 아니면 추가 read 0.
+      oldPartial = await readPartialHistory(t, snap, histCol);
     } else if (s === "store") {
       const brandId = snap.get("brandId");
       if (typeof brandId === "string" && brandId.length > 0) {
@@ -110,6 +123,13 @@ export const setQoinAccrualRate = onCall({ region: REGION }, async (request) => 
       }
     }
     const rawBefore = snap.exists ? snap.get(field) : undefined;
+    // TRANSITIONAL(spec §20.4.5): 레거시 0 은 정책 판단 없이 멈춘다 (마이그레이션 선행).
+    if (classifyRate(rawBefore).kind === "legacyZero") {
+      throw new HttpsError("failed-precondition", `${LEGACY_MESSAGE_PREFIX} (1곳)`, {
+        legacyZeroCount: 1,
+        storeIds: s === "store" ? [targetId] : [],
+      });
+    }
     const beforeInfo = rateBeforeInfo(rawBefore, classifyRate(rawBefore).kind === "valid");
     const before = beforeInfo.before;
     // 무효였던 값(문자열 등)도 덮어써야 하므로 "같음" 판정은 number 일치로만 한다.
@@ -147,7 +167,12 @@ export const setQoinAccrualRate = onCall({ region: REGION }, async (request) => 
         op: "set",
       });
     } else {
-      t.update(targetRef, { [field]: after === null ? FieldValue.delete() : after });
+      t.update(targetRef, {
+        [field]: after === null ? FieldValue.delete() : after,
+        // S2: 브랜드 값을 바꾸면 중단(partial) 포인터는 더 이상 유효하지 않다 — 같은 트랜잭션에서 마감한다.
+        ...(s === "brand" && isBulkPartial(snap) ? supersededPointerFields() : {}),
+      });
+      supersedePartialHistory(t, oldPartial, uid, null);
     }
     t.set(historyRef, {
       ...base,
