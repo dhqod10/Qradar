@@ -28,6 +28,11 @@ class BrandIdMissingView extends ConsumerWidget {
   static const String alreadyLinkedBody = '관리자에게 문의해 주세요. 직접 바꿀 수는 없어요';
   static const String notSubmitterTitle = '이 브랜드는 내 계정으로 등록한 브랜드가 아니에요';
   static const String notSubmitterBody = '관리자에게 문의해 주세요';
+  static const String notBrandAccountTitle = '브랜드 계정이 아니에요';
+  static const String notBrandAccountBody = '계정 역할이 바뀐 것 같아요. 앱을 다시 열어 보고, 계속 그러면 관리자에게 문의해 주세요';
+  static const String brandMissingTitle = '등록한 브랜드를 찾을 수 없어요';
+  static const String brandMissingBody = '브랜드가 삭제됐을 수 있어요. 다시 확인해 볼까요?';
+  static const String recheckLabel = '다시 확인';
   static const String contactFooter = '계속 안 되면 관리자에게 문의해 주세요';
   static const String retryLookupLabel = '다시 시도';
   static const String retryClaimLabel = '다시 연결';
@@ -134,6 +139,21 @@ class BrandIdMissingView extends ConsumerWidget {
               icon: Icons.info_outline_rounded,
               title: notSubmitterTitle,
               body: notSubmitterBody,
+            );
+          case BrandClaimFailure.notBrandAccount:
+            return const _Notice(
+              icon: Icons.info_outline_rounded,
+              title: notBrandAccountTitle,
+              body: notBrandAccountBody,
+            );
+          case BrandClaimFailure.brandMissing:
+            // 같은 claim 을 되풀이하지 않는다 — 처음부터 다시 조회한다 (그 결과 0건이면 등록 폼, 1건 이상이면 그 브랜드로 연결).
+            return _Notice(
+              icon: Icons.link_off_rounded,
+              title: brandMissingTitle,
+              body: brandMissingBody,
+              buttonLabel: recheckLabel,
+              onButton: notifier.retryLookup,
             );
           case BrandClaimFailure.retryable:
             return _Notice(

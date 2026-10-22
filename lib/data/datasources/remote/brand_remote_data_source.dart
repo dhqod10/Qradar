@@ -135,20 +135,16 @@ class BrandRemoteDataSource {
           )
           .call<Object?>(<String, dynamic>{'brandId': brandId});
     } on FirebaseFunctionsException catch (e) {
-      throw BrandClaimException(_classify(e.code), code: e.code);
+      final d = e.details;
+      final reason = (d is Map && d['reason'] is String)
+          ? d['reason'] as String
+          : BrandClaimException.reasonFromMessage(e.message);
+      throw BrandClaimException(
+        BrandClaimException.classify(e.code, reason: reason),
+        code: e.code,
+      );
     } catch (_) {
       throw const BrandClaimException(BrandClaimFailure.retryable);
-    }
-  }
-
-  static BrandClaimFailure _classify(String code) {
-    switch (code) {
-      case 'failed-precondition':
-        return BrandClaimFailure.alreadyLinked;
-      case 'permission-denied':
-        return BrandClaimFailure.notSubmitter;
-      default:
-        return BrandClaimFailure.retryable;
     }
   }
 }

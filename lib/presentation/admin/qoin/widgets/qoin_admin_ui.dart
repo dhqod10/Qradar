@@ -61,6 +61,12 @@ class QoinMessages {
   // 돈의 값을 바꿨다는 거짓 문장이 운영자를 "바뀐 줄 알고" 화면을 떠나게 하기 때문이다. 상태를 말하고 바뀐 것이 없음을 덧붙인다.
 
   static const String alreadyTitle = '이미 같은 값이에요';
+
+  /// `staleScan: true` — 서버가 오래된 스캔을 불신해 아무것도 하지 않았다. 값이 같다는 말은 참이지만 **의도한 개별 설정 초기화가
+  /// 안 됐을 수 있다** (3차 F-1) — "같은 값" 으로 수렴시키면 그 사실이 숨는다. 다시 시도해 달라고 말한다.
+  /// (`changed:false` 라 성공 동사를 쓰지 않는다.)
+  static const String staleScanTitle = '방금 다른 곳에서 먼저 처리됐을 수 있어요';
+  static const String staleScanLine = '개별 설정이 그대로 남아 있을 수 있어요. 이 브랜드를 다시 확인하고 한 번 더 시도해 주세요';
   static const String alreadySameValue = '이미 같은 값이에요. 바뀐 것이 없어요';
   static const String alreadyInheriting = '이미 상위 설정을 따르고 있어요. 바뀐 것이 없어요';
 

@@ -372,8 +372,8 @@ await run('RH10 admin 이 config/qoin.enabled update (enabledChangedBy = 본인)
   updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
 await run('RH11 P7 admin 이 config 문서를 accrualRate 포함해 create', 'deny', () =>
   setDoc(doc(asAdmin, 'config', 'qoin_create_probe'), { accrualRate: 0.2, enabled: true }));
-await run('RH11b admin 이 config 문서를 accrualRate 없이 create (회귀, enabledChangedBy 포함)', 'allow', () =>
-  setDoc(doc(asAdmin, 'config', 'qoin_create_probe2'), { enabled: false, enabledChangedBy: ADMIN }));
+await run('RH11b admin 이 config 문서를 accrualRate 없이 create (회귀, enabledChangedBy + enabledChangedAt 포함 — create 도 update 와 같은 강제, 3차 H-1)', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_create_probe2'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
 await run('RH11c P6 admin 이 config/qoin delete (삭제 = accrualRate 소멸)', 'deny', () =>
   deleteDoc(doc(asAdmin, 'config', 'qoin')));
 await run('RH12 customer 의 config write', 'deny', () =>
@@ -587,6 +587,15 @@ await run('EC6 admin 이 다시 켜기 — 같은 형태 (비상 정지 해제�
 await run('EC7 enabled 를 건드리지 않는 update(예: 다른 설정 필드)는 enabledChangedAt 불요 — 회귀', 'allow', () =>
   updateDoc(doc(asAdmin, 'config', 'qoin'), { note: 'x' }));
 
+await run('EC8 admin 이 config create 에 enabled + enabledChangedBy 만 (enabledChangedAt 생략) — create 에도 같은 강제 (H-1)', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'ec8_a'), { enabled: false, enabledChangedBy: ADMIN }));
+await run('EC8b admin 이 config create 에 enabledChangedAt 을 클라이언트 시각으로', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'ec8_b'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: Timestamp.fromDate(new Date('2020-01-01')) }));
+await run('EC8c admin 이 config create 에 enabled + serverTimestamp (정상)', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'ec8_c'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
+await run('EC8d enabled 없는 config create 는 불요 (회귀)', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'ec8_d'), { note: 'x' }));
+
 // ══════════════════════════════════════════════════════════════════════════
 // RM — 역할 변조 스위트 (brand_authorization_hardening §5)
 //   불변식: "프로필을 바꿔서 얻을 수 있는 권한은 없다."
@@ -784,6 +793,28 @@ for (const [label, fn] of holderSites) {
     return fn(u, { b, s });
   });
 }
+// F-S1: brands.submittedBy 는 claimSubmittedBrand 의 신뢰 뿌리 — 본인 uid 로의 설정만 허용
+await run('RM-S1 보유자가 자기 브랜드 submittedBy 를 임의의 다른 uid 로 양도', 'deny', async () => {
+  const b = await rmBrand('approved'); const h = await rmUser({ role: 'brand', brandId: b });
+  const victim = await rmUser({ role: 'brand' });
+  return updateDoc(doc(h.db, 'brands', b), { submittedBy: victim.uid });
+});
+await run('RM-S1b 보유자가 submittedBy 를 양도하면서 다른 정상 필드와 함께(status pending 회귀 포함)', 'deny', async () => {
+  const b = await rmBrand('approved'); const h = await rmUser({ role: 'brand', brandId: b });
+  return updateDoc(doc(h.db, 'brands', b), { name: 'x', status: 'pending', submittedBy: 'someone_else', submittedAt: serverTimestamp() });
+});
+await run('RM-S1c 보유자가 재제출하며 submittedBy 를 자기 uid 로 설정 (정상 흐름)', 'allow', async () => {
+  const b = await rmBrand('approved'); const h = await rmUser({ role: 'brand', brandId: b });
+  return updateDoc(doc(h.db, 'brands', b), { name: 'x', status: 'pending', submittedBy: h.uid, submittedAt: serverTimestamp() });
+});
+await run('RM-S1d submittedBy 를 건드리지 않는 수정은 그대로 (회귀)', 'allow', async () => {
+  const b = await rmBrand('approved'); const h = await rmUser({ role: 'brand', brandId: b });
+  return updateDoc(doc(h.db, 'brands', b), { description: 'd' });
+});
+await run('RM-S1e admin 은 submittedBy 를 교정할 수 있다 (D4 교정 경로는 admin 전권)', 'allow', async () => {
+  const b = await rmBrand('approved');
+  return updateDoc(doc(asAdmin, 'brands', b), { submittedBy: 'any_uid_by_admin' });
+});
 await run('RM15 admin 이 users/{타인}.brandId 교정 (D4 의 교정 경로)', 'allow', async () => {
   const a = await rmBrand(); const u = await rmUser({ role: 'brand', brandId: 'wrong' });
   return updateDoc(doc(asAdmin, 'users', u.uid), { brandId: a });

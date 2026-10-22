@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:qradar/presentation/admin/widgets/brand_scope_badge.dart';
+import 'package:qradar/presentation/common/providers/store_brand_link_providers.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
@@ -10,7 +12,6 @@ import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/admin/widgets/store_scope_badge.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
-import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/customer/home/widgets/grade_badge.dart';
 import 'package:qradar/presentation/owner/my_store/store_core_form_page.dart';
 import 'package:qradar/presentation/owner/my_store/store_operation_form_page.dart';
@@ -330,9 +331,10 @@ class _BrandStoreDetailView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final brandAsync = ref.watch(brandByIdProvider(store.brandId!));
-    final brandName =
-        brandAsync.asData?.value?.name ?? '브랜드 매장';
+    // 브랜드 이름은 문서가 있을 때만 쓴다. 조회 중·미존재·실패를 `브랜드 매장` 같은 가짜 이름으로 덮지 않는다 —
+    // 같은 분류 함수(resolveStoreBrandLink)를 승인 화면과 공유한다 (R2).
+    final link = ref.watch(storeBrandLinkProvider(store.brandId));
+    final brandName = link.brand?.name ?? '';
 
     final isRejected = store.status == EntityApprovalStatus.rejected;
     final isPending = store.status == EntityApprovalStatus.pending;
@@ -363,7 +365,7 @@ class _BrandStoreDetailView extends ConsumerWidget {
                       ? store.name
                       : '$brandName ${store.name}',
                 ),
-                scopeBadge: StoreScopeBadge.brand(brandName),
+                scopeBadge: BrandScopeBadge(brandId: store.brandId!),
               ),
               const SizedBox(height: 12),
               const _BrandStoreInfoBanner(),

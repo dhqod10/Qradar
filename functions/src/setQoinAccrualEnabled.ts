@@ -22,7 +22,7 @@ import {
   BULK_IN_PROGRESS_MESSAGE,
   historyCollection,
   isBulkInProgress,
-  isBulkPartial,
+  isBulkUnfinished,
   parseReason,
   readPartialHistory,
   REGION,
@@ -74,7 +74,7 @@ export const setQoinAccrualEnabled = onCall({ region: REGION }, async (request) 
         throw new HttpsError("failed-precondition", BULK_IN_PROGRESS_MESSAGE);
       }
       // partial 이면 옛 이력도 읽는다 (read 는 write 앞). partial 이 아니면 추가 read 0.
-      oldPartial = await readPartialHistory(t, snap, historyCollection(db, "brand", targetId));
+      oldPartial = await readPartialHistory(t, snap, historyCollection(db, "brand", targetId), BULK_STALE_MS);
     } else {
       const brandId = snap.get("brandId");
       if (typeof brandId === "string" && brandId.length > 0) {
@@ -96,7 +96,7 @@ export const setQoinAccrualEnabled = onCall({ region: REGION }, async (request) 
 
     t.update(targetRef, {
       qoinAccrualEnabled: enabled ? FieldValue.delete() : false,
-      ...(scope === "brand" && isBulkPartial(snap) ? supersededPointerFields() : {}),
+      ...(scope === "brand" && isBulkUnfinished(snap, BULK_STALE_MS) ? supersededPointerFields() : {}),
     });
     supersedePartialHistory(t, oldPartial, uid, null);
     t.set(historyRef, {

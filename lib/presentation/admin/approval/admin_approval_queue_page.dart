@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:qradar/domain/entities/store_brand_link.dart';
+import 'package:qradar/presentation/common/providers/store_brand_link_providers.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
@@ -10,7 +12,6 @@ import 'package:qradar/presentation/admin/approval/admin_pending_menus_by_brand_
 import 'package:qradar/presentation/admin/approval/admin_pending_stores_page.dart';
 import 'package:qradar/presentation/admin/providers/admin_brand_approval_providers.dart';
 import 'package:qradar/presentation/admin/providers/admin_master_menu_approval_providers.dart';
-import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
 
 /// 승인 — 세그먼트: 브랜드 / 메뉴 / 매장 / 매장 커스텀.
@@ -383,9 +384,18 @@ class _BrandPendingTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final brandAsync = ref.watch(brandByIdProvider(brandId));
-    final brand = brandAsync.asData?.value;
-    final brandName = brand?.name ?? '브랜드';
+    // 이 묶음이 어느 브랜드 것인가 — 매장 승인 화면과 같은 질문이라 같은 분류 함수를 쓴다 (R2). 조회 중·미존재·실패를
+    // 가짜 이름(`브랜드`)으로 덮지 않는다. 승인 대기 브랜드의 메뉴도 올라오므로 문서가 있으면(승인 여부와 무관) 실제 이름을 쓴다.
+    final link = ref.watch(storeBrandLinkProvider(brandId));
+    final brand = link.brand;
+    final brandName = switch (link.kind) {
+      StoreBrandLinkKind.approved ||
+      StoreBrandLinkKind.unapproved => brand!.name,
+      StoreBrandLinkKind.checking => '브랜드 확인 중',
+      StoreBrandLinkKind.missing => '존재하지 않는 브랜드',
+      StoreBrandLinkKind.lookupFailed => '브랜드를 확인하지 못했어요',
+      StoreBrandLinkKind.personal => '브랜드 확인 필요',
+    };
     final logoUrl = brand?.logoUrl ?? '';
 
     return Card(

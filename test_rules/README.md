@@ -21,7 +21,7 @@ cd /Users/Byeonguk/Developer/OrderApp/test_rules && npm test
 
 ## 케이스
 
-> 2026-10-22 기준 **332건** (`npm test` 출력이 단일 진실원). 아래 표는 최초 12건이다.
+> 2026-10-22 기준 **341건** (`npm test` 출력이 단일 진실원). 아래 표는 최초 12건이다.
 > Qoin 적립률 계층화(`RH*`)는 `docs/tasks/qoin_accrual_rate_hierarchy/spec.md` §9 의 쓰기 경로 12개(P1~P12)를 1:1 로 케이스화했다 —
 > admin 전권 분기와 create 경로까지 포함한다 (1차 F1: 보호가 update 에만 있었다).
 

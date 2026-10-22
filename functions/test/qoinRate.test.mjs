@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
-  MIN_RATE, MAX_RATE, classifyRate, classifySwitch, resolveEffectiveRate, isValidCallableRate, isValidCallableSwitch,
+  MIN_RATE, MAX_RATE, BULK_STALE_MS, classifyRate, classifySwitch, resolveEffectiveRate, isValidCallableRate, isValidCallableSwitch,
   computeEarnAmount,
 } from '../lib/qoinRate.js';
 import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS } from '../lib/orderBuilder.js';
@@ -240,4 +240,18 @@ test('claimSubmittedBrand: users 에 쓰는 필드는 brandId 와 roleHistory 1�
   assert.equal((code.match(/t\.set\(/g) ?? []).length, 1, 'roleHistory 1건');
   assert.match(code, /failed-precondition/);
   assert.match(code, /submittedBy/);
+});
+
+test('stale 판정 기준(5분)은 Dart 와 같은 공유 픽스처를 읽는다 — test_fixtures/qoin_bulk_policy.json', () => {
+  const policy = JSON.parse(
+    fs.readFileSync(path.join(here, '../../test_fixtures/qoin_bulk_policy.json'), 'utf8'));
+  assert.equal(BULK_STALE_MS, policy.bulkStaleMs);
+  // 상수는 qoinRate.ts 1곳에서만 선언한다.
+  const src = path.join(here, '../src');
+  const decl = [];
+  for (const f of fs.readdirSync(src)) {
+    if (!f.endsWith('.ts')) continue;
+    if (/\b(const|let)\s+BULK_STALE_MS\b/.test(fs.readFileSync(path.join(src, f), 'utf8'))) decl.push(f);
+  }
+  assert.deepEqual(decl, ['qoinRate.ts']);
 });

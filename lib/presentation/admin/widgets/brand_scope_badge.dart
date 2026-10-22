@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/domain/entities/store_brand_link.dart';
-import 'package:qradar/presentation/admin/providers/admin_store_brand_link_providers.dart';
+import 'package:qradar/presentation/common/providers/store_brand_link_providers.dart';
 import 'package:qradar/presentation/admin/widgets/store_scope_badge.dart';
 
 /// 매장이 가리키는 브랜드를 보여주는 배지 (승인 상세 · 승인 대기 목록 공용).

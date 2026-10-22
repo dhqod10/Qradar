@@ -44,7 +44,7 @@ import {
   describeRaw,
   historyCollection,
   isBulkInProgress,
-  isBulkPartial,
+  isBulkUnfinished,
   isBulkTerminal,
   LEGACY_MESSAGE_PREFIX,
   parseReason,
@@ -310,7 +310,7 @@ export const applyBrandQoinRate = onCall(
         throw new HttpsError("failed-precondition", BULK_IN_PROGRESS_MESSAGE);
       }
       // partial 이 남아 있으면 옛 이력도 읽는다 — read 는 write 보다 앞서야 한다. partial 일 때만 +1 read (적립 경로 무관).
-      const oldPartial = await readPartialHistory(t, snap, histCol);
+      const oldPartial = await readPartialHistory(t, snap, histCol, BULK_STALE_MS);
       const rawBefore = snap.get("qoinAccrualRate");
       legacyZeroGuard(scan, classifyRate(rawBefore).kind === "legacyZero");
       const beforeInfo = rateBeforeInfo(rawBefore, classifyRate(rawBefore).kind === "valid");
@@ -330,7 +330,7 @@ export const applyBrandQoinRate = onCall(
       }
 
       // S2: 같은 값 + 지울 개별 설정 0 + 중단(partial) 포인터 → 남은 일이 없다. 새 이력 없이 옛 이력을 닫는다.
-      if (sameValue && scan.withOverride === 0 && isBulkPartial(snap)) {
+      if (sameValue && scan.withOverride === 0 && isBulkUnfinished(snap, BULK_STALE_MS)) {
         t.update(brandRef, { qoinBulkStatus: BULK_STATUS.completed, qoinBulkAt: FieldValue.serverTimestamp() });
         completePartialHistoryNothingLeft(t, oldPartial, uid);
         return { changed: false, closed: true, brandDisabled };

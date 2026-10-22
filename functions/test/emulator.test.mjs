@@ -1045,6 +1045,54 @@ await check('K8 동시 호출 3×(1500곳): **브랜드 이력 문서 수 = 1**,
   eq(rs.filter((r) => r.result && r.result.changed).length, 1, 'changed:true 는 정확히 1건');
   console.log(`     [K8] 응답: ${rs.map((r) => r.error ?? (r.result.changed ? 'changed' : r.result.staleScan ? 'staleScan' : 'noop')).join(', ')}`);
 });
+/** 인스턴스가 중간에 죽은 상태: 포인터 in_progress + 20분 전, 이력도 in_progress (3차 F-2). */
+async function seedStale(brandId) {
+  await db.collection('brands').doc(brandId).set({ name: 'ST', status: 'approved', qoinAccrualRate: 0.06 });
+  await seedBrandStores(brandId, 6, { 1: 0.1, 3: 0.1 });
+  const hRef = brandHist(brandId).doc();
+  const old = Timestamp.fromMillis(Date.now() - 20 * 60 * 1000);
+  await hRef.set({ scope: 'brand', targetId: brandId, targetName: 'ST', field: 'accrualRate', before: 0.02, beforeState: 'value', after: 0.06,
+    changedBy: ADMIN, changedByRole: 'admin', changedAt: old, reason: null, source: 'bulk', op: 'bulkApply', bulkMode: 'overwrite',
+    totalCount: 2, affectedCount: 0, clearedCount: 0, clearedValueCount: 0, clearedInvalidCount: 0, preservedCount: 0, processedCount: 0,
+    status: 'in_progress', disabledUntouchedCount: 0, brandDisabled: false, lastProgressAt: old });
+  await db.collection('brands').doc(brandId).update({ qoinBulkHistoryId: hRef.id, qoinBulkStatus: 'in_progress', qoinBulkAt: old });
+  return hRef;
+}
+await check('K10 stale in_progress 도 partial 과 같이 종결된다 (3차 F-2): 새 일괄 / 브랜드 단건 / 스위치 / nothing_left', async () => {
+  // (a) 새 overwrite(다른 값)
+  let b = nid('ks10a'); let old = await seedStale(b);
+  let r = await call('applyBrandQoinRate', { brandId: b, rate: 0.04, mode: 'overwrite' }, ADMIN);
+  eq(r.result.changed, true);
+  eq([(await old.get()).get('status'), (await old.get()).get('supersededBy')], ['superseded', r.result.historyId], '(a) 옛 이력');
+  // (b) 단건 — 이전에는 포인터가 in_progress 그대로라 이어서 적용이 영구히 실패했다
+  b = nid('ks10b'); old = await seedStale(b);
+  eq((await call('applyBrandQoinRate', { brandId: b, mode: 'overwrite', resumeHistoryId: old.id }, ADMIN)).error === undefined, true, '재개는 stale 일 때 가능(대조군)');
+  b = nid('ks10b2'); old = await seedStale(b);
+  r = await call('setQoinAccrualRate', { scope: 'brand', targetId: b, rate: 0.05 }, ADMIN);
+  eq(r.result.changed, true);
+  let p = await ptr(b); eq([p.id, p.st], [old.id, 'superseded'], '(b) 포인터');
+  eq((await old.get()).get('status'), 'superseded', '(b) 옛 이력');
+  // 탈출구: 이제 이어서 적용은 "마감됨" 으로 거부되고 배너 판정은 none(superseded)
+  eq((await call('applyBrandQoinRate', { brandId: b, mode: 'overwrite', resumeHistoryId: old.id }, ADMIN)).error, 'FAILED_PRECONDITION');
+  // (c) 스위치
+  b = nid('ks10c'); old = await seedStale(b);
+  r = await call('setQoinAccrualEnabled', { scope: 'brand', targetId: b, enabled: false }, ADMIN);
+  eq(r.result.changed, true);
+  p = await ptr(b); eq([p.id, p.st], [old.id, 'superseded'], '(c) 포인터');
+  eq((await old.get()).get('status'), 'superseded');
+  // (d) nothing_left: 같은 값 + 지울 개별 설정 0
+  b = nid('ks10d'); old = await seedStale(b);
+  for (const i of [1, 3]) await db.collection('stores').doc(`${b}_s000${i}`).update({ qoinAccrualRate: FieldValue.delete() });
+  r = await call('applyBrandQoinRate', { brandId: b, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r.result.changed, r.result.closed], [false, true]);
+  const o = (await old.get()).data(); eq([o.status, o.closedReason], ['completed', 'nothing_left']);
+  eq((await ptr(b)).st, 'completed');
+  // 신선한 in_progress(1분 전)는 진행 중이다 — 닫지 않고 거부
+  b = nid('ks10e'); await seedStale(b);
+  await db.collection('brands').doc(b).update({ qoinBulkAt: Timestamp.fromMillis(Date.now() - 60 * 1000) });
+  eq((await call('setQoinAccrualRate', { scope: 'brand', targetId: b, rate: 0.05 }, ADMIN)).error, 'FAILED_PRECONDITION');
+  eq((await ptr(b)).st, 'in_progress');
+});
 await check('K9 단건 setQoinAccrualRate 레거시 0 가드 (매장·브랜드, 변경/초기화 모두): FAILED_PRECONDITION + details, 쓰기 0 (TRANSITIONAL)', async () => {
   const brandId = nid('kb9'); await db.collection('brands').doc(brandId).set({ name: 'K9', status: 'approved', qoinAccrualRate: 0 });
   const storeId = nid('st9'); await db.collection('stores').doc(storeId).set({ name: 'S9', brandId, qoinAccrualRate: 0 });
@@ -1075,7 +1123,8 @@ async function brandAccount(extraUser = {}, brandExtra = {}) {
 }
 await check('CF1 submittedBy != uid 인 브랜드로 호출 → PERMISSION_DENIED, users·roleHistory 불변 (+ 인증/인자 경계)', async () => {
   const a = await brandAccount(); const b = await brandAccount();
-  eq((await call('claimSubmittedBrand', { brandId: b.brandId }, a.uid)).error, 'PERMISSION_DENIED');
+  const r1 = await call('claimSubmittedBrand', { brandId: b.brandId }, a.uid);
+  eq(r1.error, 'PERMISSION_DENIED'); ok(r1.message.includes('[not_submitter]'), r1.message);
   eq((await db.collection('users').doc(a.uid).get()).get('brandId'), undefined, 'users 불변');
   eq((await roleHist(a.uid).get()).size, 0);
   eq((await call('claimSubmittedBrand', { brandId: a.brandId }, undefined)).error, 'UNAUTHENTICATED');
@@ -1105,18 +1154,24 @@ await check('CF3 같은 호출 2회·동시 5회 → changed:false, **이력 1�
 });
 await check('CF4 이미 다른 brandId 가 있는 계정 → FAILED_PRECONDITION, 기존 값·이력 불변 (조용한 재연결 금지)', async () => {
   const a = await brandAccount({ brandId: 'someone_elses' });
-  eq((await call('claimSubmittedBrand', { brandId: a.brandId }, a.uid)).error, 'FAILED_PRECONDITION');
+  const r4 = await call('claimSubmittedBrand', { brandId: a.brandId }, a.uid);
+  eq(r4.error, 'FAILED_PRECONDITION');
+  ok(r4.message.includes('[already_linked]'), `사유 token: ${r4.message}`);
   eq((await db.collection('users').doc(a.uid).get()).get('brandId'), 'someone_elses'); eq((await roleHist(a.uid).get()).size, 0);
 });
 await check('CF5 없는 brandId → NOT_FOUND', async () => {
   const a = await brandAccount();
-  eq((await call('claimSubmittedBrand', { brandId: nid('ghost') }, a.uid)).error, 'NOT_FOUND');
+  const r5 = await call('claimSubmittedBrand', { brandId: nid('ghost') }, a.uid);
+  eq(r5.error, 'NOT_FOUND'); ok(r5.message.includes('[brand_not_found]'), r5.message);
 });
 await check('CF6 role != brand 계정 → FAILED_PRECONDITION, users 불변', async () => {
   const uid = nid('cu'); const brandId = nid('cb');
   await seedUser(uid, { role: 'customer' });
   await db.collection('brands').doc(brandId).set({ name: 'C', status: 'pending', submittedBy: uid });
-  eq((await call('claimSubmittedBrand', { brandId }, uid)).error, 'FAILED_PRECONDITION');
+  const r6 = await call('claimSubmittedBrand', { brandId }, uid);
+  eq(r6.error, 'FAILED_PRECONDITION');
+  ok(r6.message.includes('[not_brand_account]'), `role 불일치는 already_linked 와 다른 사유: ${r6.message}`);
+  ok(!r6.message.includes('already_linked'), '오분류 금지');
   eq((await db.collection('users').doc(uid).get()).get('brandId'), undefined); eq((await roleHist(uid).get()).size, 0);
 });
 async function fingerprint() {

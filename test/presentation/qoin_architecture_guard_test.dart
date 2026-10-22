@@ -323,6 +323,7 @@ void main() {
       'functions/src/auditBrandLinks.ts',
       'functions/src/index.ts',
       'functions/src/migrateQoinZeroRates.ts',
+      'functions/src/onOrderQoinSettled.ts',
       'functions/src/qoinAdmin.ts',
       'functions/src/qoinRate.ts',
       'functions/src/setQoinAccrualRate.ts',
@@ -335,10 +336,17 @@ void main() {
       'lib/data/datasources/remote/qoin_zero_migration_remote_data_source.dart',
       'lib/data/models/qoin_config_model.dart',
       'lib/data/models/qoin_rate_change_model.dart',
+      'lib/data/repositories/brand_link_audit_repository_impl.dart',
+      'lib/data/repositories/qoin_zero_migration_repository_impl.dart',
       'lib/domain/entities/brand_link_audit_result.dart',
       'lib/domain/entities/qoin_rate_change_entity.dart',
       'lib/domain/entities/qoin_zero_migration_result.dart',
+      'lib/domain/repositories/brand_link_audit_repository.dart',
+      'lib/domain/repositories/qoin_zero_migration_repository.dart',
+      'lib/domain/usecases/audit_brand_links_use_case.dart',
+      'lib/domain/usecases/migrate_qoin_zero_rates_use_case.dart',
       'lib/presentation/admin/qoin/admin_qoin_settings_page.dart',
+      'lib/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart',
       'lib/presentation/admin/qoin/widgets/qoin_admin_ui.dart',
       'lib/presentation/admin/qoin/widgets/qoin_rate_chain.dart',
       'lib/presentation/admin/widgets/admin_brand_link_audit_card.dart',
@@ -348,6 +356,7 @@ void main() {
       'test/domain/qoin_rate_resolution_test.dart',
       'test/presentation/brand_link_audit_card_test.dart',
       'test/presentation/qoin_history_tile_test.dart',
+      'test/presentation/qoin_hub_states_test.dart',
       'test_fixtures/qoin_rate_truth_table.json',
     ];
     final markerRe = RegExp(
@@ -381,20 +390,30 @@ void main() {
       return hits;
     }
 
-    test('토큰으로 grep 한 파일 집합 == 허용 목록 (초과도 FAIL, 누락도 FAIL)', () {
-      final actual = found();
-      final expected = allowed.toSet();
-      expect(
-        actual.difference(expected).toList()..sort(),
-        isEmpty,
-        reason: '허용 목록에 없는 파일이 레거시 토큰을 쓴다 — 목록에 추가하고 마커를 붙이거나 토큰을 제거하라',
-      );
-      expect(
-        expected.difference(actual).toList()..sort(),
-        isEmpty,
-        reason: '허용 목록에 있는데 토큰이 사라진 파일 — 목록에서 지워라 (정리가 진행된 것이다)',
-      );
-    });
+    test(
+      '토큰 grep 파일 ⊂ 허용 목록 (초과 FAIL) / 허용 목록의 파일은 토큰 또는 마커가 남아 있다 (누락 FAIL)',
+      () {
+        final actual = found();
+        final expected = allowed.toSet();
+        expect(
+          actual.difference(expected).toList()..sort(),
+          isEmpty,
+          reason: '허용 목록에 없는 파일이 레거시 토큰을 쓴다 — 목록에 추가하고 마커를 붙이거나 토큰을 제거하라',
+        );
+        // 마커만 있는 파일(통째로 지워질 임시 자산, 토큰 없는 테스트)도 목록이 소유한다. 토큰도 마커도 사라진 항목은 정리가
+        // 진행된 것이므로 목록에서 지워야 한다.
+        final stale =
+            expected
+                .difference(actual)
+                .where(
+                  (p) =>
+                      !markerRe.hasMatch(read(File(p))) && !p.endsWith('.json'),
+                )
+                .toList()
+              ..sort();
+        expect(stale, isEmpty, reason: '토큰도 마커도 없는 항목 — 목록에서 지워라 (정리가 진행됐다)');
+      },
+    );
 
     test('허용 목록의 모든 파일에 마커가 있다 (JSON 은 _transitional 메타 키)', () {
       for (final path in allowed) {
@@ -412,6 +431,65 @@ void main() {
         }
       }
     });
+
+    /// 마커를 가진 비생성 파일 집합.
+    Set<String> markerFiles() {
+      final hits = <String>{};
+      for (final dir in scanDirs) {
+        for (final e in Directory(dir).listSync(recursive: true)) {
+          if (e is! File) continue;
+          final path = e.path;
+          if (path.contains('/node_modules/') || path == selfPath) continue;
+          if (path.endsWith('.freezed.dart') || path.endsWith('.g.dart')) {
+            continue;
+          }
+          if (!(path.endsWith('.dart') ||
+              path.endsWith('.ts') ||
+              path.endsWith('.mjs'))) {
+            continue;
+          }
+          if (markerRe.hasMatch(read(e))) hits.add(path);
+        }
+      }
+      return hits;
+    }
+
+    test('반대 방향: 마커를 가진 모든 파일이 허용 목록에 있다 (마커 ⊂ 허용 목록)', () {
+      // 토큰이 없어도 마커가 있으면 정리 커밋의 삭제/편집 대상이다. 목록 밖이면 정리 때 놓친다.
+      expect(
+        markerFiles().difference(allowed.toSet()).toList()..sort(),
+        isEmpty,
+        reason: '마커는 있는데 허용 목록에 없는 파일 — 목록에 추가하라',
+      );
+    });
+
+    test(
+      '정리 커밋에서 통째로 지워질 파일(첫 줄 TRANSITIONAL)을 import 하는 test/ 파일은 허용 목록에 있다',
+      () {
+        // 지워질 파일을 import 하는 테스트가 목록 밖이면 정리 후 컴파일이 깨진다 — S6 를 만든 이유 그 자체다.
+        final importRe = RegExp(r"import\s+'package:qradar/([^']+)'");
+        String firstLine(File f) => read(
+          f,
+        ).split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+        final wholeFile = <String>{};
+        for (final f in dartFiles('lib')) {
+          if (firstLine(f).startsWith('// TRANSITIONAL(')) {
+            wholeFile.add(f.path.substring('lib/'.length));
+          }
+        }
+        expect(wholeFile, isNotEmpty);
+        final offenders = <String>[];
+        for (final f in dartFiles('test')) {
+          if (f.path == selfPath) continue;
+          final imports = importRe.allMatches(read(f)).map((m) => m.group(1)!);
+          final hit = imports.where(wholeFile.contains).toList();
+          if (hit.isNotEmpty && !allowed.contains(f.path)) {
+            offenders.add('${f.path} <- ${hit.join(', ')}');
+          }
+        }
+        expect(offenders, isEmpty);
+      },
+    );
 
     test('truth table 의 _transitional 메타 키는 정리 대상(배열·키)을 가리킨다', () {
       final t = read(File('test_fixtures/qoin_rate_truth_table.json'));
@@ -587,22 +665,38 @@ void main() {
       expect(repo.contains('.batch()'), isFalse);
     });
 
-    test("승인 화면에 '브랜드' 이름 폴백이 없다 (조회 실패·미존재를 가짜 이름으로 덮지 않는다)", () {
-      // 매장 승인 표면(배지 · 상세 · 대기 목록)만 본다. 메뉴 승인 큐의 브랜드 묶음 타일은 다른 표면이다.
-      final fallback = RegExp("\\?\\?\\s*'브랜드'");
-      for (final p in const [
-        'lib/presentation/admin/widgets/brand_scope_badge.dart',
-        'lib/presentation/admin/widgets/store_brand_block.dart',
-        'lib/presentation/admin/approval/admin_store_approval_detail_page.dart',
-        'lib/presentation/admin/approval/admin_pending_stores_page.dart',
-      ]) {
-        expect(fallback.hasMatch(read(File(p))), isFalse, reason: p);
-      }
-    });
+    test(
+      "'어느 브랜드 것인가' 에 답하는 표면에 가짜 이름 폴백이 없다 — lib/presentation 전체 (면제 없음, 근거는 design 인벤토리 표)",
+      () {
+        // 3차 F-3: 이전 가드는 "메뉴 큐는 다른 표면" 이라는 사람의 면제 판단을 파일 4개 나열로 굳혔다. 전수 grep 으로 바꾼다.
+        // 면제가 필요하면 design.md §19 표면 인벤토리 표에 근거 행이 있어야 한다 — 이 테스트에 예외 목록을 두지 않는다.
+        final fallback = RegExp("\\?\\?\\s*['\"]브랜드[^'\"]*['\"]");
+        for (final f in dartFiles('lib/presentation')) {
+          expect(
+            fallback.hasMatch(read(f)),
+            isFalse,
+            reason:
+                "${f.path}: `?? '브랜드…'` 폴백 — resolveStoreBrandLink 분류(확인 중/없음/실패)를 쓸 것",
+          );
+        }
+      },
+    );
+
+    test(
+      '브랜드 이름을 `brandByIdProvider(...).asData?.value?.name ?? …` 로 직접 읽어 폴백하지 않는다',
+      () {
+        final direct = RegExp(
+          "asData\\?\\.value\\?\\.name\\s*\\?\\?\\s*['\"][^'\"]+['\"]",
+        );
+        for (final f in dartFiles('lib/presentation')) {
+          expect(direct.hasMatch(read(f)), isFalse, reason: f.path);
+        }
+      },
+    );
 
     test('매장 승인 배지·상세·승인 버튼이 같은 분류 함수를 공유한다', () {
       for (final p in const [
-        'lib/presentation/admin/providers/admin_store_brand_link_providers.dart',
+        'lib/presentation/common/providers/store_brand_link_providers.dart',
       ]) {
         expect(
           read(File(p)).contains('resolveStoreBrandLink('),
@@ -613,6 +707,8 @@ void main() {
       for (final p in const [
         'lib/presentation/admin/widgets/brand_scope_badge.dart',
         'lib/presentation/admin/approval/admin_store_approval_detail_page.dart',
+        'lib/presentation/admin/approval/admin_approval_queue_page.dart',
+        'lib/presentation/owner/my_store/my_store_page.dart',
       ]) {
         expect(
           read(File(p)).contains('storeBrandLinkProvider'),
@@ -656,6 +752,33 @@ void main() {
           reason: f.path,
         );
       }
+    });
+
+    test('등록 폼으로 가는 모든 진입점: BrandInfoFormPage(brand: null) 는 lib 전체에서 게이트 1곳뿐이다', () {
+      // 3차 F-S2: 이전 가드는 brand_id_missing_view.dart 한 파일만 봐서 BrandInfoPage 의 두 번째 진입점을 못 잡았다.
+      // 기준은 파일이 아니라 "등록 폼으로 가는 모든 진입점" 이다. brand 인자가 null 이 아닌 호출은 수정 폼(편집 모드)이다.
+      final newForm = RegExp(r'BrandInfoFormPage\(\s*brand:\s*([^)]*)\)');
+      final registrationEntries = <String>[];
+      for (final f in dartFiles('lib')) {
+        if (f.path.endsWith('brand_info_form_page.dart')) continue; // 클래스 정의
+        for (final m in newForm.allMatches(read(f))) {
+          final arg = m.group(1)!.trim();
+          if (arg == 'null') registrationEntries.add(f.path);
+        }
+        // 인자를 변수/식으로 넘기는 호출은 null 가능성을 알 수 없으므로 수정 폼 호출(`brand: brand`)만 허용한다.
+        for (final m in newForm.allMatches(read(f))) {
+          final arg = m.group(1)!.trim();
+          expect(
+            arg == 'null' || arg == 'brand',
+            isTrue,
+            reason:
+                '${f.path}: BrandInfoFormPage(brand: $arg) — null 가능한 인자는 등록 진입점이 될 수 있다',
+          );
+        }
+      }
+      expect(registrationEntries, [
+        'lib/presentation/brand/brand_id_missing_view.dart',
+      ]);
     });
 
     test('등록 폼은 BrandScaffold 게이트 안에서만 직접 그려진다 (조회 전·실패 시 폼 금지)', () {

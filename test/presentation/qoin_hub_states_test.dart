@@ -1,3 +1,5 @@
+// TRANSITIONAL(spec §20.4.5): 이 파일은 임시 마이그레이션 카드·use case·repository·결과 엔티티를 import 하는 그룹을 가진다.
+// 정리 커밋에서 '임시 마이그레이션 카드' 그룹과 해당 import 를 삭제한다 (안 그러면 컴파일이 깨진다 — 가드 테스트가 이 파일을 목록으로 소유한다).
 import 'dart:async';
 
 import 'package:flutter/material.dart';

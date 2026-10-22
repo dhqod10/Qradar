@@ -120,9 +120,20 @@ export const BULK_STATUS = {
   superseded: "superseded",
 } as const;
 
-/** 포인터가 `partial` (중단됨, 실제로 남은 일이 있다) 인가. */
-export function isBulkPartial(brandSnap: admin.firestore.DocumentSnapshot): boolean {
-  return brandSnap.exists && brandSnap.get("qoinBulkStatus") === BULK_STATUS.partial;
+/**
+ * 포인터가 "끝나지 않은 일괄 적용" 인가: `partial`, 또는 갱신이 [staleMs] 넘게 없는 `in_progress`(인스턴스가 중간에 죽은 상태).
+ * **화면의 `resolveBulkBanner` 와 같은 사실에 대한 같은 기준이다** — 판정은 stale 을 중단으로 읽는데 마감이 `partial` 만 보면
+ * 포인터가 영구히 남고 `이어서 적용` 이 항상 실패한다 (3차 F-2). 기준 시간은 `BULK_STALE_MS` 1곳이며
+ * `test_fixtures/qoin_bulk_policy.json` 을 Dart·TS 테스트가 같이 읽어 두 상수가 어긋나지 않게 묶는다.
+ */
+export function isBulkUnfinished(brandSnap: admin.firestore.DocumentSnapshot, staleMs: number): boolean {
+  if (!brandSnap.exists) return false;
+  const st = brandSnap.get("qoinBulkStatus");
+  if (st === BULK_STATUS.partial) return true;
+  if (st !== BULK_STATUS.inProgress) return false;
+  const at = brandSnap.get("qoinBulkAt") as admin.firestore.Timestamp | undefined;
+  if (!at) return true;
+  return Date.now() - at.toMillis() > staleMs;
 }
 
 /** 포인터가 종결 상태(`completed` / `superseded`) 인가. `partial` 은 종결이 아니다. */
@@ -133,15 +144,16 @@ export function isBulkTerminal(brandSnap: admin.firestore.DocumentSnapshot): boo
 }
 
 /**
- * 트랜잭션 안에서 `partial` 포인터가 가리키는 옛 이력 문서를 읽는다. **모든 write 보다 먼저 호출해야 한다**
+ * 트랜잭션 안에서 끝나지 않은(`partial` 또는 stale `in_progress`) 포인터가 가리키는 옛 이력 문서를 읽는다. **모든 write 보다 먼저 호출해야 한다**
  * (Firestore 트랜잭션은 read 가 write 앞이어야 한다). `partial` 이 아니거나 id 가 없으면 null.
  */
 export async function readPartialHistory(
   t: admin.firestore.Transaction,
   brandSnap: admin.firestore.DocumentSnapshot,
-  histCol: admin.firestore.CollectionReference
+  histCol: admin.firestore.CollectionReference,
+  staleMs: number
 ): Promise<admin.firestore.DocumentSnapshot | null> {
-  if (!isBulkPartial(brandSnap)) return null;
+  if (!isBulkUnfinished(brandSnap, staleMs)) return null;
   const id = brandSnap.get("qoinBulkHistoryId");
   if (typeof id !== "string" || id.length === 0) return null;
   return t.get(histCol.doc(id));

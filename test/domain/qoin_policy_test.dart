@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qradar/core/utils/qoin_formatters.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
@@ -148,5 +151,12 @@ void main() {
       expect(s.contains('-'), isFalse);
       expect(s.contains('540 Q 회수'), isTrue);
     });
+  });
+
+  test('stale 판정 기준(5분)은 TS 와 같은 공유 픽스처를 읽는다 — test_fixtures/qoin_bulk_policy.json', () {
+    final policy =
+        jsonDecode(File('test_fixtures/qoin_bulk_policy.json').readAsStringSync())
+            as Map<String, dynamic>;
+    expect(QoinPolicy.bulkStaleAfter.inMilliseconds, policy['bulkStaleMs']);
   });
 }

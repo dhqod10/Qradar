@@ -10,6 +10,7 @@ import 'package:qradar/domain/usecases/claim_submitted_brand_use_case.dart';
 import 'package:qradar/domain/usecases/fetch_my_submitted_brands_use_case.dart';
 import 'package:qradar/presentation/brand/brand_id_missing_view.dart';
 import 'package:qradar/presentation/brand/brand_info/brand_info_form_page.dart';
+import 'package:qradar/presentation/brand/brand_info/brand_info_page.dart';
 import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_link_gate_provider.dart';
 
@@ -202,6 +203,81 @@ void main() {
     expect(find.byType(ElevatedButton), findsNothing);
   });
 
+  testWidgets('계정 역할 불일치(not_brand_account): "이미 연결" 이 아닌 별도 문구, 재시도 버튼 없음', (
+    t,
+  ) async {
+    repo.lookup = () async => [_b('b1', '내 브랜드')];
+    repo.claim = (id) => Future.error(
+      const BrandClaimException(BrandClaimFailure.notBrandAccount),
+    );
+    await t.pumpWidget(app());
+    await frames(t);
+    expect(find.text('브랜드 계정이 아니에요'), findsOneWidget);
+    expect(find.text('이 계정은 이미 다른 브랜드에 연결돼 있어요'), findsNothing);
+    expect(find.byType(ElevatedButton), findsNothing);
+  });
+
+  testWidgets(
+    '브랜드 문서 없음(not-found): 같은 claim 을 되풀이하지 않고 "다시 확인" 으로 재조회 -> 0건이면 등록 폼',
+    (t) async {
+      repo.lookup = () async => [_b('b1', '내 브랜드')];
+      repo.claim = (id) => Future.error(
+        const BrandClaimException(BrandClaimFailure.brandMissing),
+      );
+      await t.pumpWidget(app());
+      await frames(t);
+      expect(find.text('등록한 브랜드를 찾을 수 없어요'), findsOneWidget);
+      expect(find.text('다시 연결'), findsNothing, reason: '무한 재시도 금지');
+      expect(find.text('다시 확인'), findsOneWidget);
+      expect(repo.claims, ['b1']);
+      repo.lookup = () async => []; // 브랜드가 실제로 지워짐
+      await t.tap(find.text('다시 확인'));
+      await frames(t);
+      expect(repo.claims, ['b1'], reason: '재조회만 했다');
+      expect(formShown(), isTrue);
+    },
+  );
+
+  test(
+    '실패 분류: 같은 failed-precondition 도 사유로 구분 / 사유 없으면 재시도 가능 / message 토큰도 읽는다',
+    () {
+      BrandClaimFailure c(String code, {String? reason}) =>
+          BrandClaimException.classify(code, reason: reason);
+      expect(
+        c('failed-precondition', reason: 'already_linked'),
+        BrandClaimFailure.alreadyLinked,
+      );
+      expect(
+        c('failed-precondition', reason: 'not_brand_account'),
+        BrandClaimFailure.notBrandAccount,
+      );
+      expect(
+        c('failed-precondition'),
+        BrandClaimFailure.retryable,
+        reason: '사유를 모르는 precondition 을 "이미 연결" 로 단정하지 않는다',
+      );
+      expect(c('permission-denied'), BrandClaimFailure.notSubmitter);
+      expect(c('not-found'), BrandClaimFailure.brandMissing);
+      expect(c('unavailable'), BrandClaimFailure.retryable);
+      expect(c('internal'), BrandClaimFailure.retryable);
+      expect(
+        BrandClaimException.reasonFromMessage(
+          '브랜드 계정이 아니에요 [not_brand_account]',
+        ),
+        'not_brand_account',
+      );
+      expect(BrandClaimException.reasonFromMessage('no token'), isNull);
+      expect(
+        const BrandClaimException(BrandClaimFailure.retryable).isTerminal,
+        isFalse,
+      );
+      expect(
+        const BrandClaimException(BrandClaimFailure.brandMissing).isTerminal,
+        isTrue,
+      );
+    },
+  );
+
   testWidgets('등록 폼이 브랜드를 만든 직후 게이트를 다시 평가한다: 폼이 내려가고 방금 만든 브랜드가 연결된다', (
     t,
   ) async {
@@ -220,4 +296,24 @@ void main() {
     expect(formShown(), isFalse, reason: '폼이 남아 있으면 같은 브랜드를 다시 저장할 수 있다');
     expect(repo.claims, ['new1']);
   });
+
+  testWidgets(
+    'F-S2: brandId 는 있는데 브랜드 문서가 없는 계정(BrandInfoPage) — 등록 버튼이 없다 (두 번째 등록 진입점 제거)',
+    (t) async {
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [
+            myBrandProvider.overrideWith((ref) => Stream.value(null)),
+          ],
+          child: const MaterialApp(home: Scaffold(body: BrandInfoPage())),
+        ),
+      );
+      await frames(t);
+      expect(find.text('연결된 브랜드를 찾지 못했어요'), findsOneWidget);
+      expect(find.text('브랜드 등록하기'), findsNothing);
+      expect(find.text('아직 브랜드가 등록되지 않았어요'), findsNothing);
+      expect(find.byType(ElevatedButton), findsNothing);
+      expect(formShown(), isFalse);
+    },
+  );
 }

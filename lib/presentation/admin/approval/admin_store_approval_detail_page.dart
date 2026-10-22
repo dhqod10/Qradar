@@ -7,6 +7,7 @@ import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/admin/brand_store_management/admin_brand_store_management_page.dart';
 import 'package:qradar/presentation/admin/providers/admin_store_approval_providers.dart';
 import 'package:qradar/presentation/admin/providers/admin_store_brand_link_providers.dart';
+import 'package:qradar/presentation/common/providers/store_brand_link_providers.dart';
 import 'package:qradar/presentation/admin/widgets/approval_actions_bar.dart';
 import 'package:qradar/presentation/admin/widgets/brand_scope_badge.dart';
 import 'package:qradar/presentation/admin/widgets/store_approve_confirm_dialog.dart';

@@ -411,43 +411,41 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+/// `brandId` 는 있는데 브랜드 문서를 읽지 못한(없는) 계정. `BrandScaffold` 는 `brandId` 가 있을 때만 이 화면을 연다.
+///
+/// **등록 버튼이 없다.** 이 계정은 이미 브랜드에 연결돼 있고(문서만 사라졌다) `claimSubmittedBrand` 는 기존 연결을 덮지 않으므로,
+/// 여기서 폼을 열어 저장하면 저장할 때마다 연결되지 않는 고아 브랜드만 쌓인다 (3차 F-S2). 교정은 admin 이 한다(D4).
+/// 등록 폼으로 가는 길은 `BrandIdMissingView` 게이트 하나뿐이다 (가드 테스트가 lib 전체를 본다).
 class _EmptyView extends StatelessWidget {
   const _EmptyView();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.storefront_outlined, size: 56, color: AppColors.textMuted),
-          const SizedBox(height: 20),
-          const Text(
-            '아직 브랜드가 등록되지 않았어요',
-            style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textHeading),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '브랜드를 등록하고 마스터 메뉴를 관리해보세요',
-            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const BrandInfoFormPage(brand: null)),
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.link_off_rounded, size: 56, color: AppColors.textMuted),
+            SizedBox(height: 20),
+            Text(
+              '연결된 브랜드를 찾지 못했어요',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textHeading,
+              ),
             ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            SizedBox(height: 8),
+            Text(
+              '관리자에게 문의해 주세요. 브랜드를 다시 등록하지 않아도 돼요',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
-            child: const Text('브랜드 등록하기',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

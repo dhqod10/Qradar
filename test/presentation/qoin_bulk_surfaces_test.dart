@@ -449,7 +449,7 @@ void main() {
     });
 
     testWidgets(
-      'changed:false + closed:true -> 안내 + "닫았어요" 한 줄 / staleScan:true 는 구분해 보이지 않는다',
+      'changed:false + closed:true -> 안내 + "닫았어요" 한 줄 / staleScan:true 는 "다시 시도" 로 구분해 말한다',
       (t) async {
         big(t);
         repo.apply = const QoinBulkApplyResult(
@@ -473,7 +473,7 @@ void main() {
         await t.tap(find.byIcon(Icons.close_rounded).first);
         await t.pump();
 
-        // staleScan -> 같은 안내로 수렴, 별도 문구 없음
+        // staleScan -> "같은 값" 이 아니라 "다시 시도" 로 말한다 (3차 F-1: 의도한 초기화가 안 됐을 수 있다). 성공 동사·카운트 없음.
         repo.apply = const QoinBulkApplyResult(
           changed: false,
           staleScan: true,
@@ -488,9 +488,24 @@ void main() {
         await t.pumpAndSettle();
         await t.tap(find.text('변경하기'));
         await t.pumpAndSettle();
-        expect(find.text('이미 같은 값이에요'), findsOneWidget);
-        expect(find.textContaining('stale'), findsNothing);
-        expect(find.text('끝나지 않은 일괄 적용은 처리가 끝나 있어서 닫았어요'), findsNothing);
+        expect(find.text('방금 다른 곳에서 먼저 처리됐을 수 있어요'), findsOneWidget);
+        expect(
+          find.text('개별 설정이 그대로 남아 있을 수 있어요. 이 브랜드를 다시 확인하고 한 번 더 시도해 주세요'),
+          findsOneWidget,
+        );
+        expect(find.text('이미 같은 값이에요'), findsNothing);
+        for (final banned in [
+          '변경했어요',
+          '적용했어요',
+          '마쳤어요',
+          '시작했어요',
+          '중단했어요',
+          '적용된 매장',
+          '이력 보기',
+        ]) {
+          expect(find.textContaining(banned), findsNothing, reason: banned);
+        }
+        expect(find.byIcon(Icons.check_circle_outline_rounded), findsNothing);
       },
     );
 

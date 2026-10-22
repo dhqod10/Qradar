@@ -2128,3 +2128,9 @@ Qoin 쓰기 callable 의 응답을 소비하는 **모든 화면은 `changed` 를
 
 - **별도 문서(`brand_authorization_hardening/design.md`)로 분리했다.** 이유: (a) 보안 spec 자체가 "Qoin 때문에 생긴 문제로 읽히면 원인이 왜곡되고, Qoin 과도기 자산 정리 때 함께 지워질 위험" 을 이유로 분리했고 같은 위험이 design 에도 있다. (b) ⑤ 매장 승인 화면과 ⑥ 브랜드 온보딩은 Qoin 과 무관하게 영구 화면이다 — Qoin 정리 커밋(§20.4.5)이 이 문서의 해당 절을 건드리지 않아야 한다. (c) ⑦ 점검 카드는 임시이고 삭제 마커가 `TRANSITIONAL(brand_authorization_hardening §4)` 로 Qoin 마커와 다르다.
 - 새로 생긴 사용자 확인 사항: **없다** (화면상의 긴장점은 보안 design §6 과 최종 보고에 기록).
+
+## 19-9. 개정 5 — 3차 검증 반영 (인벤토리 보강 · 중단 안내 · staleScan)
+
+- **표면 인벤토리 보강 (3차 F-3)**: "이 매장/메뉴가 어느 브랜드 것인가" 사실의 표면은 `brand_authorization_hardening/design.md` §1 표의 **5~8행**으로 추가했다 (메뉴 승인 큐 타일 · 점주 내 매장 · 브랜드 정보 `_EmptyView` · 연결 실패 사유). 가드 테스트는 면제 목록 없이 `lib/presentation` 전체에서 `?? '브랜드…'` 폴백을 찾는다.
+- **중단 사실의 판정 기준 (3차 F-2)**: 판정(`resolveBulkBanner`)과 마감(CF `isBulkUnfinished`)이 **같은 정의** — `partial` 또는 5분 넘게 갱신 없는 `in_progress` — 를 쓴다. 5분은 `test_fixtures/qoin_bulk_policy.json` 이 공유 진실원이다 (Dart `QoinPolicy.bulkStaleAfter` · TS `BULK_STALE_MS` 테스트가 같이 읽는다). 따라서 `disappearNote`("브랜드 설정을 다시 바꾸면 저절로 사라져요")는 `partial` 과 stale `in_progress` **둘 다에서 참**이다.
+- **`staleScan: true` (3차 F-1)**: `이미 같은 값이에요` 로 수렴시키지 않는다 (의도한 초기화가 안 됐을 수 있다). 안내 카드 제목 `방금 다른 곳에서 먼저 처리됐을 수 있어요` / 본문 `개별 설정이 그대로 남아 있을 수 있어요. 이 브랜드를 다시 확인하고 한 번 더 시도해 주세요`. 성공 틴트·체크·카운트·금지 동사(변경했어요 · 적용했어요 · 마쳤어요 · 시작했어요 · 중단했어요) 없음 — `changed:false` 규칙 그대로.

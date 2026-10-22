@@ -1,0 +1,4 @@
+{
+ "_doc": "일괄 적용 stale 판정 기준의 공유 진실원. Dart(QoinPolicy.bulkStaleAfter)와 TS(qoinRate.ts BULK_STALE_MS)가 각자 상수를 갖되, 양쪽 테스트가 이 파일을 읽어 값이 어긋나면 FAIL 한다 (1차 F3: 화면 0.1~20% / CF 0..1 과 같은 모양의 재발 방지). 화면의 resolveBulkBanner 와 CF 의 isBulkUnfinished 가 같은 사실을 같은 기준으로 판정해야 한다.",
+ "bulkStaleMs": 300000
+}

@@ -430,3 +430,29 @@ Q1 수용(일괄 덮어쓰기 후 미적립) 재현 · N4 6건 · 회수 통과 
   2. **stale `in_progress` 는 종결되지 않는다.** 새 적용이 오래 멈춘 `in_progress` 포인터를 교체하면 그 이력 문서는 영구 `in_progress` 로 남는다(spec 은 `partial` 만 마감). 행은 "끝나지 않음" plate 를 `이어서 적용` 없이 영구히 그린다.
   3. **`config` create 에는 `enabledChangedAt` 이 강제되지 않는다** (spec 은 update 만). `enabled` + `enabledChangedBy` 만 담은 create 는 여전히 통과한다. create 는 문서 최초 생성 1회뿐이라 영향은 작다.
   4. **`EntityApprovalStatus.fromString` 은 `status` 부재를 `approved` 로 읽는다.** `status` 가 없는 브랜드 문서는 승인 화면에서 `approved` 로 분류되지만 매장 create Rules(D5)는 명시적 `approved` 만 허용한다.
+
+---
+
+# 개정 4 구현 — 3차 검증 FAIL 6 + 부수 2건 (한 번에)
+
+| ID | 처리 |
+|---|---|
+| F-2 stale `in_progress` | CF `isBulkUnfinished(snap, BULK_STALE_MS)` = `partial` 또는 5분 넘게 갱신 없는 `in_progress` 를 `qoinAdmin.ts` 에 두고 **마감 4경로 전부**(새 일괄·단건·스위치·`nothing_left`) 에 적용 (`isBulkPartial` 삭제 — 두 번째 기준을 남기지 않았다). 5분 기준은 `test_fixtures/qoin_bulk_policy.json` 을 Dart(`qoin_policy_test`)·TS(`qoinRate.test.mjs`)가 같이 읽는다. TS 쪽은 상수 선언이 `qoinRate.ts` 1곳임도 단언 |
+| F-S2 | `BrandInfoPage._EmptyView` 에서 등록 버튼·거짓 문구 삭제 (`연결된 브랜드를 찾지 못했어요 · 관리자에게 문의`). 가드: `BrandInfoFormPage(brand: null)` 이 **lib 전체에서 게이트 1곳**이고 다른 호출은 `brand: brand` 뿐 |
+| F-S1 | `isBrandSelfUpdate`: `submittedBy` 는 **본인 uid 로의 설정만** 허용 (`RM-S1`~`S1e`) |
+| F-4 | `qoin_hub_states_test.dart` 에 마커 + 허용 목록. 가드 양방향: 마커 ⊂ 허용 목록, 그리고 "통째로 지워질 파일(첫 줄 TRANSITIONAL)을 import 하는 test/ 파일 ⊂ 허용 목록". 마커만 있는 임시 자산 8개도 목록에 올림 (목록 39개) |
+| H-1 | `config` create 도 `enabledChangedAt == request.time` (`EC8*`) |
+| F-1 | 일괄 결과 카드가 `staleScan` 을 소비 — "같은 값" 이 아니라 `방금 다른 곳에서 먼저 처리됐을 수 있어요 · …한 번 더 시도해 주세요` |
+| F-3 | `storeBrandLinkProvider` 를 `common/providers` 로 이동해 메뉴 승인 큐 타일·점주 `내 매장` 이 공유. `'브랜드'`·`'브랜드 매장'` 폴백 삭제. design 인벤토리 5~8행 추가. 가드에서 **면제 주석·4파일 나열 삭제**, `lib/presentation` 전수 grep |
+| 게이트 `_classify` | CF 가 `details.reason` + message `[reason]` 토큰(실기기 details 미수신 대비)을 싣는다 (`already_linked` · `not_brand_account` · `not_submitter` · `brand_not_found`). Dart `BrandClaimException.classify`: 사유 없는 `failed-precondition` 은 "이미 연결" 로 단정하지 않고 `retryable`. 신규 `notBrandAccount`(별도 문구, 재시도 없음) · `brandMissing`(`다시 연결` 대신 `다시 확인` = 재조회, 무한 재시도 없음) |
+
+## 검증
+
+- K10(신규): stale `in_progress` 4경로 + 신선한 `in_progress` 는 닫지 않음. **수정 전 기준(stale 을 안 보는 판정)으로 되돌려 돌리면 K10 (a) 에서 FAIL** — `옛 이력 expected superseded got in_progress`.
+- Rules: `RM-S1`·`RM-S1b` 와 `EC8`·`EC8b` 는 수정 전 rules(HEAD)에서 ALLOW 가 나와 FAIL (4건), 수정 후 PASS.
+- 가드 F-4: 허용 목록에서 파일을 빼면 마커 방향 FAIL, 목록 밖 테스트가 임시 자산을 import 하면 import 방향 FAIL — 둘 다 직접 확인.
+
+## 못 고친 것 / 보고
+
+- **F-1 의 서버 측 정밀화는 하지 않았다.** 리포트의 수정안 A(가드 분기에서 이력 1건을 읽어 `bulkMode == overwrite` 일 때만 발동)는 서버 동작을 바꾸므로 택하지 않고, 안 B(화면이 구분해 말함)만 했다. 가드는 여전히 preserve 완료 직후에도 발동할 수 있다(돈 영향 없음, 재시도로 해소).
+- 실기기에서 `details` 가 Map 으로 오는지는 여전히 확인 불가 — message `[reason]` 토큰이 이중 안전장치다.

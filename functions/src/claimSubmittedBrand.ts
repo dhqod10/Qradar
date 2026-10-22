@@ -26,6 +26,20 @@ import { REGION } from "./qoinAdmin";
 
 const LOG = "[claimSubmittedBrand]";
 
+/**
+ * 실패 사유를 기계가 읽을 수 있게 싣는다. 같은 `failed-precondition` 이라도 "이미 다른 브랜드에 연결" 과 "브랜드 계정이 아님" 은
+ * 화면이 다르게 말해야 한다 (3차: 코드만으로 분류하면 role 불일치가 "이미 연결" 로 오분류된다).
+ * `details.reason` 이 정본이고, 실기기에서 details 가 Map 으로 오지 않을 수 있어(spec §21.9-5) message 끝에 `[reason]` 도 싣는다.
+ */
+export type ClaimReason = "already_linked" | "not_brand_account" | "not_submitter" | "brand_not_found";
+function claimError(
+  code: "not-found" | "permission-denied" | "failed-precondition",
+  reason: ClaimReason,
+  message: string
+): HttpsError {
+  return new HttpsError(code, `${message} [${reason}]`, { reason });
+}
+
 export const claimSubmittedBrand = onCall({ region: REGION }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "login required");
@@ -43,18 +57,18 @@ export const claimSubmittedBrand = onCall({ region: REGION }, async (request) =>
 
   const changed = await db.runTransaction(async (t) => {
     const brandSnap = await t.get(brandRef);
-    if (!brandSnap.exists) throw new HttpsError("not-found", "brand not found");
+    if (!brandSnap.exists) throw claimError("not-found", "brand_not_found", "brand not found");
     if (brandSnap.get("submittedBy") !== uid) {
-      throw new HttpsError("permission-denied", "not the submitter of this brand");
+      throw claimError("permission-denied", "not_submitter", "not the submitter of this brand");
     }
     const userSnap = await t.get(userRef);
     const current = userSnap.exists ? userSnap.get("brandId") : undefined;
     if (current === brandId) return false;
     if (typeof current === "string" && current.length > 0) {
-      throw new HttpsError("failed-precondition", "이미 다른 브랜드에 연결된 계정이에요");
+      throw claimError("failed-precondition", "already_linked", "이미 다른 브랜드에 연결된 계정이에요");
     }
     if (!userSnap.exists || userSnap.get("role") !== "brand") {
-      throw new HttpsError("failed-precondition", "브랜드 계정이 아니에요");
+      throw claimError("failed-precondition", "not_brand_account", "브랜드 계정이 아니에요");
     }
     t.update(userRef, { brandId });
     t.set(historyRef, {

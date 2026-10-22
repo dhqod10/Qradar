@@ -307,6 +307,7 @@ class _ResultCard extends StatelessWidget {
       return _UnchangedCard(
         value: view.value,
         closed: r.closed,
+        staleScan: r.staleScan,
         onClose: onClose,
       );
     }
@@ -450,21 +451,30 @@ class _UnchangedCard extends StatelessWidget {
   const _UnchangedCard({
     required this.value,
     required this.closed,
+    required this.staleScan,
     required this.onClose,
   });
 
   final QoinRateValue? value;
   final bool closed;
+
+  /// 서버가 오래된 스캔을 불신해 noop 처리했다 -> "같은 값" 이 아니라 "다시 시도" 로 말한다 (3차 F-1).
+  final bool staleScan;
   final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
-    final line = QoinMessages.alreadyBulkLine(value);
+    final title = staleScan
+        ? QoinMessages.staleScanTitle
+        : QoinMessages.alreadyTitle;
+    final line = staleScan
+        ? QoinMessages.staleScanLine
+        : QoinMessages.alreadyBulkLine(value);
     return Semantics(
       container: true,
       liveRegion: true,
       label:
-          '${QoinMessages.alreadyTitle}. 바뀐 것이 없어요.${closed ? ' ${QoinMessages.closedBulkLine}' : ''}',
+          '$title. $line${closed ? ' ${QoinMessages.closedBulkLine}' : ''}',
       excludeSemantics: true,
       child: Container(
         width: double.infinity,
@@ -485,10 +495,10 @@ class _UnchangedCard extends StatelessWidget {
                   color: AppColors.textMuted,
                 ),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    QoinMessages.alreadyTitle,
-                    style: TextStyle(
+                    title,
+                    style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textBody,

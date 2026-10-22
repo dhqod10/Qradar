@@ -34,6 +34,13 @@
 | 3 | 브랜드 역할 첫 진입 (`brandId` 없음) | `brands where submittedBy == uid` 조회 | 조회 실패 → **등록 폼으로 떨어지지 않는다.** `브랜드 정보를 확인하지 못했어요` + `다시 시도` (§3) | `다시 시도` |
 | 4 | admin 허브 — 브랜드 링크 점검 카드 | `auditBrandLinks` 응답 | 호출 실패 → 카드 안 `점검하지 못했어요` + `다시 시도`. 실패를 "문제 없음" 으로 읽히게 두지 않는다 (§4) | `다시 시도` |
 
+| 5 | 메뉴 승인 큐의 브랜드 묶음 타일 (`admin_approval_queue_page` `_BrandPendingTile`) | 같은 `storeBrandLinkProvider(brandId)` (→ `resolveStoreBrandLink`) | 조회 중: `브랜드 확인 중` / 문서 없음: `존재하지 않는 브랜드` / 조회 실패: `브랜드를 확인하지 못했어요`. **`브랜드` 같은 가짜 이름으로 폴백하지 않는다.** 문서가 있으면(승인 여부 무관) 실제 이름 | 타일 탭 → 브랜드별 일괄 승인 화면 (거기서 메뉴를 반려할 수 있다). 승인 버튼 게이트는 없음(승인 대상이 메뉴 묶음이지 가맹 관계가 아니다) |
+| 6 | 점주 `내 매장` 브랜드 매장 상세 (`my_store_page` `_BrandStoreDetailView`) | 같은 분류 (`BrandScopeBadge` 가 `storeBrandLinkProvider` 사용) | 헤더 이름은 브랜드 문서가 있을 때만 `{브랜드명} {지점명}`, 아니면 지점명만. 배지는 `브랜드 확인 중` / `브랜드 확인 필요`. **`브랜드 매장` 폴백 삭제** | 없음 (읽기 전용) |
+| 7 | 브랜드 역할 `브랜드 정보` 탭, `brandId` 는 있는데 문서가 없음 (`brand_info_page` `_EmptyView`) | `myBrandProvider` (브랜드 문서 스트림) | 이 행이 곧 "문서 없음" 상태다. `연결된 브랜드를 찾지 못했어요 · 관리자에게 문의해 주세요`. **등록 버튼이 없다** — 이미 연결된 계정에서 등록하면 claim 이 `failed-precondition` 이라 저장할 때마다 연결되지 않는 고아 브랜드가 쌓인다 | 없음 (교정은 admin, 점검 카드 `dangling`). 등록 폼으로 가는 길은 게이트 하나뿐 |
+| 8 | 브랜드 연결 실패 사유 (`BrandIdMissingView` 연결 실패 화면) | 서버가 싣는 사유 (`details.reason` / message `[reason]`): `already_linked` · `not_submitter` · `not_brand_account` · `brand_not_found` · 그 외 | 사유를 모르면 `retryable`(`다시 연결`) — 모르는 `failed-precondition` 을 "이미 연결" 로 단정하지 않는다. `not_brand_account` 는 별도 문구. `brand_not_found` 는 `다시 연결` 대신 `다시 확인`(재조회) | 사유별 (재시도 없음 3종 / 재조회 1종 / 재연결 1종) |
+
+> 5~8 행은 3차 검증 F-3 / F-S2 로 추가했다 (개정 5). 이 표에 없는 표면을 "다른 표면이다" 라고 면제하지 않는다 — 면제가 필요하면 행으로 쓰고 ⓐⓑⓒ 를 채운다.
+
 - 1·2 가 같은 분류 함수를 쓰는 이유: 같은 사실을 말하는 두 화면이 어긋나면(목록은 `브랜드`, 상세는 경고) 1차 H-3 와 같은 종류의 결함이다.
 - 새 화면이 브랜드 연결을 말하게 되면 이 표에 행을 추가한다.
 
