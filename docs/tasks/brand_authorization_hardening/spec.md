@@ -203,8 +203,9 @@ Rules 로 "진짜 가맹점인가" 를 증명할 수 없다는 사실부터 기�
     submittedBy != uid      → mismatch        (사칭 또는 레거시 admin 수동 발급)
     submittedBy == uid      → ok
   + 같은 brandId 를 가진 users 가 2명 이상 → duplicate (양쪽 모두 보고)
-스캔 ②: brands where submittedBy == null OR status == 'approved' 중
-         어떤 users 도 가리키지 않는 문서 → orphan_brand (고아 — D1-2 의 2건 이상 케이스)
+스캔 ②: brands 중 어떤 users 도 가리키지 않는 문서 → orphan_brand
+         (고아 — D1-2 의 2건 이상 케이스. status / submittedBy 는 항목에 실어서 보고하고
+          **분류 조건으로 쓰지 않는다**)
 스캔 ③: stores where brandId != null
     brands/{brandId} 없음        → store_dangling_brand
     brands/{brandId}.status != 'approved' → store_unapproved_brand
@@ -223,7 +224,7 @@ Rules 로 "진짜 가맹점인가" 를 증명할 수 없다는 사실부터 기�
 | `dangling` | admin 이 Console 에서 `users/{uid}.brandId` **필드 삭제**. 사용자는 다시 `BrandInfoFormPage` 로 등록 → `claimSubmittedBrand` 가 올바르게 연결 |
 | `mismatch` | **사람이 판단한다.** 레거시 수동 발급이면 그대로 둔다(동작에 문제 없음). 기억에 없는 계정이면 `brandId` 삭제 + 해당 브랜드의 `menuItems` / `subCategories` / `optionGroups` / 산하 매장 `menuOverrides` 의 최근 변경을 Console 에서 확인 |
 | `duplicate` | 한 브랜드에 2계정. `submittedBy` 와 일치하는 쪽을 남기고 나머지 `brandId` 삭제 |
-| `orphan_brand` | `status=='pending'` 이고 어느 사용자도 가리키지 않으면 admin 이 삭제 |
+| `orphan_brand` | 어느 사용자도 가리키지 않는 브랜드. `status=='pending'` 이면 admin 이 삭제 후보, `approved` 면 시드이거나 연결이 끊긴 것이라 먼저 경위를 본다 |
 | `store_dangling_brand` / `store_unapproved_brand` | **금액 신뢰원이다**(`stores.brandId` → 적립률 상속). admin 이 `stores/{id}.brandId` 를 교정하거나 매장을 `pending` 으로 되돌려 재승인. 교정 전까지 그 매장은 브랜드 요율을 상속하지 않고 전역으로 떨어진다(fail-safe) |
 
 ### 4.3 사용자가 Firebase Console 에서 확인할 것
