@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/presentation/admin/menu_categories/admin_main_category_list_page.dart';
+import 'package:qradar/presentation/admin/qoin/admin_qoin_settings_page.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/qoin/providers/qoin_providers.dart';
 
 /// admin 더보기 — 로그아웃 / 앱 정보.
 class AdminMorePage extends ConsumerWidget {
@@ -10,6 +13,15 @@ class AdminMorePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 로딩/에러 시 부제 생략 (타일은 항상 탭 가능).
+    final qoinSubtitle = ref.watch(qoinConfigProvider).whenOrNull(
+      data: (cfg) {
+        if (cfg == null) return '설정되지 않음';
+        final r = cfg.accrualRate;
+        final rate = r == null ? '설정 없음' : QoinPolicy.formatRatePercent(r);
+        return '적립률 $rate · ${cfg.enabled ? '적립 중' : '적립 중단됨'}';
+      },
+    );
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 24),
@@ -32,6 +44,17 @@ class AdminMorePage extends ConsumerWidget {
               context,
               MaterialPageRoute<void>(
                 builder: (_) => const AdminMainCategoryListPage(),
+              ),
+            ),
+          ),
+          _Tile(
+            icon: Icons.toll_rounded,
+            title: 'Qoin 설정',
+            subtitle: qoinSubtitle,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminQoinSettingsPage(),
               ),
             ),
           ),

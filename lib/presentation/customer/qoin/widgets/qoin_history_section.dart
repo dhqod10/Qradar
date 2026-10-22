@@ -56,11 +56,11 @@ class _Section extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
           child: Semantics(
             header: true,
-            child: Text(
+            child: const Text(
               'Qoin 내역',
               style: TextStyle(
                 fontSize: 15,

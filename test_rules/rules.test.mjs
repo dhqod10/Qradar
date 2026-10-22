@@ -200,6 +200,70 @@ await run('RV15 CUSTOMER 가 본인 리뷰 delete', 'allow', () =>
 await run('RV1 CUSTOMER 정상 create (completed 주문, S, serverTimestamp)', 'allow', () =>
   setDoc(rv(asCustomer, RID), reviewBody()));
 
+// ══ Qoin (docs/tasks/qoin/spec.md §13.1) ══════════════════════════════════
+const ADMIN = 'adminUid00000000000000000000000';
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  await setDoc(doc(db, 'users', ADMIN), { uid: ADMIN, role: 'admin', displayName: 'admin' });
+  await updateDoc(doc(db, 'users', CUSTOMER), { qoinBalance: 500 });
+  await setDoc(doc(db, 'users', CUSTOMER, 'qoinTransactions', 'earn_o1'), {
+    txId: 'earn_o1', type: 'earn', amount: 500, balanceAfter: 500, orderId: 'o1',
+    storeId: S_A, storeName: 'A', orderTotalPrice: 10000, accrualRate: 0.05,
+    createdAt: Timestamp.fromDate(new Date('2026-10-21T10:00:00+09:00')),
+  });
+  await setDoc(doc(db, 'config', 'qoin'), { accrualRate: 0.03, enabled: true });
+});
+const asAdmin = env.authenticatedContext(ADMIN).firestore();
+const qtx = (db, id = 'earn_o1') => doc(db, 'users', CUSTOMER, 'qoinTransactions', id);
+
+await run('QR1 CUSTOMER 본인 qoinTransactions 목록 read', 'allow', () =>
+  getDocs(collection(asCustomer, 'users', CUSTOMER, 'qoinTransactions')));
+await run('QR2 OWNER(타인) 가 CUSTOMER 내역 read', 'deny', () =>
+  getDocs(collection(asOwner, 'users', CUSTOMER, 'qoinTransactions')));
+await run('QR3 비로그인 내역 read', 'deny', () =>
+  getDocs(collection(asAnon, 'users', CUSTOMER, 'qoinTransactions')));
+await run('QR4 CUSTOMER 가 본인 거래 문서 create', 'deny', () =>
+  setDoc(qtx(asCustomer, 'earn_forge'), { txId: 'earn_forge', type: 'earn', amount: 999999, balanceAfter: 999999, orderId: 'x', createdAt: serverTimestamp() }));
+await run('QR5 CUSTOMER 가 본인 거래 문서 update(amount)', 'deny', () =>
+  updateDoc(qtx(asCustomer), { amount: 999999 }));
+await run('QR6 CUSTOMER 가 본인 거래 문서 delete', 'deny', () =>
+  deleteDoc(qtx(asCustomer)));
+await run('QR7 admin 이 거래 문서 delete (orderLogs 와 다름)', 'deny', () =>
+  deleteDoc(qtx(asAdmin)));
+await run('QR7b admin 이 거래 문서 update', 'deny', () =>
+  updateDoc(qtx(asAdmin), { amount: 1 }));
+await run('QR7c admin 이 거래 문서 create', 'deny', () =>
+  setDoc(qtx(asAdmin, 'earn_forge2'), { txId: 'earn_forge2', amount: 1 }));
+await run('QR8 admin 이 CUSTOMER 거래 문서 read', 'allow', () =>
+  getDoc(qtx(asAdmin)));
+await run('QR9 CUSTOMER 가 본인 qoinBalance 직접 update', 'deny', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { qoinBalance: 999999 }));
+await run('QR10 CUSTOMER 가 qoinBalance + displayName 동시 update', 'deny', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { qoinBalance: 999999, displayName: 'x' }));
+await run('QR10b CUSTOMER 가 qoinBalance increment', 'deny', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { qoinBalance: increment(1000) }));
+await run('QR11 OWNER 가 타인(CUSTOMER) qoinBalance update', 'deny', () =>
+  updateDoc(doc(asOwner, 'users', CUSTOMER), { qoinBalance: 999999 }));
+await run('QR13 CUSTOMER 가 config/qoin read', 'allow', () =>
+  getDoc(doc(asCustomer, 'config', 'qoin')));
+await run('QR14 CUSTOMER 가 config/qoin write', 'deny', () =>
+  updateDoc(doc(asCustomer, 'config', 'qoin'), { accrualRate: 1 }));
+await run('QR14b CUSTOMER 가 config/qoin enabled write', 'deny', () =>
+  updateDoc(doc(asCustomer, 'config', 'qoin'), { enabled: true }));
+await run('QR15 OWNER 가 config/qoin write', 'deny', () =>
+  updateDoc(doc(asOwner, 'config', 'qoin'), { accrualRate: 1 }));
+await run('QR16 admin 이 config/qoin write', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { accrualRate: 0.05, enabled: false }));
+await run('QR16b admin 이 config 신규 문서 create', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_new'), { accrualRate: 0.03, enabled: false }));
+await run('QR17 비로그인 config/qoin read', 'deny', () =>
+  getDoc(doc(asAnon, 'config', 'qoin')));
+await run('QR18 내역 쿼리 (createdAt desc limit 50)', 'allow', () =>
+  getDocs(query(collection(asCustomer, 'users', CUSTOMER, 'qoinTransactions'),
+    orderBy('createdAt', 'desc'), limit(50))));
+await run('QR12 admin 이 qoinBalance update (§4.4 수용)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'users', CUSTOMER), { qoinBalance: 500 }));
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {

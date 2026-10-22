@@ -45,17 +45,34 @@ class QoinPolicy {
   static String formatRatePercent(double rate) =>
       '${formatTenths(tenthsFromRate(rate))}%';
 
-  /// 입력 문자열(퍼센트) → tenths. 형식 불량이면 null. 범위 검증은 하지 않는다.
-  /// 허용: `3`, `3.`, `3.5`, `.5`, `03`. 소수 2자리 이상/문자 포함은 null.
-  static int? parseTenths(String raw) {
+  /// 관리자 적립률 입력(퍼센트 문자열) 검증.
+  ///
+  /// **100배 오입력 방어선**: `0.03`(3% 를 비율로 입력) 은 하한 0.1 미만이므로 [RateInputStatus.tooLow]
+  /// 로 분류된다 (소수 둘째 자리라는 이유로 다른 상태로 새지 않도록 하한 검사를 먼저 한다).
+  static RateInputResult validateRateInput(String raw) {
     final s = raw.trim();
-    final m = RegExp(r'^(\d{0,3})(?:\.(\d?))?$').firstMatch(s);
-    if (m == null) return null;
+    if (s.isEmpty) return const RateInputResult(RateInputStatus.empty);
+    final m = RegExp(r'^(\d*)(?:\.(\d*))?$').firstMatch(s);
+    if (m == null) return const RateInputResult(RateInputStatus.malformed);
     final whole = m.group(1) ?? '';
-    final frac = m.group(2) ?? '';
-    if (whole.isEmpty && frac.isEmpty) return null;
-    return (int.tryParse(whole.isEmpty ? '0' : whole) ?? 0) * 10 +
-        (frac.isEmpty ? 0 : int.parse(frac));
+    var frac = m.group(2) ?? '';
+    if (whole.isEmpty && frac.isEmpty) {
+      return const RateInputResult(RateInputStatus.malformed);
+    }
+    final value = double.parse('${whole.isEmpty ? '0' : whole}.${frac.isEmpty ? '0' : frac}');
+    if (value < minTenths / 10) {
+      return const RateInputResult(RateInputStatus.tooLow);
+    }
+    if (value > maxTenths / 10) {
+      return const RateInputResult(RateInputStatus.tooHigh);
+    }
+    frac = frac.replaceFirst(RegExp(r'0+$'), '');
+    if (frac.length > 1) {
+      return const RateInputResult(RateInputStatus.tooPrecise);
+    }
+    final tenths =
+        (int.parse(whole.isEmpty ? '0' : whole)) * 10 + (frac.isEmpty ? 0 : int.parse(frac));
+    return RateInputResult(RateInputStatus.valid, tenths);
   }
 
   /// 결제액 [paymentKrw] 에 [tenths] 적립 시 금액 (버림). 정수 연산.
@@ -69,4 +86,14 @@ class QoinPolicy {
     if (newTenths >= warnAbsoluteTenths) return true;
     return currentTenths != null && newTenths >= currentTenths * 2;
   }
+}
+
+enum RateInputStatus { empty, malformed, tooLow, tooHigh, tooPrecise, valid }
+
+class RateInputResult {
+  const RateInputResult(this.status, [this.tenths]);
+  final RateInputStatus status;
+
+  /// [RateInputStatus.valid] 일 때만 non-null.
+  final int? tenths;
 }

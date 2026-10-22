@@ -67,6 +67,7 @@
    - 역할별 흐름 (customer / owner / brand / admin 진입·액션·전이): [docs/processes/role_flows.md](docs/processes/role_flows.md)
    - 엔티티 status 전이 다이어그램 (order / store / brand / menuItem / refund): [docs/processes/entity_lifecycle.md](docs/processes/entity_lifecycle.md)
    - Firestore 컬렉션별 데이터 소유권 / 권한 매트릭스 / Cloud Function 전담 작업: [docs/processes/data_ownership.md](docs/processes/data_ownership.md)
+   - 이력 / 감사 추적 (무엇을 기록으로 남겨야 하는가): [docs/processes/audit_trail.md](docs/processes/audit_trail.md)
 
 같은 규칙이 여러 곳에 보인다면 위 표의 단일 진실원을 따른다.
 
