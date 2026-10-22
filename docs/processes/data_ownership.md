@@ -208,8 +208,10 @@
 | 값 | 의미 |
 |---|---|
 | 필드 부재 | 상위 상속 (매장 → 브랜드 → 전역) |
-| `0` | **명시적 적립 중단.** 적립만 막고 **회수는 통과**한다 (막으면 환불 주문의 Qoin 이 남아 돈이 샌다) |
 | `0.001 ~ 0.2` | 0.1% ~ 20%. 범위 밖·비number 는 **fail-closed** (상위 폴백 없이 적립 중단) |
+| `0` | ❌ **유효값이 아니다.** 2026-10-22 사용자 결정(Q1)으로 "적립을 하냐" 는 **별도 스위치 필드**(§2.11.1a)로 분리됐다. `0` 은 어느 범위에서도 무효(fail-closed)다 |
+
+⚠️ 운영에 남은 `qoinAccrualRate: 0` 은 1회성 CF `migrateQoinZeroRates` 가 스위치로 이전한다. 그 사이 **판독 측에만** 과도기 호환 분기가 있어 `0` 을 "사용 안 함" 과 동일 취급한다 (쓰기 측에는 예외가 없다). 상세: `qoin_accrual_rate_hierarchy/spec.md` §20.4.
 
 | 작업 | 허용 | 비고 |
 |---|---|---|
@@ -224,6 +226,30 @@
 | Firebase Console / Admin SDK | ⚠️ **Rules 로 막을 수 없다.** `config/qoin` 은 `onQoinConfigWritten` 이 `source: 'direct'` 로 사후 기록. `stores`/`brands` 는 **감시 없음** (2차 N6) |
 | 점주의 `stores` delete → 같은 ID 재생성 | ⚠️ 개별 설정이 **제거**된다. 재승인 필요(`status: 'pending'`) → **수용된 경로** |
 | 발행 직전 경계 검증 | `onOrderQoinSettled` 가 저장된 값을 **믿지 않고** 범위를 재검사한다 (Console 편집 대비) |
+
+#### 2.11.1a 적립 스위치 — `stores/{id}.qoinAccrualEnabled` / `brands/{id}.qoinAccrualEnabled`
+
+"적립률이 얼마냐"(숫자)와 **"적립을 하냐"(스위치)** 를 한 필드가 겸하면, 브랜드 일괄 적용이 숫자를 통일할 때 "적립 안 함" 결정까지 함께 덮어쓴다. 그래서 스위치를 **별도 필드**로 분리했다 (사용자 결정 Q1).
+
+| 값 | 의미 |
+|---|---|
+| 필드 부재 | **적립 사용** (기본값). 기존 문서에 필드를 심는 마이그레이션 불필요 |
+| `false` | **적립 사용 안 함.** 적립만 막고 **회수는 통과**한다 (막으면 환불 주문의 Qoin 이 남아 돈이 샌다) |
+| `true` | 적립 사용 (부재와 동일). 쓰기 경로는 `true` 를 저장하지 않고 **필드를 삭제**한다. 판독은 관대히 받는다 |
+| 그 외 (비bool) | **fail-closed** — 적립 중단 + `qoinSettlementIssues` 기록 |
+
+해석 순서: **매장 스위치 → 매장 요율 → 브랜드 스위치 → 브랜드 요율 → 전역 기본값.** 매장 스위치가 꺼져 있으면 숫자를 읽지 않고, 전역 기본값 검사보다 **앞에서 단락**한다(전역이 깨져 있어도 의도된 중단은 누락 사건으로 기록되지 않는다). **매장 개별 숫자는 브랜드 스위치를 이긴다.**
+
+| 작업 | 허용 | 비고 |
+|---|---|---|
+| read | `isSignedIn()` | 적립률과 동일 (공개 수용) |
+| create / update / delete | 🔒 **모든 역할 차단 (admin 전권 분기 포함)** | Rules 헬퍼 `touchesQoinManaged()` / `hasQoinManagedOnCreate()` — 보호 필드 **집합** (`qoinAccrualRate`, `qoinAccrualEnabled`, `qoinBulkHistoryId`, `qoinBulkStatus`, `qoinBulkAt`) 을 **1곳**에서 선언한다 |
+| 🛠 CF 전담 | `setQoinAccrualEnabled` (신규) | admin 서버 재검증 + bool 검증 + 값·이력 **같은 트랜잭션** + 일괄 적용 진행 중 거부 |
+
+- **전역에는 스위치를 두지 않는다.** `config/qoin.enabled` 가 이미 있고 더 강하다 (적립·회수 **둘 다** 멈추는 비상 정지). `setQoinAccrualEnabled` 는 `scope: 'global'` 을 거부한다.
+- **`applyBrandQoinRate` 는 스위치를 쓰지 않는다.** 읽기는 집계(`disabledUntouchedCount`) 목적 1곳뿐이고 어떤 분기도 바꾸지 않는다.
+- 변경 이력은 기존 `qoinRateHistory` 를 재사용한다 (`field: 'accrualEnabled'`).
+- **알려진 미봉**: Console / Admin SDK 직접 편집은 Rules 로 막을 수 없고 `stores`/`brands` 에는 감시 트리거도 없다 (2차 N6 — 적립률과 동일 한계). 점주의 `stores.delete` → 같은 ID 재생성은 스위치도 **제거**한다 (재승인 `status: 'pending'` 필요 → **수용된 경로**, 사용자 결정 Q3).
 
 #### 2.11.2 `config/qoin` — 전역 기본값 + 비상 정지
 
@@ -244,6 +270,8 @@
 | read (collection group `/{path=**}/qoinRateHistory/{id}`) | `admin` **만** (admin 전체 이력 화면) |
 | create / update / delete | 🔒 **전부 `if false` — admin 도 불가** |
 | 🛠 CF 전담 | `setQoinAccrualRate` · `applyBrandQoinRate` · `onQoinConfigWritten` |
+
+`field` 값은 `'accrualRate'`(적립률) / `'accrualEnabled'`(매장·브랜드 스위치) / `'globalEnabled'`(전역 비상 정지) 3종이고, `source` 는 `'callable' | 'bulk' | 'direct' | 'app_direct' | 'migration'` 이다.
 
 세 범위의 **컬렉션 이름이 같아야** collection group 조회가 성립한다. CG 쿼리(`orderBy changedAt desc`)는 **인덱스 배포가 선행**돼야 한다 (에뮬레이터는 인덱스를 강제하지 않는다).
 
@@ -291,6 +319,8 @@
 | `onOrderQoinSettled` | customer/owner (주문 status 전이) | `orders/{orderId}` updated 트리거 | 계층 해석(매장→브랜드→전역) 후 `users/{uid}/qoinTransactions/{txId}` create + `users/{uid}.qoinBalance` 절대값 갱신 (한 트랜잭션) | 1) 원장·잔액은 클라이언트 쓰기 `if false` 2) **적립률은 돈의 계수** — 저장값을 믿지 않고 발행 직전 경계 재검증 3) 멱등 가드(`earn_{orderId}`)가 서버에만 있을 수 있다 |
 | `setQoinAccrualRate` | admin (단건 설정) | `{scope, targetId, rate\|clear, reason?}` | `stores`/`brands`/`config` 의 적립률 1필드 + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) 이력을 클라이언트가 쓰면 **위조·누락** 가능 3) admin role **서버 재검증** + 범위 검증 |
 | `applyBrandQoinRate` | admin (브랜드 일괄) | `{brandId, rate\|clear, mode: preserve\|overwrite, reason?, resumeHistoryId?}` | 브랜드 값 1 write + 이력 선기록(한 트랜잭션) → (overwrite) 산하 매장 개별 설정 청크 삭제 + 매장별 이력 → 이력 마감 | 1) 500 batch 한도·권한 재검증·이력 위조 2) **A 가 쓴 문서로 B 소유 문서를 갱신** (§3 규칙) 3) 재개(`partial`) 멱등 처리 |
+| `setQoinAccrualEnabled` | admin (적립 사용 토글) | `{scope: store\|brand, targetId, enabled: boolean, reason?}` | `stores`/`brands` 의 `qoinAccrualEnabled` 1필드(또는 삭제) + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) **적립이 발생하는지 자체를 결정**하는 정책 값이므로 적립률과 동급 3) 이력 위조·누락 차단. `scope: 'global'` 은 거부 (전역은 `config/qoin.enabled`) |
+| `migrateQoinZeroRates` ⏳**임시** | admin (1회성) | `{dryRun: boolean}` | `qoinAccrualRate == 0` 인 `stores`/`brands` 를 `{rate 삭제, qoinAccrualEnabled: false}` + 이력 1건(`source: 'migration'`, `migratedFromRate: 0`) 으로 이전. 멱등 | Q1 결정 이전용. **마이그레이션 0건 확인 후 과도기 호환 분기와 함께 삭제한다** (`qoin_accrual_rate_hierarchy/spec.md` §20.4.5) |
 | `onQoinConfigWritten` | 누구든 (`config/qoin` written) | `config/qoin` written 트리거 | `accrualRate`/`enabled` 변경을 `config/qoin/qoinRateHistory` 에 1건 기록 (callable 이 이미 남긴 건 skip) | **Console / Admin SDK 쓰기는 Rules 를 우회한다.** 직접 쓰기를 유지하는 `enabled` 와 콘솔 편집을 사후 포착하는 유일한 수단 |
 
 **규칙**: 결제 / 외부 OAuth / 다중 collection batch + 권한 재검증이 필요한 작업은 모두 Cloud Function.

@@ -133,7 +133,9 @@
 
 ### 3.1 인프라 (배포 필요)
 
-> ⚠️ **배포 순서는 §19.7 을 따른다**: `firestore:indexes` → `firestore:rules` + `functions` → 앱 빌드. **Rules 와 앱 빌드는 같은 배포**에 올린다(§19.3 의 `enabledChangedBy` 강제 때문).
+> ⚠️ **배포 순서는 §20.11 을 따른다** (§19.7-10 교체): `firestore:indexes` → `functions` → **마이그레이션 dry-run·실행** → `firestore:rules` + 앱 빌드 → 정리 커밋. **Rules 와 앱 빌드는 같은 배포**에 올린다(§19.3 의 `enabledChangedBy` 강제 때문).
+>
+> 인프라 변경 목록도 §20.9 의 추가분(`setQoinAccrualEnabled.ts` · `migrateQoinZeroRates.ts` 신규, Rules 헬퍼 교체)을 더해 읽는다.
 
 | 대상 | 변경 |
 |---|---|
@@ -190,7 +192,9 @@
 
 부가 절감: **회수(clawback) 경로는 계층을 읽지 않는다** (회수액은 원장 반전). 적립률 조회를 `kind === "earn"` 분기 안으로 옮겨 회수 시 read 를 늘리지 않는다 — 현재 코드는 `loadConfig` 를 분기 **앞**에서 호출하므로 이 이동이 필요하다. 단, 전역 `enabled` kill switch 판정은 **회수에도 유지**해야 하므로 `config/qoin` 읽기는 공통 위치에 남긴다 (1차 §5.5 불변).
 
-### ③ "설정 없음" 의 표현 → **필드 부재 = 상속 / `0` = 명시적 중단** (추천)
+### ③ "설정 없음" 의 표현 → **필드 부재 = 상속 / `0` = 명시적 중단** (추천) — ⚠️ **§20 에서 정정됨**
+
+> **정정**: `0` = 명시적 중단은 **폐기**됐다. "적립을 하냐" 는 별도 필드 `qoinAccrualEnabled` 로 분리되고 **`0` 은 적립률 값으로 금지**된다. 이 소절이 별도 bool 안을 기각한 근거("두 필드의 정합성")도 틀렸다 — 근거와 교체 설계는 **§20.1 · §20.2** 를 따른다.
 
 | 안 | 상속 표현 | 명시적 0% | 판단 |
 |---|---|---|---|
@@ -291,7 +295,7 @@ stores/{storeId}/qoinRateHistory/{autoId} ← 매장
 
 ## 5. 데이터 모델
 
-### 5.1 적립률 필드
+### 5.1 적립률 필드  ⚠️ **§20.1.1 로 교체됨** (`0` 폐기 + `qoinAccrualEnabled` 추가)
 
 ```
 config/qoin
@@ -309,7 +313,7 @@ stores/{storeId}
 - 입력·표시는 `QoinPolicy` 의 tenths 경로를 그대로 쓴다. **저장 직전에만** `rateFromTenths` 로 변환.
 - 유효 범위를 벗어난 값(비number/NaN/음수/0 초과 0.001 미만/0.2 초과)은 **그 범위의 설정이 없는 것으로 보지 않고 fail-closed** — §6 참조.
 
-### 5.2 변경 이력 (H7)
+### 5.2 변경 이력 (H7)  ⚠️ **§20.5.2 · §20.5.5 로 갱신됨** (`field` 3값 / `clearedZeroCount` 삭제 / `disabledUntouchedCount` 추가)
 
 ```
 {config/qoin | brands/{id} | stores/{id}}/qoinRateHistory/{autoId}
@@ -348,7 +352,7 @@ users/{uid}/qoinTransactions/{txId}
 
 ---
 
-## 6. 계층 해석 알고리즘 (H3)
+## 6. 계층 해석 알고리즘 (H3)  ⚠️ **§20.3.1 로 교체됨** (스위치 2셀 추가 / 진리표는 §20.2.3)
 
 **CF(TS)와 클라이언트(Dart)가 동일한 규칙을 구현한다.** 함수는 순수 함수로 각 1개만 둔다.
 
@@ -465,11 +469,11 @@ Firebase Console / Admin SDK 쓰기는 **Rules 를 우회한다**(§1.2). 전역
 
 ---
 
-## 9. 보안 · 적립률 쓰기 경로 전수 (F1 재발 방지)
+## 9. 보안 · 적립률 쓰기 경로 전수 (F1 재발 방지)  ⚠️ **§20.5.6 에서 20경로로 재정정**
 
 설계 후 `qoinAccrualRate` / `config/qoin.accrualRate` 에 **쓸 수 있는 모든 경로**:
 
-> ⚠️ **12경로는 전수가 아니었다 (tester F4 / §19.4).** 13번째 경로가 있다 — 점주가 자기 매장을 `delete` 한 뒤 같은 ID 로 재생성하면 개별 설정이 **제거**된다. `status: 'pending'` 재승인이 필요하므로 **수용**하고 하네스로 동작을 고정한다. 아래 표의 "전수" 는 **13경로**로 읽는다.
+> ⚠️ **12경로는 전수가 아니었다 (tester F4 / §19.4).** 13번째 경로가 있다 — 점주가 자기 매장을 `delete` 한 뒤 같은 ID 로 재생성하면 개별 설정이 **제거**된다. `status: 'pending'` 재승인이 필요하므로 **수용**하고 하네스로 동작을 고정한다. 아래 표의 "전수" 는 ⚠️ **§20.5.6 의 20경로**로 읽는다 (스위치 필드 추가분 7경로 포함).
 
 | # | 경로 | 결과 | 검증 |
 |---|---|---|---|
@@ -578,7 +582,7 @@ Dart·TS 두 구현은 드리프트 위험이다. 완화책:
 
 ---
 
-## 13. 감사 추적 체크리스트 (`audit_trail.md` §4 — 6항목)
+## 13. 감사 추적 체크리스트 (`audit_trail.md` §4 — 6항목)  ⚠️ **§19.6 → §20.5.7 로 재판정됨**
 
 | # | 체크 | 결과 |
 |---|---|---|
@@ -618,7 +622,7 @@ Dart·TS 두 구현은 드리프트 위험이다. 완화책:
 cd /Users/Byeonguk/Developer/OrderApp/test_rules && npm test
 ```
 
-기존 73건 **전건 회귀 PASS** + 아래 신규. §9 의 12경로를 그대로 케이스화한다.
+기존 73건 **전건 회귀 PASS** + 아래 신규. §9 의 경로를 그대로 케이스화한다 (**§20.5.6 의 20경로**로 읽는다).
 
 | ID | 케이스 | 기대 |
 |---|---|---|
@@ -727,7 +731,7 @@ cd /Users/Byeonguk/Developer/OrderApp && flutter test
 순서 권장: ① `qoinRate.ts` 공유 경계·해석 → ② `onOrderQoinSettled` 교체 → ③ callable 2개 + 감시 트리거 → ④ Rules + 하네스 → ⑤ Dart core/domain/data → ⑥ 화면 → ⑦ 테스트.
 
 반드시 지킬 것
-- §9 **12경로 전수**를 Rules 하네스 케이스로 1:1 매핑 (F1 교훈)
+- §9 **전수 경로**를 Rules 하네스 케이스로 1:1 매핑 (F1 교훈) — **§20.5.6 의 20경로**로 읽는다
 - 경계 상수는 Dart·TS **각 1곳** (F3 교훈). §10 표 준수
 - `StoreModel`/`BrandModel` 의 **쓰기 맵에 `qoinAccrualRate` 를 넣지 않는다**
 - 매장/브랜드 `0` 은 **적립만** 막고 **회수는 통과** (§4-③)
@@ -817,7 +821,7 @@ H1~H7 은 확정이므로 재논의하지 않는다. 아래는 **이 설계 과�
 ## 18. 완료 기준
 
 1. §6 진리표 10행이 CF 와 Dart 양쪽에서 동일 케이스로 PASS
-2. §9 의 12경로 전수가 Rules 하네스 케이스로 존재하고 기대대로 동작 (기존 73건 회귀 PASS)
+2. §9 의 전수 경로(**§20.5.6 의 20경로**)가 Rules 하네스 케이스로 존재하고 기대대로 동작 (기존 163건 회귀 PASS)
 3. 적립률 변경이 **이력 없이** 발생할 수 있는 앱 내 경로가 **0** (Console 은 §9-11 의 명시된 한계)
 4. 브랜드 일괄 적용이 보존/덮어쓰기 양 모드에서 동작, 중단 후 재개가 멱등, 이력 **1건**에 영향 수·덮어쓰기 여부 기록
 5. 관리자 3범위 전부에서 `0.03` / `30` 입력이 차단되고 확인 다이얼로그에 **범위와 대상명**이 보인다
@@ -834,7 +838,7 @@ H1~H7 은 확정이므로 재논의하지 않는다. 아래는 **이 설계 과�
 
 - 대상: `68ee77a`(백엔드) + `9068fa9`(앱/테스트). **미배포.** F1 때문에 배포를 멈춘 상태.
 - 입력: `test_report.md` (PASS 14 / FAIL 6 / 보류 3)
-- 이 절은 §1~§18 중 **틀린 판정을 정정**한다. 충돌하면 **이 절이 우선**이다. 정정 대상: §1.5 · §4-② · §4-⑩ · §7.2 · §9 · §13(체크 2·4·6).
+- 이 절은 §1~§18 중 **틀린 판정을 정정**한다. 충돌하면 **이 절이 §1~§18 보다 우선**이고, **§20(사용자 결정 확정)이 이 절보다 우선**이다. 정정 대상: §1.5 · §4-② · §4-⑩ · §7.2 · §9 · §13(체크 2·4·6).
 
 ## 19.0 판정 요약
 
@@ -843,13 +847,13 @@ H1~H7 은 확정이므로 재논의하지 않는다. 아래는 **이 설계 과�
 | F1 | 브랜드 단계 미적용 + 클라이언트 지정 `brandId` | **고친다** — 신뢰원을 `stores/{id}.brandId` 로 | **배포 전 (필수)** |
 | F2 | 덮어쓰기가 매장별 이전 값을 기록 없이 지움 | **고친다** — 매장별 이력 + 브랜드 이력 분류 집계 | **배포 전** |
 | F3 | `enabled` 이력에 `changedBy` 없음 | **고친다** (§4-⑩ 의 수용은 거짓 이분법이었다) | **배포 전** |
-| F4 | 매장 delete → 같은 ID 재생성으로 0% 해제 | **수용** (+ 하네스 케이스, §9 13경로로 정정) | 배포 전 (문서·테스트만) |
+| F4 | 매장 delete → 같은 ID 재생성으로 0% 해제 | **수용** (+ 하네스 케이스) — **§20.8 에서 Q3 ⓐ 로 확정.** 경로 수는 §20.5.6 에서 **20경로**로 재정정 | 배포 전 (문서·테스트만) |
 | F5 | 일괄 적용 재개·동시 실행 보호 부족 | **고친다** — 브랜드 문서 잠금/포인터 1종 | **배포 전** |
 | F6 | `data_ownership.md` 공백 | **고쳤다** (이 커밋) | 완료 |
 | 부가 A | 오프-그리드 값 표시(`0.0015` → `0.2%`) | 고친다 | 배포 후 가능 |
 | 부가 B | 무효 값 이력 `before: null` | **고친다** (소급 불가) | **배포 전** |
-| H-1 | 0% 매장 덮어쓰기 정책 | **사용자 결정 대기** (추천 A + 서버 집행) | 결정 후 |
-| H-2 | 무효 값 fail-closed 시 소급 수단 없음 | 기록 수단은 **고친다** / 소급 도구는 backlog | **배포 전**(기록) |
+| H-1 | 0% 매장 덮어쓰기 정책 | ⚠️ **§20 에서 종결.** 사용자가 추천 A 를 **기각**하고 **적립 스위치 분리**로 확정 (§20.1~§20.6) | 배포 전 (설계 변경) |
+| H-2 | 무효 값 fail-closed 시 소급 수단 없음 | 기록 수단은 **고친다** / 소급 도구는 backlog — **§20.7 에서 Q2 ⓐ 로 확정** | **배포 전**(기록) |
 | H-3 | 허브 partial "조용히 생략" + 50건 | **결함이다 → 고친다** / 50건은 수용(+페이지네이션) | **배포 전**(구조) |
 
 ---
@@ -968,7 +972,9 @@ stores/{storeId}/qoinRateHistory/{autoId}
 
 4. 매장 이력 쓰기 주체는 CF 전담(Rules `if false`) — 기존 패턴 그대로.
 
-### H-1 — 0% 덮어쓰기 정책: **확정하지 않는다** (사용자 결정, Q1)
+### H-1 — 0% 덮어쓰기 정책: ⚠️ **§20 에서 확정됨 (추천 A 기각)**
+
+> **이 소절은 역사 기록이다.** 사용자는 아래 추천안 A(서버가 0% 매장을 skip)를 **기각**하고, **"적립 사용 안 함" 을 적립률과 분리된 별도 스위치로 두는 설계**를 택했다. 일괄 적용은 0% 매장도 포함해 **숫자를 덮고**, 스위치는 건드리지 않는다. 결정과 설계는 **§20** 을 따른다. 아래 A~D 논의와 분류 집계(`clearedZeroCount`)는 **§20.5.5 로 교체**됐다.
 
 `docs/backlog.md` 에 옵션 A~D 가 기록돼 있고 A 가 추천돼 있다. 사용자는 "해결책도 나중에 같이 구상하겠지?" 라고만 했고 **아직 안을 고르지 않았다.** 설계자가 임의 확정하지 않는다.
 
@@ -1029,7 +1035,7 @@ onQoinConfigWritten: after.enabledChangedBy 가 있으면
 | 진짜 문제는 다른 것 | `stores.delete` 가 점주에게 열려 있고, 삭제가 **이력에 남지 않으며**, 이력 서브컬렉션이 고아가 된다. → **`stores.delete` 정책(소프트 삭제 / admin 전용 / 삭제 이력)** 으로 `backlog.md` 에 올린다. 이 spec 범위 밖 |
 
 **요구 (어느 쪽이든 필수)**: Rules 하네스에 이 경로 케이스를 추가한다 — ⓐ 점주 `delete` **ALLOWED** ⓑ 같은 ID 로 `status:'pending'` 재생성 **ALLOWED** ⓒ `qoinAccrualRate` 를 포함한 재생성 **DENIED**. 현재 동작을 명시적으로 고정해 다음 사람이 "전수" 를 다시 오해하지 않게 한다.
-**§9 정정**: "12경로 전수" → **13경로**. 13번 = 점주 delete + 재생성(**수용된 경로**, 재승인 필요). §18 완료 기준 2 의 "12경로" 도 13으로 읽는다.
+**§9 정정**: "12경로 전수" → **13경로**. 13번 = 점주 delete + 재생성(**수용된 경로**, 재승인 필요). ⚠️ **§20.5.6 에서 다시 20경로로 정정됐다** (스위치 필드 7경로 추가).
 
 ### 부가 A — 오프-그리드 값 표시 (배포 후 가능)
 
@@ -1130,7 +1136,7 @@ brands/{brandId}
 
 ---
 
-## 19.7 배포 전 / 배포 후
+## 19.7 배포 전 / 배포 후  ⚠️ **§20.10 · §20.11 로 교체됨**
 
 ### 배포 전 필수 (이것들이 끝나야 배포)
 
@@ -1160,7 +1166,7 @@ brands/{brandId}
 
 ---
 
-## 19.8 작업 분배
+## 19.8 작업 분배  ⚠️ **§20.12 로 교체됨** (아래는 Q1 결정 이전 판)
 
 ### designer — **호출 필요** (소폭, 배포 전)
 
@@ -1214,7 +1220,17 @@ brands/{brandId}
 
 ---
 
-## 19.9 사용자 확인이 필요한 결정사항
+## 19.9 사용자 확인이 필요한 결정사항 — ✅ **전건 확정 (2026-10-22)**
+
+**Q1 / Q2 / Q3 모두 사용자 결정으로 확정됐다. 결정 내용과 설계는 §20 을 따른다.** 아래 표는 질문 원문과 당시 추천을 남긴 역사 기록이다.
+
+| # | **확정** | 추천과의 관계 |
+|---|---|---|
+| **Q1** | **추천 A 기각.** 적립률과 분리된 **매장·브랜드 단위 "적립 사용 안 함" 스위치**를 둔다. 일괄 적용은 0% 매장도 포함해 숫자를 덮고 스위치는 건드리지 않는다. 0% 설정은 스위치 끄기로 대체되고 **0 은 적립률 값으로 금지**된다 (§20.1~§20.6) | **기각** — 예외 규칙(0 skip) 대신 스키마 분리로 문제를 제거 |
+| **Q2** | **ⓐ 기록만.** `qoinSettlementIssues/{orderId}` 기록 수단만 배포 전에 만들고 소급 적립 도구는 backlog (§20.7) | 추천과 동일 |
+| **Q3** | **ⓐ 수용.** Rules 하네스 3케이스 필수. `stores.delete` 정책은 backlog 별도 과제 (§20.8) | 추천과 동일 |
+
+### (원문) 질문과 당시 추천
 
 | # | 질문 | 선택지 | 추천 |
 |---|---|---|---|
@@ -1222,3 +1238,742 @@ brands/{brandId}
 | **Q2** | 무효 값 때문에 적립이 누락된 주문을 **소급 적립**할 것인가? 한다면 어느 요율로? | ⓐ 소급 안 함(기록만) / ⓑ **수정 후** 요율로 소급 / ⓒ 발생 시점의 **전역 기본값**으로 소급 | 지금은 **기록만** 만들고(배포 전) 도구는 backlog. 결정하면 ⓑ 가 설명하기 쉽다("정상값으로 고친 뒤 그 값으로 지급"). 다만 요율이 내려갔다면 고객에게 불리해질 수 있어 사용자 판단이 필요하다 |
 | **Q3** | F4(매장 delete → 같은 ID 재생성으로 0% 해제)를 **수용**해도 되는가? | ⓐ 수용(하네스로 동작 고정) / ⓑ 막는다(재생성 시 admin 승인 전까지 0% 복원 등) | **ⓐ 수용.** 재생성은 `status: pending` 이라 **admin 승인 없이는 적립이 발생하지 않는다.** 대신 `stores.delete` 정책(점주 삭제 허용 / 삭제 이력 없음 / 이력 고아)을 별도 과제로 backlog 에 올린다 |
 
+
+---
+
+# 20. Q1·Q2·Q3 확정 — 적립 스위치 분리 (2026-10-22, 사용자 결정)
+
+- 입력: §19.9 의 Q1 / Q2 / Q3 에 대한 **사용자 결정 3건**. 전건 확정이며 재논의 대상이 아니다.
+- 이 절은 §19 를 다시 정정한다. **충돌하면 이 절이 §19 보다, §19 가 §1~§18 보다 우선**이다.
+- 정정 대상: §4-③ · §5.1 · §5.2 · §6 · §7.2 · §7.3 · §8 · §9(13경로) · §10 · §11 · §12 · §13 · §19.0(H-1) · §19.2(F2 분류 집계) · §19.7 · §19.8 · §19.9.
+
+## 20.0 결정 요약
+
+| # | 질문 | **확정** | §19 추천과의 관계 |
+|---|---|---|---|
+| **Q1** | 일괄 덮어쓰기가 `적립 안 함(0%)` 매장을 덮어야 하는가 | **덮는다. 단 "적립 사용 안 함" 을 적립률과 분리된 별도 스위치로 둔다.** 일괄 적용은 숫자만 덮고 스위치는 건드리지 않는다. 적립률 0% 설정은 **스위치를 끄는 동작**으로 대체된다 | **추천 A(서버가 0% 매장 skip) 기각.** backlog 옵션 A~D 전부 종결 |
+| **Q2** | 무효 값 때문에 누락된 적립을 소급할 것인가 | **ⓐ 기록만.** `qoinSettlementIssues/{orderId}` 기록 수단만 이번에 만들고 소급 적립 도구는 backlog | 추천과 동일 |
+| **Q3** | F4(매장 delete → 같은 ID 재생성) 를 수용하는가 | **ⓐ 수용.** Rules 하네스 케이스 3건 필수. `stores.delete` 정책은 backlog 별도 과제 | 추천과 동일 |
+
+### Q1 이 A 안보다 나은 이유 (결정 근거 — 사용자가 짚은 구조 문제)
+
+지금 `qoinAccrualRate` **한 필드가 두 가지를 겸하고 있다.**
+
+| 필드가 겸하는 의미 | 일괄 적용이 덮어도 되는가 |
+|---|---|
+| **숫자** — "적립률은 얼마냐" (3% / 5% / 10%) | **된다.** 브랜드 단위 요율 통일은 일괄 적용의 존재 이유다 |
+| **스위치** — "적립을 하냐" (`0` = 적립 안 함) | **안 된다.** 돈이 나가기 시작하는 방향의 결정을 무효화한다 |
+
+두 의미가 **같은 필드**에 있으므로 일괄 적용은 둘을 구분할 수 없었다. 추천안 A 는 여기에 **"값이 0이면 건너뛴다" 는 예외 규칙**을 덧붙여 때우는 안이었다. 예외 규칙은 ⓐ 서버·클라이언트·다이얼로그 문구·이력 집계 네 곳에 같은 분기를 심고 ⓑ "왜 이 매장만 안 바뀌었나" 를 설명해야 하고 ⓒ 나중에 "0% 도 덮고 싶다" 가 나오면 다시 선택지를 만들어야 한다.
+
+**스위치를 별도 필드로 분리하면 예외 자체가 사라진다.**
+
+```
+일괄 적용  : 숫자(qoinAccrualRate) 만 쓴다.          스위치는 읽지도 쓰지도 않는다
+스위치     : 전용 경로(setQoinAccrualEnabled) 만 쓴다. 일괄 적용에서 도달 불가능
+```
+
+- 일괄 적용 코드에 "0 인지" 를 묻는 분기가 **0개**다. 구조적으로 덮을 수 없으므로 집행 누락이 불가능하다.
+- A 안이 해결하려던 "다이얼로그 숫자와 실행 시점의 괴리"(§19.2) 도 같이 사라진다. 숫자가 틀려도 **스위치는 덮이지 않으므로** 결과가 안전하다.
+- 0% 는 **적립률이 아니다**. 0.1~20% 가 유효 범위인데 0 을 센티넬로 끼워 넣은 것이 §4-③ 의 설계 부채였다. 그 부채를 여기서 청산한다.
+
+> **§4-③ 정정**: §4-③ 은 "별도 bool (`qoinAccrualEnabled`)" 을 **"두 필드의 정합성을 항상 맞춰야 한다 (`rate` 있는데 `enabled:false` 같은 모순 상태)" 를 이유로 기각**했다. 이 기각 근거는 **틀렸다.** `rate: 0.05` + `enabled: false` 는 모순이 아니라 **의도된 상태**다 — "5% 로 설정돼 있지만 지금은 적립을 중단한다". 정합성을 맞춰야 할 두 필드가 아니라, **독립적인 두 축**이다. 모순 상태가 없으므로 정합성 유지 비용도 없다.
+
+---
+
+## 20.1 필드 설계
+
+### 20.1.1 스위치 필드
+
+```
+stores/{storeId}
+  qoinAccrualRate    : number 0.001~0.2   ← 부재 = 상위 상속. **0 은 더 이상 유효하지 않다**
+  qoinAccrualEnabled : false              ← 부재 = 적립 사용 (기본값). false 만 저장한다
+
+brands/{brandId}
+  qoinAccrualRate    : number 0.001~0.2   ← 동일
+  qoinAccrualEnabled : false              ← 동일
+
+config/qoin
+  accrualRate : number 0.001~0.2          ← 전역 기본값 (0 불가, 부재 불가 — 변동 없음)
+  enabled     : boolean                   ← 전역 비상 정지. **적립·회수 둘 다** 멈춘다 (변동 없음)
+```
+
+**선택 근거 — 별도 필드 (`qoinAccrualEnabled`) 를 택한다.** 대안이었던 "`QoinRateSetting` 타입에 상태 추가" 는 기각한다.
+
+| 안 | 판단 |
+|---|---|
+| **별도 bool 필드** (채택) | 숫자와 스위치가 **저장 단위부터 분리**된다. 일괄 적용이 쓰는 필드 집합(`qoinAccrualRate`)에 스위치가 없으므로 **덮어쓰기가 코드가 아니라 스키마 차원에서 불가능**하다. Rules 차단 헬퍼·이력·CF 가 전부 기존 패턴 그대로 확장된다 |
+| 타입 안에 상태 추가 (`qoinAccrualRate: 'off'` 등 비number 센티넬) | 필드가 여전히 하나다 → 일괄 적용이 쓰는 필드와 스위치가 **같은 필드**로 남는다. Q1 이 고치려는 문제가 그대로 남는다. 또한 "비number 는 fail-closed" 규칙(§5.1)과 정면 충돌한다. **기각** |
+| 숫자 범위 확장 (`-1` = off 등) | §4-③ 이 이미 기각한 음수 센티넬. 변동 없이 기각 |
+
+### 20.1.2 명명
+
+- `qoinAccrualEnabled` — 기존 `qoinAccrualRate` 와 **같은 접두(`qoinAccrual`)** 를 쓴다. Rules 의 차단 필드 목록과 모델의 "쓰기 맵에 넣지 않는 필드" 목록이 접두로 묶여 읽힌다.
+- `config/qoin.enabled` (전역 비상 정지) 와 **이름이 다르다.** 의미가 다르기 때문이다 — 전역 `enabled` 는 **적립·회수 둘 다** 멈추는 비상 정지이고, `qoinAccrualEnabled` 는 **적립만** 멈춘다(회수는 통과). 이름을 같게 하면 "매장을 끄면 환불 회수도 멈추나?" 를 매번 다시 확인해야 한다.
+- 이력 문서의 `field` 값도 구별한다: `'accrualRate'` / `'accrualEnabled'`(매장·브랜드 스위치) / `'globalEnabled'`(전역 비상 정지). §5.2 가 정의한 `'enabled'` 는 **`'globalEnabled'` 로 개명**한다 (미배포이므로 소급 대상 없음. 판독 측은 `'enabled'` 를 `'globalEnabled'` 로 관대히 해석한다).
+
+### 20.1.3 부재 = 사용 (그리고 `false` 만 저장하는 이유)
+
+```
+필드 부재      → 적립 사용 (기본값)
+false          → 적립 사용 안 함
+true           → 적립 사용 (= 부재와 같다. 저장하지 않지만 읽기는 허용)
+그 외 (비bool) → **무효 → fail-closed** (적립 중단 + qoinSettlementIssues 기록)
+```
+
+- **기본값을 "사용" 으로 둔다** → 기존 전체 매장·브랜드 문서에 필드를 심는 마이그레이션이 **불필요**하다. 이전해야 할 것은 `qoinAccrualRate: 0` 인 소수 문서뿐이다 (§20.4).
+- **다시 켤 때는 필드를 삭제**한다 (`FieldValue.delete()`). `true` 를 저장하지 않는 이유: 부재/`true`/`false` 3값을 만들면 "부재와 true 가 같다" 를 네 곳(Dart·TS·Rules 설명·화면)에서 반복 설명해야 한다. **예외적인 상태(`false`)만 문서에 보인다** → Firestore Console 을 열면 "적립을 끈 매장" 이 한눈에 걸러진다.
+- 판독은 `true` 도 받는다. Console 로 누가 `true` 를 넣어도 정상 동작해야 한다 (관대한 판독 / 엄격한 쓰기).
+- **비bool 값은 무효**다. 적립률의 "비number = fail-closed" 와 **같은 원칙**이다. "애매하면 돈을 내보내지 않는다."
+
+---
+
+## 20.2 `QoinRateSetting` 4-값 타입의 재정의
+
+### 20.2.1 결론 — (a) 0 을 적립률 입력값으로 금지한다
+
+선택지 (a) "0 을 금지하고 스위치만 쓴다" 를 택한다. (b) "0 은 계속 저장 가능하되 스위치가 집행한다" 를 기각한다.
+
+| | (a) 0 금지 **(채택)** | (b) 0 저장 허용 |
+|---|---|---|
+| 상태 수 | 적립률 셀 **3값** (부재 / 유효 / 무효) + 스위치 셀 4값 | 적립률 셀 **4값 유지** + 스위치 셀 4값 |
+| "적립 안 함" 의 출처 | **1개** (스위치) | **2개** (rate 0, 스위치 false) → 해석 사슬에 우선순위 규칙이 또 필요하다 |
+| 일괄 적용 | 숫자를 덮는다. 끝 | 0 을 덮으면 "0 이 사라졌다" 가 다시 발생 → **Q1 이 고치려던 문제가 재발** |
+| 화면 | "적립 안 함" 토글 1개 | 토글 + 0% 입력 두 경로가 같은 결과를 만든다 → 사용자 혼란 |
+| 진리표 | 20행 → 26행 (스위치 축 추가, 0 행 교체) | 20행 → 30행 이상 (0 × 스위치 조합 전수) |
+
+(b) 는 Q1 의 결정("0% 를 하면 자동으로 사용 안 함 상태가 된다")을 **두 상태의 동거**로 구현하는 안이다. 사용자 의도는 **0% 라는 숫자가 스위치로 승격되는 것**이므로 (a) 가 의도에 맞다.
+
+> **운영 영향 1건 (사용자 확인 불필요, 결정에 포함됨)**: 브랜드 단위 `0%`(진리표 R05) 도 사라진다. 그 기능은 **브랜드 스위치**(`brands/{id}.qoinAccrualEnabled`)로 **이동**한다 — §20.3.2 참조. 기능을 없애지 않고 옮긴다.
+
+### 20.2.2 타입 변경 (Dart / TS 공통)
+
+```
+RateCell  (적립률 1칸)        : absent | valid(rate) | invalid(raw)         ← zero 삭제
+SwitchCell (스위치 1칸) 신규   : absent | enabled | disabled | invalid(raw)
+```
+
+- `classifyRate(raw, allowZero)` → **`classifyRate(raw)`**. `allowZero` 매개변수를 **삭제**한다 (0 은 어느 범위에서도 유효하지 않으므로 범위별 분기가 사라진다 — `functions/src/qoinRate.ts`, `lib/core/utils/qoin_policy.dart` 양쪽).
+- `isValidCallableRate(raw, allowZero)` → **`isValidCallableRate(raw)`**. 0 은 항상 거부.
+- `QoinPolicy.explicitOffRate` **삭제**. 참조처(화면 토글 등)는 스위치 경로로 교체.
+- 신규 `classifySwitch(raw)` (TS) / `QoinPolicy.classifySwitch(Object? raw)` (Dart). 상수·판정의 출처는 기존 규칙 그대로 **각 언어 1곳**(`qoinRate.ts` / `qoin_policy.dart`)만.
+- `Resolved` 에 **`disabled` 결과를 추가**한다: `{ ok: true, disabled: true, source: 'store'|'brand' }`. 기존 `rate === 0` 으로 "적립 안 함" 을 표현하던 관용은 **삭제**한다 (0 이 더는 유효값이 아니므로 `rate` 로 off 를 표현할 수 없다).
+- `invalid` 사유 확장: `invalid_store | invalid_brand | invalid_global | invalid_store_enabled | invalid_brand_enabled`.
+
+### 20.2.3 진리표 변경 — `test_fixtures/qoin_rate_truth_table.json` 행 단위
+
+셀 표기에 `storeEnabled` / `brandEnabled` 2열이 추가된다. 두 열의 기본값은 `"absent"` 이며, 기존 행은 이 값으로 읽는다.
+
+#### `resolve` 배열 (20행 → **26행**)
+
+| 행 | 변경 | 내용 |
+|---|---|---|
+| R01 | **유지** | store 부재 / brand 부재 / global 0.03 → 0.03 global. 2열 추가(absent) |
+| R02 | **유지** | 0.05 brand |
+| R03 | **유지** | 0.10 store |
+| **R04** | **교체** | 기존 `store: 0 → (0, store)` **삭제**. 새 R04: `storeEnabled: false`, store 부재, brand 0.05 → **`{disabled: 'store'}`** |
+| **R04b** | **신규** | `storeEnabled: false`, **store 0.10**, brand 0.05 → **`{disabled: 'store'}`**. ⚑ Q1 핵심 케이스 — **숫자가 있어도 스위치가 이긴다** |
+| **R05** | **교체** | 기존 `brand: 0 → (0, brand)` **삭제**. 새 R05: `brandEnabled: false`, store 부재, brand 0.05 → **`{disabled: 'brand'}`** |
+| **R06** | **교체** | 기존 `store 0.10 / brand 0 → (0.10, store)`. 새 R06: `brandEnabled: false`, **store 0.10** → **`(0.10, store)`**. ⚑ 매장 개별 숫자는 **브랜드 스위치를 이긴다** (기존 R06 의 의미를 그대로 보존) |
+| R07 | **유지** | 전부 부재 → `invalid_global` |
+| R08 | **유지** | store 0.5 → `invalid_store` |
+| R09 | **유지** | brand 0.5 → `invalid_brand` |
+| R10 | **유지** | global 0.5 → `invalid_global` |
+| R11 | **유지** | store NaN → `invalid_store` |
+| R12 | **유지** | store "3" → `invalid_store` |
+| R13 | **유지** | store null → `invalid_store` |
+| R14 | **유지** | store −0.01 → `invalid_store` |
+| R15 | **유지** | store 0.0005 → `invalid_store` |
+| **R16** | **유지 (사유 변경)** | `global: 0 → invalid_global`. 결과 동일. 단 사유가 "전역만 0 금지(`allowZero=false`)" 에서 **"0 은 어느 범위에서도 적립률이 아니다"** 로 바뀐다. `note` 갱신 |
+| **R16b** | **신규** | `store: 0`, brand 0.05 → **`invalid_store`**. ⚑ (a) 안의 직접 결과 — 0 은 이제 매장에서도 무효다. ※ 마이그레이션 완료 전에는 §20.4.3 의 호환 분기가 이 행을 `resolve_legacy` 로 우회한다 |
+| **R16c** | **신규** | `brand: 0`, store 부재 → **`invalid_brand`** |
+| R17 | **유지** | store 0.001 → 유효 (하한) |
+| R18 | **유지** | store 0.2 → 유효 (상한) |
+| R19 | **유지** | store 0.2001 → `invalid_store` |
+| R20 | **유지** | 브랜드 미소속 개인 매장 → global |
+| **R21** | **신규** | `storeEnabled: "str:false"` (문자열) → **`invalid_store_enabled`**. 비bool fail-closed |
+| **R22** | **신규** | `brandEnabled: 1` (number), store 부재 → **`invalid_brand_enabled`** |
+| **R23** | **신규** | `storeEnabled: true` (명시적 true), store 부재, brand 0.05 → **`(0.05, brand)`**. 명시적 true = 부재 |
+| **R24** | **신규** | `storeEnabled: false` + `brandEnabled: false` → **`{disabled: 'store'}`**. 매장 스위치가 먼저. `source` 가 화면 표기를 결정하므로 행으로 고정 |
+| **R25** | **신규** | `storeEnabled: false`, store·brand·global **전부 부재** → **`{disabled: 'store'}`** (❗`invalid_global` 이 **아니다**). 스위치가 전역 검사 **앞에서** 단락한다 → 전역 설정이 깨져 있어도 사용 안 함 매장은 `qoinSettlementIssues` 를 만들지 않는다 |
+| **R26** | **신규** | `brandEnabled: false`, store 부재, brand·global 부재 → **`{disabled: 'brand'}`** |
+
+#### `resolve_legacy` 배열 (**신규, 과도기 한정 — 마이그레이션 완료 후 배열째 삭제**)
+
+| 행 | 내용 |
+|---|---|
+| L01 | `store: 0`, brand 0.05, global 0.03 → **`{disabled: 'store', legacy: true}`** |
+| L02 | `brand: 0`, store 부재 → **`{disabled: 'brand', legacy: true}`** |
+| L03 | `store: 0` + `storeEnabled: false` → **`{disabled: 'store'}`** (중복이어도 결과 동일 — 마이그레이션 중단·재실행 안전) |
+
+#### `classify` 배열 (14행 → **13행**, `allowZero` 키 전건 삭제)
+
+| 행 | 변경 |
+|---|---|
+| `{raw: 0, allowZero: true, expect: "zero"}` | **삭제** |
+| `{raw: 0, allowZero: false, expect: "invalid"}` | **`{raw: 0, expect: "invalid"}`** 로 통합 (두 행 → 1행) |
+| 나머지 12행 (`absent` / 0.001 / 0.0009 / 0.2 / 0.2001 / 0.03 / −1 / 1 / 0.5 / NaN / "3" / null) | **`allowZero` 키만 삭제**, 기대값 변동 없음 |
+
+#### `classifySwitch` 배열 (**신규 7행**)
+
+| id | raw | expect |
+|---|---|---|
+| S01 | `absent` | `enabled` (부재 = 사용) |
+| S02 | `true` | `enabled` |
+| S03 | `false` | `disabled` |
+| S04 | `"str:false"` | `invalid` |
+| S05 | `0` | `invalid` (number 는 bool 이 아니다) |
+| S06 | `1` | `invalid` |
+| S07 | `null` | `invalid` |
+
+#### `callable` 배열 (13행 → **12행**, `allowZero` 키 전건 삭제)
+
+| 행 | 변경 |
+|---|---|
+| `{raw: 0, allowZero: true, expect: true}` | **`{raw: 0, expect: false}`** 로 교체 |
+| `{raw: 0, allowZero: false, expect: false}` | **삭제** (위 행과 통합) |
+| 나머지 11행 (0.03 / 0.001 / 0.2 / 0.025 / 0.0305 / 0.5 / 0.0005 / −1 / "3" / NaN / null) | **`allowZero` 키만 삭제**, 기대값 변동 없음 |
+
+#### `callableSwitch` 배열 (**신규 4행** — `setQoinAccrualEnabled` 입력 경계)
+
+| id | enabled 입력 | expect |
+|---|---|---|
+| C01 | `true` | accept |
+| C02 | `false` | accept |
+| C03 | `"false"` | reject (`invalid-argument`) |
+| C04 | `0` | reject |
+
+**양쪽 테스트가 같은 파일을 읽는 규칙은 변동 없다** (§10-2). `resolve_legacy` / `classifySwitch` / `callableSwitch` 도 Dart·TS 양쪽이 같이 읽는다.
+
+---
+
+## 20.3 해석 사슬에서 스위치의 위치
+
+### 20.3.1 알고리즘 (§6 교체)
+
+```
+resolveEffectiveRate(storeSwitch, storeRate, brandSwitch, brandRate, globalRate)
+
+  if storeSwitch is 무효      -> INVALID(invalid_store_enabled)
+  if storeSwitch is disabled  -> DISABLED(source 'store')      # ← 숫자를 보지 않는다
+  if storeRate   is 무효      -> INVALID(invalid_store)
+  if storeRate   is 유효      -> (storeRate, 'store')
+  # storeRate 부재 → 브랜드 단계
+  if brandSwitch is 무효      -> INVALID(invalid_brand_enabled)
+  if brandSwitch is disabled  -> DISABLED(source 'brand')
+  if brandRate   is 무효      -> INVALID(invalid_brand)
+  if brandRate   is 유효      -> (brandRate, 'brand')
+  if globalRate  is 유효      -> (globalRate, 'global')
+  INVALID(invalid_global)
+```
+
+규칙 3가지를 명시한다.
+
+1. **매장 스위치가 꺼져 있으면 브랜드·전역 요율보다 무조건 우선이다.** 숫자(매장 개별값 포함)를 아예 읽지 않는다. 일괄 적용이 숫자를 덮어도 적립이 되지 않는 것이 이 한 줄에서 나온다. → 진리표 R04b.
+2. **매장 스위치는 전역 기본값 검사보다 앞에서 단락한다.** 전역 설정이 부재·무효여도 사용 안 함 매장은 `INVALID` 가 아니라 `DISABLED` 다. `qoinSettlementIssues`(= "고객 돈이 누락됐다" 기록)를 의도된 중단으로 오염시키지 않기 위한 것이다. → R25.
+3. **매장 개별 숫자는 브랜드 스위치를 이긴다** (`storeRate` 유효 + `brandSwitch` disabled → 매장 숫자 적용). 기존 R06(`store 0.10` + `brand 0` → 0.10)의 의미를 그대로 보존한다. 근거: 매장에 개별 숫자가 있다는 것은 **그 매장만 따로 정해 뒀다**는 뜻이고, 브랜드 일괄 중단은 "개별 설정이 없는 매장" 에 대한 기본 정책이다 — 적립률 상속 규칙과 **같은 방향**이다. → R06.
+
+### 20.3.2 브랜드 단계에도 스위치를 둔다 (범위 판단)
+
+**결론: 둔다.** 단 이것은 **범위 확대가 아니라 기능 이동**이다.
+
+| 판단 | 내용 |
+|---|---|
+| 지금 설계에 이미 있다 | 현행(미배포) 설계는 `brands/{id}.qoinAccrualRate: 0` = **브랜드 단위 적립 중단**을 지원한다 (진리표 R05, `data_ownership.md` §2.11.1). Q1 이 0 을 금지하므로, 스위치를 브랜드에 두지 않으면 **이미 설계·구현된 기능이 조용히 사라진다** |
+| "범위를 넓히지 않는다" 와의 관계 | 넓히는 것은 **새 계층을 만드는 것**(예: 메뉴별 스위치)이다. 기존 3계층 중 2계층이 이미 갖고 있던 능력을 같은 2계층에 **다른 필드로 옮기는 것**은 확대가 아니다. 계층 수는 3개로 불변 |
+| 한계 비용 | 필드 1개 · 해석 사슬 2줄 · Rules 차단 필드 목록 1항목 · 진리표 3행 · 브랜드 편집 화면 토글 1개. 판정 코드(`classifySwitch`)·이력·CF·Rules 헬퍼는 **매장 스위치와 전부 공용** |
+| 비대칭의 비용 | 브랜드만 빼면 "브랜드는 왜 못 끄나" 를 운영 중에 다시 만난다. 그때 추가하면 매장/브랜드 판정이 비대칭으로 갈라질 위험이 있다 (1차 F1 이 바로 "보호가 한 경로에만 걸려 있던" 사고였다) |
+
+**전역에는 스위치를 추가하지 않는다.** `config/qoin.enabled` 가 이미 있고, 의미가 더 강하다 — **적립·회수 둘 다** 멈추는 비상 정지다. `qoinAccrualEnabled` 를 전역에 또 두면 "전역에 끄는 스위치가 2개" 가 되어 비상 정지의 단순성(§4-⑩ / §19.3 이 지키려 한 성질)을 해친다. `setQoinAccrualEnabled` 는 `scope: 'global'` 을 **`invalid-argument` 로 거부**한다.
+
+### 20.3.3 회수(clawback)는 스위치와 무관하다 — 불변
+
+**매장·브랜드 스위치가 꺼져 있어도 회수는 통과한다.** 적립 분기(`kind === 'earn'`) 안에서만 계층을 읽는 현행 구조가 이 성질을 보장한다 (§7.2, test_report PASS-13). 막으면 "매장을 끄면 환불된 주문의 Qoin 이 회수되지 않는다" → Qoin 누수. 전역 `enabled=false` 만 적립·회수를 둘 다 멈춘다. **§4-③ 의 "설계 함정" 경고는 0 에서 스위치로 대상만 바뀌어 그대로 유효하다.**
+
+### 20.3.4 로그 라벨
+
+- `skipped_rate_zero` → **`skipped_accrual_disabled`** 로 개명. 페이로드에 `{ source: 'store'|'brand', storeId, brandId }`.
+- **`qoinSettlementIssues` 에 기록하지 않는다** (의도된 정책 + 빈도 높음 — §19.4 의 판단 유지).
+- 신규 `skipped_invalid_enabled` 는 **기록한다** (`reason: 'invalid_enabled'`, `scope: 'store'|'brand'`). 비bool 값은 Console 편집으로만 생기고, 그 사이 완료된 주문은 **고객 돈이 영구 누락**되는 §19.4 H-2 와 완전히 같은 사건이다.
+
+---
+
+## 20.4 마이그레이션 — 운영에 남은 `qoinAccrualRate: 0`
+
+운영 Firestore 에 `qoinAccrualRate: 0` 인 매장이 있다 (사용자가 라이브 검증 중 설정). **설계자는 운영 Firestore 를 읽을 수 없다** — 따라서 "몇 건인지" 를 전제하지 않는 설계로 간다.
+
+### 20.4.1 방식 — 임시 callable + admin 허브의 1회성 카드 (dry-run 선행)
+
+| 안 | 판단 |
+|---|---|
+| **임시 callable `migrateQoinZeroRates` + 허브 카드** (채택) | 사용자가 **앱에서** 대상 목록·건수를 보고 실행한다. 서비스 계정·`gcloud` 자격증명 불필요. Admin SDK 라 Rules 우회 → Rules 배포 순서와 독립. **정리 커밋에서 callable·카드·호환 분기를 함께 삭제**한다 (§20.4.5) |
+| 로컬 Admin SDK 스크립트 | 사용자에게 `GOOGLE_APPLICATION_CREDENTIALS` 또는 ADC 설정을 요구한다. 1회성 작업에 환경 구성 비용이 크고, 실패 시 원인 분리가 어렵다. **기각** |
+| Rules 가 과도기 동안 양쪽 해석 | Rules 는 적립률을 **읽지도 해석하지도 않는다** (쓰기 차단만 한다). 애초에 Rules 로 할 수 있는 일이 아니다. **기각** |
+| 사용자가 Console 에서 수동 | 대상 수를 모른다. 매장마다 ⓐ `qoinAccrualRate` 삭제 ⓑ `qoinAccrualEnabled: false` 추가 를 **이력 없이** 수동 수행하게 되어 `audit_trail.md` §4-2·4-4 를 정면 위반한다. **기각** |
+
+### 20.4.2 `migrateQoinZeroRates` (onCall, admin 전용, 임시)
+
+```
+요청: { dryRun: boolean }
+스캔: stores where qoinAccrualRate == 0     (기존 인덱스로 충분 — 단일 필드 등식)
+      brands where qoinAccrualRate == 0
+      ※ 같은 스캔에서 '무효 값'(비number / 범위 밖) 도 수집해 **보고만** 한다 (자동 변환 금지)
+
+dryRun: true  → 쓰기 0. { zeroStores: [{id, name}], zeroBrands: [...],
+                          invalidStores: [{id, name, raw}], invalidBrands: [...] } 반환
+
+dryRun: false → 대상 1건당 한 트랜잭션:
+      qoinAccrualRate  : FieldValue.delete()
+      qoinAccrualEnabled : false
+      + {stores|brands}/{id}/qoinRateHistory/{autoId} 1건
+          field 'accrualEnabled' / op 'set'
+          before null / beforeState 'absent' / after false
+          changedBy  실행 admin uid          ← 행위자를 남긴다 (audit_trail §4-4)
+          changedByRole 'admin'
+          source 'migration'                 ← 신규 source 값
+          reason '적립률 0% → 적립 사용 안 함 이전 (Q1)'
+          migratedFromRate 0                 ← 신규. "숫자 0 이 여기서 사라졌다" 를 박제
+      멱등: 이미 qoinAccrualEnabled == false 이고 rate 가 없으면 **skip** (이력도 쓰지 않는다)
+```
+
+- 트랜잭션 1건 = 문서 1개 + 이력 1개. 대상 수가 적으므로 청크·재개 설계는 **두지 않는다** (600건을 넘으면 그때 재호출 — 멱등이므로 안전).
+- **무효 값은 자동으로 손대지 않는다.** 0 은 의도가 명확하지만(= 적립 안 함) 무효 값은 의도를 추측할 수 없다 → fail-closed 원칙. 보고만 하고 사용자가 `setQoinAccrualRate` / 스위치로 정한다.
+
+### 20.4.3 과도기 호환 분기 (배포~마이그레이션 사이의 창)
+
+`functions` 배포 직후부터 마이그레이션 실행 전까지는 운영에 `qoinAccrualRate: 0` 이 남아 있다. 그 구간에서 `0` 을 그냥 무효로 보면 **의도된 중단이 "고객 돈 누락 사건"(`qoinSettlementIssues`) 으로 오기록**된다.
+
+→ **판독 측에만** 좁은 호환 분기를 둔다.
+
+```
+classifyRate(0) → { kind: 'legacyZero' }        ← 읽기 전용. 과도기 한정
+resolve: legacyZero 를 disabled 와 **동일 취급** (source 유지, 이슈 기록 없음,
+          로그 라벨 skipped_accrual_disabled + { legacy: true })
+```
+
+- **쓰기 측에는 예외가 없다.** `isValidCallableRate(0)` = false, Rules 는 필드 자체를 차단. 0 은 **새로 만들어질 수 없다.**
+- 이것은 Q1 이 없애려던 "일괄 적용의 0 skip 예외" 와 **다른 것**이다. 일괄 적용은 여전히 0 을 묻지 않는다 — 대신 아래 가드로 **아예 실행을 거부**한다.
+- **일괄 적용 가드 (과도기 한정)**: `applyBrandQoinRate` 가 산하 매장 스캔 중 `qoinAccrualRate === 0` 을 하나라도 만나면 `failed-precondition` 으로 **중단**한다 (`"레거시 0% 매장 N곳이 있어요. Qoin 설정 허브에서 마이그레이션을 먼저 실행하세요"`). 응답에 `legacyZeroCount` 와 매장 ID 목록(최대 50개)을 담는다.
+  - **정책 판단을 코드가 하지 않는다.** "0 을 덮을까 말까" 를 서버가 결정하는 것이 A 안이었다. 여기서는 **결정하지 않고 멈춘다** — 과도기에만 존재하고, 마이그레이션이 끝나면 조건이 영구히 거짓이 되어 함께 삭제된다.
+
+### 20.4.4 사용자가 Console 에서 확인/조작할 것
+
+마이그레이션 카드가 건수를 보고하므로 **Console 조작은 없다.** 확인만 한다 (선택이지만 권장 — 값이 돈이다).
+
+| # | 위치 | 확인 |
+|---|---|---|
+| 1 | 앱 admin → Qoin 설정 허브 → 마이그레이션 카드 | **dry-run 결과**: 0% 매장/브랜드 목록과 건수. 기억하는 매장과 일치하는지. **무효 값 목록이 비어 있는지** (있으면 Console 편집 흔적 — 각 건의 `raw` 값을 보고 어떻게 할지 정한다) |
+| 2 | 같은 카드 | 실행 후 `migrated` 건수 = dry-run 건수 인지, `skipped` 가 0 인지 |
+| 3 | Firebase Console → Firestore → `stores` | 이전 대상 매장 1곳을 열어 **`qoinAccrualRate` 필드가 없고** `qoinAccrualEnabled: false` 인지 |
+| 4 | 같은 매장 → `qoinRateHistory` | 이력 1건이 `source: 'migration'` / `changedBy` = 본인 uid / `migratedFromRate: 0` 으로 있는지 |
+| 5 | Firebase Console → `config/qoin` | `accrualRate` 가 `0.001~0.2` 의 number 인지 (여기 0 이나 문자열이 있으면 **전역이 fail-closed** 라 전체 적립이 멈춘다) |
+| 6 | 앱 admin → 해당 매장 상세 | 우선순위 사슬이 `사용 안 함` 으로 보이는지 (`0%` 로 보이면 §20.6-2 미반영) |
+| 7 | 재확인 (정리 커밋 전) | dry-run 을 한 번 더 눌러 **0건** 인지. 0건이어야 §20.4.5 를 실행한다 |
+
+### 20.4.5 정리 커밋 (마이그레이션 0건 확인 후)
+
+한 커밋에서 함께 삭제한다. 과도기 자산이 남으면 "0 이 어딘가에서 유효하다" 는 오해가 재발한다.
+
+1. `classifyRate` 의 `legacyZero` 분기 + `resolve` 의 동일 취급 분기 (TS·Dart 양쪽)
+2. `test_fixtures/qoin_rate_truth_table.json` 의 **`resolve_legacy` 배열째** → 이때 **R16b/R16c 가 활성화**된다 (0 = `invalid_store`/`invalid_brand`)
+3. `applyBrandQoinRate` 의 `legacyZeroCount` 가드
+4. `migrateQoinZeroRates` callable + `index.ts` export
+5. admin 허브의 마이그레이션 카드
+6. 이 절(§20.4)에 완료일과 이전 건수를 기록
+
+---
+
+## 20.5 쓰기 권한과 이력
+
+### 20.5.1 스위치도 CF 전담 쓰기 + 변경 이력 대상이다
+
+`audit_trail.md` §4-1 — "돈·권한·정책 값을 바꾸는가 → 설정 변경 이력이 기본값". 스위치는 **적립이 발생하는지 자체를 결정**하므로 적립률보다 약하지 않다. 따라서 적립률과 **완전히 동일**하게 다룬다.
+
+- 클라이언트 직접 쓰기 **전 역할 차단** (admin 전권 분기 포함)
+- 쓰기는 CF 전담 — 신규 callable **`setQoinAccrualEnabled`**
+- 값 쓰기와 이력 1건을 **같은 트랜잭션** → 이력 없는 변경이 구조적으로 불가능
+- 이력 컬렉션은 기존 `qoinRateHistory` 를 **그대로 재사용** (`field: 'accrualEnabled'`). 새 컬렉션을 만들지 않는다 — 컬렉션을 늘리면 collection group 조회와 Rules 가 갈라지고, "적립률 이력" 과 "스위치 이력" 을 운영자가 두 화면에서 봐야 한다
+- `config/qoin.enabled`(전역 비상 정지)의 직접 쓰기 유지 결정(§19.3)은 **변동 없다.** 매장·브랜드 스위치는 비상 정지가 아니므로 같은 예외를 적용하지 않는다
+
+### 20.5.2 `setQoinAccrualEnabled` (onCall, 신규)
+
+```
+요청: { scope: 'store'|'brand', targetId, enabled: boolean, reason? }
+      scope: 'global' → invalid-argument (전역은 config/qoin.enabled, §20.3.2)
+      enabled 가 bool 이 아니면 invalid-argument (진리표 callableSwitch)
+
+1. requireAdmin (서버 재검증 — H2)
+2. 일괄 적용 진행 중 거부 (§19.5-(c) 와 동일 가드: 매장이면 그 브랜드, 브랜드면 자신)
+   ※ 일괄 적용이 스위치를 건드리지 않더라도 거부한다 — 진행 중 설정 변경을 금지하는
+     §19.5 의 규칙은 "운영자 2명이 같은 브랜드를 동시에 만지는 것" 을 막는 것이고,
+     그 목적은 스위치에도 동일하다
+3. 트랜잭션: 현재 값 읽어 before 확보
+   enabled == false → qoinAccrualEnabled: false
+   enabled == true  → qoinAccrualEnabled: FieldValue.delete()   (부재 = 사용, §20.1.3)
+   + 이력 1건 (field 'accrualEnabled', op 'set'|'clear',
+               before true|false|null, beforeState 'absent'|'value'|'invalid',
+               beforeRaw (비bool 일 때만), after false|null,
+               changedBy uid, changedByRole 'admin', source 'callable', reason)
+4. 값이 이미 같으면 아무것도 쓰지 않는다 (재시도 중복 이력 방지 — 기존 패턴)
+5. 반환 { before, after, historyId | null, changed }
+```
+
+**`op` 값은 기존 `'set'|'clear'` 를 재사용**한다 (구조적 의미: 필드를 쓰는가 / 지우는가). "사용/사용 안 함" 라벨은 `(field, after)` 조합으로 화면이 만든다 — 새 enum 값을 늘리지 않는다.
+
+### 20.5.3 `applyBrandQoinRate` 는 스위치를 읽지도 쓰지도 않는다
+
+- 쓰기 필드 집합에 `qoinAccrualEnabled` 가 **없다.** 코드 리뷰 + 에뮬레이터 테스트로 고정한다 (일괄 실행 후 `qoinAccrualEnabled: false` 가 그대로인지).
+- **읽기는 집계 목적으로만 1곳**: 산하 매장 스캔 시 `qoinAccrualEnabled == false` 인 매장 수를 세어 `disabledUntouchedCount` 로 **보고**한다 (§20.5.5). 이 값은 어떤 분기도 바꾸지 않는다 — 조건으로 쓰면 Q1 이 없앤 예외 규칙이 되살아난다.
+
+### 20.5.4 Rules 변경 — `touchesQoinRate()` 를 필드 **집합** 헬퍼로 교체
+
+지금 보호 대상이 1필드가 아니므로 헬퍼 이름과 형태를 바꾼다.
+
+```
+function qoinManagedFields() {
+  return ['qoinAccrualRate', 'qoinAccrualEnabled',
+          'qoinBulkHistoryId', 'qoinBulkStatus', 'qoinBulkAt'];   // §19.5 포인터 포함
+}
+function touchesQoinManaged() {               // 기존 touchesQoinRate() 교체
+  return request.resource.data.diff(resource.data).affectedKeys().hasAny(qoinManagedFields());
+}
+function hasQoinManagedOnCreate() {           // 기존 hasQoinRateOnCreate() 교체
+  return request.resource.data.keys().hasAny(qoinManagedFields());
+}
+```
+
+- **필드 목록을 Rules 안에서도 1곳만** 둔다. §19.5 가 "포인터 3필드를 `touchesQoinRate()` 에 추가" 로 처리한 것을 여기서 집합 헬퍼로 일반화한다 — 다음에 또 필드가 늘 때 분기 6곳을 찾아다니지 않게 하기 위한 것이다 (1차 F1 의 교훈).
+- 적용 지점은 기존과 동일: `stores` create 1곳 / `stores` update 최상위 1곳(admin 전권 포함) / `brands` create 1곳 / `brands` update 최상위 1곳.
+- `config/{docId}` 블록은 **변동 없다** (`accrualRate` 차단 + `enabled` 의 `enabledChangedBy == uid()` 강제, §19.3).
+
+### 20.5.5 F2 분류 집계 갱신 (§19.2-2 정정)
+
+0 이 적립률 값이 아니게 되었으므로 **"0% 가 지워졌다" 는 사건이 더는 발생하지 않는다.**
+
+| 필드 | 상태 |
+|---|---|
+| `clearedZeroCount` | **삭제.** 0% 개별 설정이 존재할 수 없다 (과도기에는 §20.4.3 가드가 실행 자체를 거부하므로 이 카운트가 필요한 상황도 없다) |
+| `clearedValueCount` | **유지** — 유효 숫자가 지워진 매장 수 |
+| `clearedInvalidCount` | **유지** — 무효 값(Console 편집)이 지워진 매장 수 |
+| **`disabledUntouchedCount`** | **신규** — 산하 매장 중 `qoinAccrualEnabled == false` 라서 **일괄 적용 후에도 적립되지 않는** 매장 수. `cleared*` 가족과 **이름을 분리**한다: 지운 것이 아니라 **영향이 없었던 것**을 세는 값이다 |
+| 합 불변식 | `clearedValueCount + clearedInvalidCount == clearedCount`. `disabledUntouchedCount` 는 **합에 들어가지 않는다** |
+
+- 매장별 이력(`op: 'clearByBulk'`)은 **그대로 필수**다 (§19.2-1). 점주의 "왜 내 매장 적립률이 바뀌었나" 는 Q1 과 무관하게 남는 질문이다. 다만 `before: 0` 이 나올 수 없으므로 `before` 는 `number | null`, `beforeState` 는 `'value' | 'invalid'` 2값으로 좁아진다.
+- `disabledUntouchedCount` 는 **완료 화면의 사후 고지**에도 쓴다: "3곳은 `적립 사용 안 함` 이라 적립이 시작되지 않아요." 이것이 Q1 결정을 운영자에게 설명하는 유일한 표면이다.
+
+### 20.5.6 §9 쓰기 경로 전수 — **13 → 20 경로**
+
+보호 대상이 `qoinAccrualRate` 1필드에서 **`qoinAccrualRate` + `qoinAccrualEnabled`** 2필드로 늘었다. §9 의 "13경로" 를 아래로 갱신한다 (1~13 은 §9/§19.4 의 기존 경로, 14~20 이 추가분).
+
+| # | 경로 | 대상 필드 | 결과 | 검증 |
+|---|---|---|---|---|
+| 1~5 | `stores`/`brands` 의 create·update (customer/owner/brand/**admin 전권**) | rate | ❌ 차단 | Rules 하네스 (기존) |
+| 6~7 | admin 의 `config/{docId}` write·create | `accrualRate` | ❌ 차단 / `enabled` 만 ✅ | Rules 하네스 (기존) |
+| 8 | `setQoinAccrualRate` CF | rate | ✅ admin 재검증 + 경계 + 이력 동일 트랜잭션 | CF 에뮬레이터 |
+| 9 | `applyBrandQoinRate` CF | rate | ✅ 동일 + 멱등 재개. **스위치는 쓰지 않는다** | CF 에뮬레이터 (스위치 불변 검증 포함) |
+| 10 | `onOrderQoinSettled` | rate·switch | 읽기만 | 코드 리뷰 |
+| 11 | Firebase Console / Admin SDK | rate | ⚠ 막을 수 없다. `config/qoin` 만 §7.4 트리거가 사후 기록 | 설계 한계 |
+| 12 | `qoinRateHistory` 직접 쓰기 | — | ❌ 전부 `if false` | Rules 하네스 |
+| 13 | 점주 `stores.delete` → 같은 ID 재생성 | rate | ⚠ **수용** (재승인 필요, Q3) | Rules 하네스 (신규 3케이스) |
+| **14** | customer/owner/brand 의 `stores` **update** | **switch** | ❌ `touchesQoinManaged()` | Rules 하네스 (신규) |
+| **15** | owner / brand 의 `stores` **create** | **switch** | ❌ `hasQoinManagedOnCreate()` | Rules 하네스 (신규) |
+| **16** | brand 의 `brands` create / update | **switch** | ❌ 동일 | Rules 하네스 (신규) |
+| **17** | **admin 의 `stores`/`brands` update (전권 분기)** | **switch** | ❌ 전권에서도 이 필드 제외 | Rules 하네스 (신규) |
+| **18** | **`setQoinAccrualEnabled` CF** (신규) | **switch** | ✅ admin 재검증 + bool 검증 + 이력 동일 트랜잭션 + 일괄 진행 중 거부 | CF 에뮬레이터 (신규) |
+| **19** | Firebase Console / Admin SDK | **switch** | ⚠ **막을 수 없다. 감시도 없다** (`stores`/`brands` 트리거 미설치 — N6 와 동일 한계) | 설계 한계로 명시 |
+| **20** | **`migrateQoinZeroRates` CF** (임시) | rate + switch | ✅ admin 재검증 + 이력 1건/건 + 멱등. **정리 커밋에서 삭제** (§20.4.5) | CF 에뮬레이터 (신규) |
+
+**추가로, #13 의 결과가 확대된다**: 매장을 delete 후 같은 ID 로 재생성하면 적립률뿐 아니라 **스위치도 제거**된다 → 재생성 매장은 "적립 사용" 상태로 돌아온다. Q3 의 수용 근거(재생성은 `status: 'pending'` 이라 admin 재승인 전까지 주문을 받지 못하므로 적립이 발생하지 않는다)는 스위치에도 **그대로 성립**한다. 하네스 케이스 ⓒ 를 `qoinAccrualRate` **와 `qoinAccrualEnabled` 둘 다** 포함한 재생성으로 확장한다.
+
+미봉은 **#11 · #19 · #13** 세 개이고, 모두 Firebase 의 구조적 성질 또는 명시적 수용이다.
+
+### 20.5.7 `audit_trail.md` §4 체크리스트 — 스위치 반영 재판정 (§13 / §19.6 갱신)
+
+| # | 체크 | 판정 | 근거 |
+|---|---|---|---|
+| 1 | 설정 변경 이력 | **통과** | 스위치 변경 = `qoinRateHistory` 1건 (`field: 'accrualEnabled'`), 값과 **같은 트랜잭션** |
+| 2 | 덮어쓰기로 사라지는 값 | **통과** | ⓐ 매장별 이력(`clearByBulk`) 유지 ⓑ **"적립 안 함" 의도는 일괄 적용이 접근할 수 없는 필드에 있으므로 덮어써 사라지는 일이 구조적으로 불가능**해졌다 — F2 의 가장 아픈 부분이 코드가 아니라 스키마로 닫혔다 ⓒ 마이그레이션도 `migratedFromRate: 0` 으로 사라지는 0 을 박제 |
+| 3 | 당시 값 박제 | **통과** | 원장은 `accrualRate` / `accrualRateSource` / `brandId`(= `store.brandId`, §19.1). 스위치가 꺼진 매장은 원장 자체가 생기지 않으므로 박제 대상이 없다 |
+| 4 | "누가" | **통과 (한계 2건, 수용)** | 스위치는 callable 전담이라 `changedBy` 가 항상 있다. 마이그레이션도 실행 admin uid 를 남긴다. 한계: ⓐ `config/qoin` **Console** 편집(§9-11) ⓑ `stores`/`brands` **Console** 편집(§9-19, N6). 둘 다 구조적 |
+| 5 | 일괄 = 1건 + 영향 범위 | **통과** | 브랜드 1건 + 매장 N건(`bulkHistoryId` 연결) + `clearedValueCount`/`clearedInvalidCount`/**`disabledUntouchedCount`** |
+| 6 | CF 로그 의존 | **통과 (수용 1건)** | `invalid_enabled` 는 `qoinSettlementIssues` 에 Firestore 기록. `skipped_accrual_disabled` 는 **로그만** — 의도된 정책이고 빈도가 높다(노이즈). **남기지 않는 사유를 여기 명시한다**: 이 사건은 "값이 사라진 것" 이 아니라 "설정대로 동작한 것" 이고, 그 설정 자체는 스위치 이력에 영구 보존되어 있으므로 사건별 기록이 필요 없다 |
+
+---
+
+## 20.6 설계자가 사용자에게 미리 설명한 것 (spec 반영)
+
+### 20.6.1 다시 켜면 0% 가 아니라 **브랜드 요율**로 적립된다
+
+일괄 덮어쓰기 뒤 스위치를 다시 켜면, 그 매장은 **0% 가 아니라 상위(브랜드 또는 전역) 요율**로 적립을 시작한다.
+
+```
+① 매장 S: 적립률 0% 로 잠금          →  (신설계) qoinAccrualEnabled: false, rate 부재
+② 브랜드 일괄 적용 (덮어쓰기, 5%)     →  S 의 rate 는 원래 부재였으므로 변화 없음.
+                                        스위치는 건드리지 않음 → S 는 계속 적립 안 함
+③ admin 이 S 의 스위치를 다시 켬      →  rate 부재 → 브랜드 5% 상속 → **5% 로 적립**
+```
+
+**근거**: `0%` 라는 **숫자는 애초에 저장되지 않는다.** 남는 것은 "사용 안 함" 이라는 **상태**뿐이다. 따라서 "되돌릴 0%" 라는 값이 존재하지 않는다. 의미상으로도 **"다시 켠다" = "현재 요율로 적립에 참여한다"** 가 자연스럽다 — 끄기 전의 숫자로 돌아가는 것이 아니다 (끄기 전 숫자가 브랜드 요율과 다를 이유도 없다).
+
+> 설계자가 이 해석을 사용자에게 설명하고 **의도와 다르면 알려달라고 요청했으며, 사용자는 이의를 제기하지 않았다.** 이 해석을 확정으로 둔다. 바꾸고 싶다면 "끄기 전 숫자를 보존해 켤 때 복원" 이 필요하고, 그것은 스위치에 숫자를 딸려 보내는 설계(= 필드 2개의 정합성 유지 비용 복귀)이므로 **별도 결정이 필요하다.**
+
+화면에도 같은 말을 쓴다 — 스위치 off 상태의 매장 상세에 보조 문구: **"다시 켜면 브랜드 5% 가 적용돼요"** (상위 유효 요율을 계산해 보여준다).
+
+### 20.6.2 우선순위 사슬 화면은 `사용 안 함` 으로 보여야 한다
+
+스위치가 꺼진 매장의 우선순위 사슬(`qoin_rate_chain.dart`)은 `5%` 가 **아니라 `사용 안 함`** 으로 표시한다.
+
+```
+[잘못됨]  매장 5%  ← 브랜드 5%  ← 전역 3%
+[옳음]    매장 사용 안 함  (브랜드 5% · 전역 3% 는 적용되지 않음)
+                 └ 다시 켜면 브랜드 5% 가 적용돼요
+```
+
+- 1차 F1 의 교훈이 그대로 적용된다 — **화면이 말하는 숫자와 실제 발행되는 돈이 달라지면 안 된다.**
+- `source` 가 `'store'|'brand'` 중 어디서 꺼졌는지 보여준다 (R24 가 이 표기를 고정한다).
+- 점주·브랜드 화면(§12.3 의 1행)도 `적립률 5%` 가 아니라 **`적립 사용 안 함`** 으로 보인다. 고객 화면(§12.4)은 적립률 숫자를 이미 제거했으므로(§4-⑨) 변경 없다.
+
+### 20.6.3 F2(매장별 이력)는 이 설계에서도 그대로 필요하다
+
+§19.2-1 의 매장별 이력(`op: 'clearByBulk'`)은 **유지**한다. 분류 집계만 §20.5.5 로 갱신된다. 근거: 일괄 덮어쓰기가 **유효 숫자**(3% → 상속)와 **무효 값**을 지우는 것은 Q1 과 무관하게 계속 일어나고, 점주가 "왜 내 매장 적립률이 바뀌었나" 를 물을 경로도 그대로다.
+
+---
+
+## 20.7 Q2 확정 — ⓐ 기록만 (보강)
+
+**확정: `qoinSettlementIssues/{orderId}` 기록 수단만 이번에 만든다. 소급 적립 도구는 `backlog.md`.**
+
+§19.4 H-2 의 설명을 아래로 보강한다 (사용자가 "무효 값" 과 "적립이 멈춘다" 의 뜻을 물었고, 설계자가 답한 내용).
+
+### "무효 값" 이란
+
+`qoinAccrualRate` / `qoinAccrualEnabled` 에 **정상 경로로는 들어갈 수 없는 값**이 들어간 상태다.
+
+| 종류 | 예 | 어떻게 생기나 |
+|---|---|---|
+| 범위 밖 숫자 | `0.5`(50%), `-0.01`, `0.0005`(0.05%) | **Firebase Console 직접 편집 / Admin SDK** 뿐 |
+| 비숫자 | `"3"`, `null`, `true`, `[]`, `NaN` | 동일 |
+| 비bool 스위치 | `qoinAccrualEnabled: "false"`, `: 1` | 동일 |
+| 격자 밖 숫자 | `0.0015`(0.15%) | 동일. **단 유효 범위 안이므로 무효가 아니다** — 정상 계산되고 표시만 정확히 해야 한다 (§19.4 부가 A) |
+
+callable 은 서버 경계에서 거부하고(§10), Rules 는 필드 자체를 차단하므로(§20.5.6) **앱·Rules 경로로는 무효 값이 만들어지지 않는다.** 남는 입구는 Console / Admin SDK 하나뿐이고, 그것은 Rules 를 우회한다.
+
+### "적립이 멈춘다" 의 뜻 — 왜 영구 누락인가
+
+```
+1. 무효 값을 만난다  → CF 는 **추측하지 않는다** (상위로 폴백하면 아무도 모르게
+                        다른 금액이 발행된다 — §6 fail-closed)
+2. console.error 후 **return**  → 트리거는 **정상 종료**로 처리된다
+3. 정상 종료이므로 Cloud Functions 가 **재시도하지 않는다** (`retry: true` 는
+                        **예외로 실패할 때만** 작동한다)
+4. 값을 고쳐도 그 주문들은 **다시 처리되지 않는다** — 트리거 조건이
+                        `orders` 의 `* → completed` 전이이고, 그 전이는 이미 지나갔다
+5. 근거는 Cloud Logging 에만 있고 **보존 기간(30일)** 이 지나면 사라진다
+   → 누구에게 얼마를 못 줬는지 **대상 목록 자체가 소멸**한다
+```
+
+**사라지는 것이 고객 돈**이므로 `audit_trail.md` §4-6("영구 보존이 필요하면 Firestore") 위반이다. 따라서 **기록 수단은 배포 전 필수**다. 기록이 없으면 나중에 소급 도구를 만들어도 **대상을 복원할 수 없다** (F2·U7 과 같은 함정).
+
+### 소급 적립 도구를 지금 만들지 않는 이유
+
+"어느 시점 요율로 줄 것인가" 가 **정책 결정**이다 — ⓐ 발생 시점에 의도했던 값(알 수 없다) ⓑ 수정 후 값 ⓒ 그때의 전역 기본값. 요율이 내려갔다면 ⓑ 가 고객에게 불리해질 수 있다. 기록이 쌓이면 **실제 건수와 금액을 보고** 결정하는 편이 정확하다. → `backlog.md` 신규 과제.
+
+---
+
+## 20.8 Q3 확정 — ⓐ 수용
+
+**확정: F4(매장 delete → 같은 ID 재생성)를 수용한다.** 근거는 §19.4 그대로이며 스위치에도 성립한다(§20.5.6 말미).
+
+**필수 (배포 전, 코드 변경 없음)**: `test_rules/rules.test.mjs` 에 3케이스.
+
+| # | 케이스 | 기대 |
+|---|---|---|
+| ⓐ | owner 가 `qoinAccrualEnabled: false` 인 자기 매장 `delete` | **ALLOWED** |
+| ⓑ | 같은 ID 로 `{ownerId, name, status: 'pending'}` 재생성 | **ALLOWED** |
+| ⓒ | 같은 ID 로 `qoinAccrualRate` **또는** `qoinAccrualEnabled` 를 포함해 재생성 | **DENIED** (`hasQoinManagedOnCreate()`) |
+
+`stores.delete` 정책(점주 삭제 허용 / 삭제 이력 없음 / 이력 서브컬렉션 고아)은 **이 spec 범위 밖** → `backlog.md` 신규 과제.
+
+---
+
+## 20.9 영향 범위 (Q1 추가분만)
+
+### Core
+- `lib/core/utils/qoin_policy.dart` — `explicitOffRate` 삭제, `classifyRate` 의 `allowZero` 삭제, `classifySwitch` 추가
+- `lib/core/utils/qoin_rate_resolver.dart` — 스위치 2셀 추가, `disabled` 결과 추가, `legacyZero` 과도기 분기
+
+### Domain (순수 Dart)
+- `lib/domain/entities/qoin_rate_results.dart` — `EffectiveQoinRate` 에 `disabled` / `disabledSource`, `invalid_*_enabled` 사유
+- `lib/domain/entities/qoin_rate_change_entity.dart` — `field` 에 `accrualEnabled`/`globalEnabled`, `source` 에 `migration`, `migratedFromRate`
+- `lib/domain/entities/store_entity.dart` · `brand_entity.dart` — `qoinAccrualEnabled` (읽기 전용)
+- `lib/domain/repositories/qoin_rate_repository.dart` — `setAccrualEnabled` / (임시) `migrateZeroRates`
+- 신규 UseCase `SetQoinAccrualEnabledUseCase` (단일 책임)
+
+### Data
+- `lib/data/models/store_model.dart` · `brand_model.dart` — `qoinAccrualEnabled` **읽기만**. `toFirestore*` 쓰기 맵에 **넣지 않는다** (§16 규칙, test_report PASS-5 가 지키는 성질)
+- `lib/data/models/qoin_rate_change_model.dart` — 신규 필드 매핑 (미지값 관대 처리)
+- `qoin_rate_remote_data_source` / `repository_impl` — 신규 callable 2개
+
+### Presentation
+- `admin_qoin_store_rate_edit_page.dart` · `admin_qoin_brand_rate_edit_page.dart` — `적립 사용 안 함` 토글 (0% 입력 경로 제거)
+- `widgets/qoin_rate_chain.dart` — `사용 안 함` 표시 + "다시 켜면 …" 보조 문구
+- `widgets/qoin_rate_confirm_dialog.dart` — 경고/체크박스 제거, 완료 사후 고지(`disabledUntouchedCount`)
+- `widgets/qoin_rate_edit_form.dart` · `qoin_rate_input_field.dart` — 0 관련 분기 제거
+- `common/widgets/qoin/qoin_rate_labels.dart` · `qoin_rate_source_badge.dart` · `qoin_rate_info_row.dart` — `사용 안 함` 라벨
+- `admin_qoin_settings_page.dart` — (임시) 마이그레이션 카드
+
+### 인프라
+- `functions/src/qoinRate.ts` · `setQoinAccrualEnabled.ts`(신규) · `migrateQoinZeroRates.ts`(신규, 임시) · `onOrderQoinSettled.ts` · `applyBrandQoinRate.ts` · `qoinAdmin.ts` · `index.ts`
+- `firestore.rules` — `touchesQoinRate` → `touchesQoinManaged` (필드 집합 헬퍼)
+- `test_fixtures/qoin_rate_truth_table.json` — §20.2.3
+- **인덱스 변동 없음** (스위치는 등식 단일 필드 질의만. 기존 CG 이력 인덱스 그대로)
+
+### 역할 흐름 / 엔티티 lifecycle
+- **엔티티 status 전이 변경 없음.** 스위치는 `stores.status` / `brands.status` 와 무관한 독립 필드다 (`entity_lifecycle.md` 수정 불필요)
+- `role_flows.md`: admin 흐름에 "매장·브랜드 적립 사용 토글" 1건, owner/brand 흐름에 읽기 전용 1행. ※ `role_flows.md` 가 Qoin 을 아직 **"미구현"** 으로 적고 있는 기존 drift 는 별도 과제로 `backlog.md` 에 올린다
+
+---
+
+## 20.10 배포 전 필수 / 배포 후 가능 (§19.7 교체)
+
+### 배포 전 필수
+
+| # | 내용 | Q1 반영 |
+|---|---|---|
+| 1 | **F1** — 브랜드 신뢰원 `store.brandId` + 원장 `brandId` 일치 + `cart.brandId` 미사용 | 변동 없음 |
+| 2 | **F1 테스트** — T1 / T2 / T3 / T4 | 변동 없음 |
+| 3 | **Q1 — 스위치 분리**: 필드 · `classifySwitch` · 해석 사슬 · `setQoinAccrualEnabled` · Rules 집합 헬퍼 · 진리표 §20.2.3 | **신규** |
+| 4 | **Q1 — 마이그레이션**: `migrateQoinZeroRates` + 허브 카드 + 과도기 호환 분기 + 일괄 적용 레거시 가드 | **신규** |
+| 5 | **F2** — 매장별 이력 + CHUNK 225 + 분류 집계(`clearedZeroCount` **삭제**, `disabledUntouchedCount` **추가**) | **갱신** |
+| 6 | **F3** — `enabled` 행위자 (Rules + 앱 2필드 + 트리거) | 변동 없음 |
+| 7 | **F5** — 브랜드 잠금/포인터 + 재개 재검증 + 진행 중 단건 차단(**스위치 변경도 차단**) | **갱신** |
+| 8 | **H-3 D-1/D-2** — 허브 중단 판정 포인터 기반 + 에러 무음 제거 | 변동 없음 |
+| 9 | **부가 B** — `beforeState` / `beforeRaw` (스위치 이력에도 적용) | **갱신** |
+| 10 | **H-2 기록(Q2 ⓐ)** — `qoinSettlementIssues` (+ `reason: 'invalid_enabled'`) | **갱신** |
+| 11 | **F4 하네스 3케이스(Q3 ⓐ)** + §9 **20경로** 정정 | **갱신** |
+| 12 | **화면**: 우선순위 사슬 `사용 안 함` 표기 · "다시 켜면 …" 문구 · 다이얼로그 경고/체크박스 제거 | **신규** |
+| 13 | **배포 순서**: §20.11 | **갱신** |
+
+> §19.7 의 11번("H-1 사용자 결정 대기")은 **종결**됐다. Q1 이 확정이므로 대기 항목이 없다.
+
+### 배포 후 가능
+
+| # | 내용 |
+|---|---|
+| 1 | **부가 A** — 격자 밖 값 정확 표시 + `격자 밖 값(콘솔 편집)` 배지 |
+| 2 | **H-3 D-3** — 전체 이력 화면 페이지네이션 |
+| 3 | **Q2 소급 적립 도구** — 기록이 쌓인 뒤 정책 결정 → `backlog.md` |
+| 4 | **정리 커밋(§20.4.5)** — 마이그레이션 0건 확인 후 과도기 자산 전부 삭제 |
+| 5 | `stores.delete` 정책 재설계 — `backlog.md` |
+| 6 | N6 — `stores`/`brands` Console 편집 감시 (`qoinAccrualEnabled` 포함) |
+| 7 | `role_flows.md` 의 Qoin "미구현" drift 정정 — `backlog.md` |
+
+---
+
+## 20.11 배포 순서 (§19.7-10 / D-4 교체)
+
+스위치 추가로 **순서가 바뀐다.** `functions` 가 `firestore:rules` **앞으로** 이동하고, 그 사이에 마이그레이션 2단계가 들어간다.
+
+```
+① firestore:indexes                     ← CG 이력 쿼리 (D-4, 변동 없음)
+② functions                             ← 신규 callable 2개 + 과도기 호환 분기 + 레거시 가드
+③ 마이그레이션 dry-run  → 사용자 확인 (§20.4.4 의 1·5)
+④ 마이그레이션 실행     → 사용자 확인 (§20.4.4 의 2·3·4)
+⑤ firestore:rules  +  앱 빌드·배포      ← **같은 배포 창** (F3, §19.3 — 변동 없음)
+⑥ 라이브 검증 (§20.4.4 의 6)
+⑦ dry-run 재확인 0건  →  정리 커밋 (§20.4.5)
+```
+
+**② 를 ⑤ 앞으로 옮긴 근거 (3가지)**
+
+1. **마이그레이션 CF 가 ② 에 들어 있어야 ③④ 를 할 수 있다.** CF 는 Admin SDK 라 Rules 를 우회하므로 Rules 배포(⑤)를 기다릴 필요가 없다.
+2. **새 앱이 admin 에게 도달한 뒤에는 레거시 0% 를 손으로 고칠 방법이 없다.** 새 UI 에는 0% 입력 경로가 없다(§20.2.1). 따라서 마이그레이션은 **앱 배포(⑤) 전에** 끝나야 한다.
+3. **일괄 적용이 레거시 0% 앞에서 거부된다**(§20.4.3). ⑤ 이후에 admin 이 일괄 적용을 시도하면 영문 모를 `failed-precondition` 을 만난다. ④ 가 ⑤ 보다 앞이면 이 상황 자체가 생기지 않는다.
+
+**② 를 먼저 올려도 안전한 이유**: ② 가 올라간 순간부터 `onOrderQoinSettled` 는 새 해석을 쓰지만, 과도기 호환 분기(§20.4.3)가 레거시 `0` 을 `disabled` 와 동일 취급한다 → **돈의 결과가 ② 전후로 동일**하다(적립 없음). `qoinSettlementIssues` 오기록도 없다. Rules(⑤)가 아직 구버전이어도 `qoinAccrualEnabled` 를 쓰는 클라이언트가 **존재하지 않으므로** 보호 공백이 없다 (새 앱은 ⑤ 에서 나온다).
+
+**⑤ 를 쪼개지 않는 이유**: §19.3 그대로 — Rules 가 `enabledChangedBy` 를 강제하므로 Rules 만 먼저 올리면 **구버전 앱의 비상 정지 토글이 거부**된다. 돈을 멈추는 스위치가 막히는 최악의 순서다.
+
+---
+
+## 20.12 작업 분배 (§19.8 교체)
+
+### designer — **호출 필요** (배포 전)
+
+`design.md` 에 증분 추가. 제약 그대로: `AppColors` 만, 신규 색 토큰 0 목표.
+
+| # | 항목 | 배포 |
+|---|---|---|
+| 1 | **매장/브랜드 적립률 편집 화면의 `적립 사용 안 함` 토글** — 적립률 입력란과 **시각적으로 분리**된 독립 섹션. 켜짐/꺼짐 상태의 카피, 꺼짐일 때 입력란의 처리(비활성 vs 그대로 — **그대로 두는 쪽을 권장**: 숫자와 스위치가 독립임을 화면이 말해야 한다), 끄기 확인 다이얼로그 | 배포 전 |
+| 2 | **우선순위 사슬의 `사용 안 함` 표기** (§20.6.2) — 매장/브랜드 중 어디서 꺼졌는지 + 보조 문구 "다시 켜면 브랜드 5% 가 적용돼요" | 배포 전 |
+| 3 | **일괄 적용 다이얼로그** — 경고 줄("적립 안 함 N곳도 다시 적립해요")과 **체크박스 제거**. 대신 정보 줄 "`적립 사용 안 함` 3곳은 영향을 받지 않아요" + **완료 화면의 사후 고지**(`disabledUntouchedCount`) | 배포 전 |
+| 4 | **점주/브랜드 읽기 1행** (§12.3) — `적립률 5%` 대신 `적립 사용 안 함` | 배포 전 |
+| 5 | **매장 이력 화면** — `field: 'accrualEnabled'` 행 표기("적립 사용 안 함으로 변경" / "적립 사용으로 변경"), `source: 'migration'` 행 표기, `op: 'clearByBulk'` 행 + `bulkHistoryId` 연결 | 배포 전 |
+| 6 | **허브 partial 배너의 에러 상태** + "최근 변경" 에러 행 (로딩/에러/없음 3상태) — §19.8-2 유지 | 배포 전 |
+| 7 | **(임시) 마이그레이션 카드** — dry-run 결과(0% 목록 / 무효 값 목록) · 실행 버튼 · 결과 표시. **정리 커밋에서 삭제됨을 전제로 최소 구성** | 배포 전 |
+| 8 | `격자 밖 값(콘솔 편집)` 배지 / 전체 이력 더 보기 | 배포 후 |
+
+### developer — **호출 필요** (designer 완료 후, 파일 단위)
+
+**백엔드 (TS)**
+
+| 파일 | 작업 |
+|---|---|
+| `functions/src/qoinRate.ts` | ① `RateCell` 에서 `zero` **삭제**, `classifyRate` 의 `allowZero` **삭제** ② `SwitchCell` + `classifySwitch` 신규 ③ `resolveEffectiveRate` 를 §20.3.1 5입력으로 교체, `disabled` 결과 + `invalid_*_enabled` 추가 ④ `isValidCallableRate` 의 `allowZero` 삭제(0 항상 거부) ⑤ **과도기**: `legacyZero` 분기 ⑥ 격자 왕복 헬퍼(부가 A) ⑦ TS 경계 상수는 여기 1곳 유지 |
+| `functions/src/setQoinAccrualEnabled.ts` | **신규** — §20.5.2 전체 |
+| `functions/src/migrateQoinZeroRates.ts` | **신규(임시)** — §20.4.2 전체. dry-run 우선 |
+| `functions/src/onOrderQoinSettled.ts` | ① 스위치 2셀을 해석에 투입(추가 read **0** — `stores`/`brands` 문서를 이미 읽는다) ② `skipped_rate_zero` → `skipped_accrual_disabled`(+`source`, `legacy`) ③ `invalid_enabled` 를 `qoinSettlementIssues` 에 기록 ④ §19.1 분(브랜드 신뢰원·원장 `brandId`)은 그대로 |
+| `functions/src/applyBrandQoinRate.ts` | ① 쓰기 필드 집합에 스위치 **없음**(고정) ② 스캔 시 `qoinAccrualEnabled == false` 수를 세어 `disabledUntouchedCount` **보고만** ③ `clearedZeroCount` **삭제** ④ **과도기**: `qoinAccrualRate === 0` 발견 시 `failed-precondition` + `legacyZeroCount` ⑤ §19.5 분(포인터·재개 재검증·CHUNK 225·매장별 이력)은 그대로 |
+| `functions/src/setQoinAccrualRate.ts` | ① 0 입력 거부(`allowZero` 제거의 귀결) ② 일괄 진행 중 거부 ③ `beforeState`/`beforeRaw` |
+| `functions/src/onQoinConfigWritten.ts` | ① 이력 `field` 를 `'globalEnabled'` 로 ② `enabledChangedBy` → `source: 'app_direct'`(§19.3) ③ `beforeState`/`beforeRaw` |
+| `functions/src/qoinAdmin.ts` · `index.ts` | 신규 callable 2개 export + `historyCollection` 재사용 |
+| `firestore.rules` | ① `touchesQoinRate`/`hasQoinRateOnCreate` → **`touchesQoinManaged`/`hasQoinManagedOnCreate`** (필드 집합 1곳, §20.5.4) ② 적용 지점 4곳(stores create·update / brands create·update) ③ `config/qoin` 의 `enabledChangedBy == uid()` 강제(§19.3) ④ `qoinSettlementIssues`: `read: isAdmin()`, 쓰기 `if false` |
+| `firestore.indexes.json` | CG 이력 인덱스 확정. **변동 없음**(스위치는 인덱스 불요) |
+| `functions/src/verifyTossPayment.ts` | §19.1 분 그대로 — `cart.brandId` 미사용 + `buildOrderData`/`buildOrderLogData` 분리(T1/T2) |
+
+**앱 (Dart)**
+
+| 파일 | 작업 |
+|---|---|
+| `lib/core/utils/qoin_policy.dart` | `explicitOffRate` **삭제**, `classifyRate` 의 `allowZero` **삭제**, `classifySwitch` 추가, 격자 왕복(부가 A). Dart 경계 상수는 여기 1곳 유지 |
+| `lib/core/utils/qoin_rate_resolver.dart` | §20.3.1 로 교체 + `legacyZero` 과도기 분기 |
+| `lib/domain/entities/qoin_rate_results.dart` | `disabled` / `disabledSource` / `invalid_*_enabled` |
+| `lib/domain/entities/qoin_rate_change_entity.dart` + `.model` | `field` 3값 / `source` 에 `migration`·`app_direct` / `beforeState` / `beforeRaw` / `bulkHistoryId` / `migratedFromRate` / `disabledUntouchedCount` (미지값 관대 처리) |
+| `lib/domain/entities/store_entity.dart` · `brand_entity.dart` | `qoinAccrualEnabled` (읽기 전용) |
+| `lib/data/models/store_model.dart` · `brand_model.dart` | 읽기만. **쓰기 맵에 넣지 않는다** (PASS-5 성질 보존) |
+| `lib/domain/repositories/qoin_rate_repository.dart` + impl + datasource | `setAccrualEnabled` / (임시) `migrateZeroRates` |
+| `lib/domain/usecases/qoin/` | `SetQoinAccrualEnabledUseCase` 신규 (단일 책임) |
+| `admin_qoin_store_rate_edit_page.dart` · `admin_qoin_brand_rate_edit_page.dart` | 토글 섹션 + 0% 입력 경로 제거 |
+| `widgets/qoin_rate_chain.dart` | `사용 안 함` + "다시 켜면 …" |
+| `widgets/qoin_rate_confirm_dialog.dart` | 경고·체크박스 제거 + 완료 사후 고지 |
+| `widgets/qoin_rate_edit_form.dart` · `qoin_rate_input_field.dart` | 0 분기 제거 |
+| `common/widgets/qoin/qoin_rate_labels.dart` · `qoin_rate_source_badge.dart` · `qoin_rate_info_row.dart` | 라벨 |
+| `admin_qoin_settings_page.dart` | `_PartialSection` 포인터 기반 + 에러 렌더(§19.8) / **(임시) 마이그레이션 카드** |
+| `admin_qoin_rate_history_page.dart` | 신규 `field`·`source` 표기 / 페이지네이션(배포 후) |
+
+**테스트**
+
+- `test_fixtures/qoin_rate_truth_table.json` — §20.2.3 전체 (resolve 26 / resolve_legacy 3 / classify 13 / classifySwitch 7 / callable 12 / callableSwitch 4). **Dart·TS 양쪽이 같은 파일을 읽는 규칙 유지**
+- `functions/test/emulator.test.mjs` — ① **일괄 적용 후 `qoinAccrualEnabled: false` 가 불변**(Q1 핵심 회귀) ② 스위치 off 매장은 적립 0 / **회수는 통과**(§20.3.3) ③ 스위치 off + 전역 설정 부재 → `qoinSettlementIssues` **미기록**(R25) ④ `invalid_enabled` → 기록 ⑤ 레거시 0 매장 있는 브랜드의 일괄 적용 **거부** ⑥ 마이그레이션 멱등(2회 실행 → 이력 1건) ⑦ §19.8 의 기존 항목 전건(T1/T3/동시 호출/재개/매장별 이력) ⑧ 주문은 `buildOrderData` 로 생성
+- `test_rules/rules.test.mjs` — ① 스위치 차단 4경로(#14~17, create·update·admin 전권) ② F4 3케이스(ⓒ 는 두 필드 모두) ③ `enabledChangedBy` 불일치 DENY · 일치 ALLOW ④ `qoinSettlementIssues` 쓰기 DENY ⑤ 포인터 3필드 차단 ⑥ **기존 163건 전건 PASS 회귀**
+- Dart — `classifySwitch` / 해석 사슬 26+3행 / `_cartToMap` 키 골든(T2) / 이력 모델 신규 필드 / 라벨
+- 보고 필수: ⓐ 적립 1건당 **실제 read 수·라운드트립 수**(브랜드 매장 / 비브랜드 매장) — 스위치 추가로 **증가 0** 이어야 한다 ⓑ `grep` 으로 `explicitOffRate` / `allowZero` / `clearedZeroCount` / `skipped_rate_zero` **잔존 0건** ⓒ Rules 하네스·flutter test 전건 회귀
+
+### tester — 재검증 (developer 완료 후)
+
+중점: ① **일괄 덮어쓰기 후에도 `적립 사용 안 함` 매장이 적립되지 않는지** (Q1 의 수용 기준 — 코드 추론이 아니라 에뮬레이터 재현) ② 스위치 off 매장의 **회수 통과** ③ 진리표 26+3+13+7+12+4 행이 Dart·TS 양쪽에서 같은 파일로 돌는지 ④ 0 이 어느 쓰기 경로로도 들어가지 않는지(§20.5.6 의 20경로 **독립 열거**) ⑤ 마이그레이션 멱등·이력·행위자 ⑥ 과도기 자산이 §20.4.5 목록 그대로 **삭제 가능한 형태로 모여 있는지** ⑦ T1~T4 가 F1 클래스를 막는지(주문을 손으로 시드하는 테스트 잔존 0건) ⑧ §20.5.7 체크리스트 6항목 ⑨ **실결제 0회**
+
+---
+
+## 20.13 남은 사용자 결정사항
+
+**없다.** Q1 / Q2 / Q3 전건 확정이며, Q1 의 세부 설계(필드 형태 · `QoinRateSetting` 재정의 · 스위치의 사슬 위치 · 브랜드 스위치 범위 · 마이그레이션 방식)는 설계자가 §20.1~§20.4 에서 근거와 함께 확정했다.
+
+설계자 판단으로 확정한 것 중 **되돌리려면 비용이 드는 3건**을 기록해 둔다 (사용자가 다르게 원하면 지금이 가장 싸다).
+
+| # | 확정 내용 | 다르게 하려면 |
+|---|---|---|
+| 1 | **다시 켜면 상위(브랜드) 요율로 적립** — 끄기 전 숫자를 보존하지 않는다 (§20.6.1) | 스위치에 "끄기 전 숫자" 를 딸려 저장해야 한다 → 필드 2개의 정합성 유지 비용이 돌아온다 |
+| 2 | **브랜드 단계에도 스위치를 둔다** (§20.3.2) | 빼면 현행 설계의 브랜드 단위 적립 중단(R05) 기능이 사라진다 |
+| 3 | **0 을 적립률 입력값으로 완전 금지** (§20.2.1) | 0 저장을 허용하면 "적립 안 함" 의 출처가 2개가 되고 Q1 이 고친 문제가 부분적으로 재발한다 |
