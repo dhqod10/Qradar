@@ -124,7 +124,8 @@ stateDiagram-v2
 | 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`orderProgress` / `pickupComplete`), OS 권한 3-state, 명시 재요청 (배너 CTA: 앱 내 요청 먼저 → 실패 시 설정 앱 폴백) |
 | 알림 권한 다이얼로그 (진입 시) | `common/notification/notification_permission_prompt_flow.dart` | `나중에` 선택 시 `notificationPermissionLaterCount` +1, 최대 3회까지 재노출. `허용` 선택 시 `notificationPermissionPrompted=true` 후 재노출 없음(설정 화면 경유). OS 권한 허용 상태면 노출 안 함 |
 | 선물하기 | — | **미구현** |
-| 리뷰 작성 | — | **미구현** — `reviews/{reviewId}` Rules 만 정의, UI 없음 |
+| 매장 평가 작성 / 수정 | `customer/review/store_review_form_page.dart` (주문 상세 > `매장 평가하기`) | `completed` 주문에서만 진입. **S/A/B/C 등급 선택**(별점 아님) + 선택적 코멘트(300자). 문서 ID `{storeId}_{userId}` 로 **1인 1매장 1표**, 재평가는 같은 문서 update. 14일 기한은 UI 에서만 강제. 작성자는 `Qrator {4자리 해시}` 로 익명 표기 |
+| 매장 평가 조회 | `customer/review/store_reviews_page.dart` (메뉴 헤더 `GradeBadge` 탭) | 등급 + 평가 건수만 표시 (**평균 점수는 점주 화면 전용**). 내 평가는 목록 최상단에 `내 평가` pill 로 분리 |
 
 **핵심 진입점**: `ScaffoldWithNav` (홈 / 카트 / Log / 더보기 등 BottomNav).
 
@@ -148,9 +149,10 @@ stateDiagram-v2
 | 매출 조회 | `owner/sales/owner_sales_page.dart` | 구현 — 일/주/월 기간별 총 매출·주문 건수·평균 객단가 + 주문 목록 (클라이언트 집계, 결제 성공 전체 포함·환불/취소 제외, KST 기준). 상세는 `docs/tasks/owner_sales/` |
 | 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`newOrder` / `refundRequest`), OS 권한 3-state, 명시 재요청 (앱 내 요청 먼저 → 실패 시 설정 앱 폴백) |
 | 알림 권한 다이얼로그 (진입 시) | `common/notification/notification_permission_prompt_flow.dart` | `나중에` 선택 시 `notificationPermissionLaterCount` +1, 최대 3회까지 재노출. `허용` 선택 시 `notificationPermissionPrompted=true` 후 재노출 없음(설정 화면 경유). 주문 접수 화면 denied 배너는 `prompted \|\| laterCount>0` 인 사용자에게만 노출 |
+| 내 매장 평가 조회 | `owner/reviews/owner_store_reviews_page.dart` (내 매장 > `리뷰 수` 지표 탭) | 고객과 같은 본문을 공유하되 **평균 점수를 함께 노출**(`showAverage`). 등급이 바뀌기까지 얼마나 남았는지 판단하기 위함. 평가 작성/수정/삭제 권한은 없음 (읽기 전용) |
 | 고객 모드 전환 | `owner/more/owner_more_page.dart` | `DowngradeToCustomerUseCase` |
 
-**핵심 진입점**: `OwnerScaffold` — 4탭 (내 매장 / 주문 접수 / 매출 / 더보기). "내 매장" / "주문 접수" / "매출" 탭 실구현.
+**핵심 진입점**: `OwnerScaffold` — 4탭 (내 매장 / 주문 접수 / 매출 / 더보기). **4탭 전부 실구현** (2026-10-22, `owner_sales` 완료로 placeholder 소멸).
 
 ### 4.3 brand
 
@@ -209,7 +211,7 @@ stateDiagram-v2
 
 | 항목 | 상태 |
 |---|---|
-| 리뷰 작성/평점 UI | **미구현** — `reviews` Rules 만 정의 |
+| 리뷰 작성/평점 UI | 구현 — `store_reviews` task (`docs/tasks/store_reviews/`). 등급 집계는 CF `onReviewWritten` 전담. 삭제 UI / 점주 답글 / 신고는 2차 범위 |
 | Qoin 적립 / 사용 | **미구현** — 컬렉션 미정의, `no_op_qoin_accrual_hook` placeholder 만 존재 |
 | 선물하기 (기프트카드/쿠폰) | **미구현** |
 | 매출 조회 (owner) | 구현 — `OwnerSalesPage` (`docs/tasks/owner_sales/`). admin 전체 매출은 **미구현** |

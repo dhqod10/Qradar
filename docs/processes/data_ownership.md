@@ -174,17 +174,25 @@
 
 ### 2.10 `reviews/{reviewId}`
 
-현재 안전한 기본값만 부여 (U-4 결정). 실제 리뷰 기능 도입 시 별 task 에서 보강 예정.
+`store_reviews` task 에서 Rules 를 **전면 교체**했다 (2026-10-22). 교체 전의 U-4 기본값은 필드 화이트리스트·자격 검증·중복 방지가 없어 `storeId` 변조와 무한 생성이 가능했다.
+
+**문서 ID 규약**: `{storeId}_{userId}`. create 시 Rules 가 ID 와 본문 `storeId`/`userId` 의 일치를 강제하므로 **1인 1매장 1표**가 구조적으로 보장된다. 재평가는 같은 문서의 update 로 흡수된다.
 
 | 작업 | 허용 |
 |---|---|
 | read | `isSignedIn()` |
-| create | `isSignedIn() AND request.userId == uid` |
-| update | `isSignedIn() AND resource.userId == uid` (본인 작성자만) |
+| create | 본인(`userId == uid()`) + 문서 ID 일치 + 필드 화이트리스트(`hasOnly` 7 / `hasAll` 6) + `grade`↔`score` 일치 + `createdAt == request.time` + 주문 자격 |
+| update | 본인 + `storeId`/`userId` 불변 + 화이트리스트(`hasOnly` 8 / `onlyChangedFields` 5) + `updatedAt == request.time` |
 | delete | `admin OR (isSignedIn() AND resource.userId == uid)` |
-| Cloud Function 전담 | 없음 |
+| **Cloud Function 전담** | **`stores.averageScore` / `stores.reviewCount` 갱신** (아래 참조) |
 
-⚠️ **미구현 UI**: 현재 리뷰 작성/조회 UI 자체가 없음. 평점/별점은 `stores` doc 의 `averageScore`, `reviewCount` 필드로 표시되지만 이를 갱신하는 로직 없음.
+**주문 자격 검증**: `orderId` 로 `get(orders/{orderId})` 하여 ① 본인 주문 ② `status == 'completed'` ③ 같은 매장을 확인한다. `get()` 은 `let` 바인딩으로 호출당 1회.
+
+**14일 작성 기한은 Rules 에 넣지 않았다** (D2-b). Phase 3c 이전 `completed` 주문에 `completedAt` 이 없어 null 분기가 필요하고, 그러면 기한이 무력화되거나 legacy 주문이 영구 차단된다. 기한은 보안 경계가 아닌 품질 정책이며, 1인 1표가 이미 조작 상한을 막는다. UI 에서만 강제한다.
+
+**`grade` ↔ `score` 비정규화**: `sum()` 집계 쿼리가 문자열을 합산할 수 없어 `score: int`(S=4/A=3/B=2/C=1)를 함께 저장한다. Rules 가 두 값의 일치를 강제하므로 `score` 단독 위조가 불가능하다.
+
+⚠️ **`stores` 는 고객이 직접 쓸 수 없다.** `stores` update 화이트리스트에 `averageScore`/`reviewCount` 가 없고, Rules 를 완화하면 점주가 자기 매장 평점을 조작할 수 있게 된다. 그래서 집계를 Cloud Function 에 전담시켰다 (`stores` 블록은 **변경하지 않았다**).
 
 ### 2.11 fallback
 
@@ -203,8 +211,12 @@
 | `processRefund` | owner | orderId, reason | Toss cancel API (전액) + `orders/{orderId}` update (status='refunded', refundInfo) | 동일 — PG + 권한 재검증 |
 | `verifyKakaoToken` | 비로그인 (Kakao OAuth 직후) | accessToken | Kakao API 호출 → Firebase Custom Token (`kakao_{kakaoUid}`) 발급 | Kakao OAuth → Firebase Auth 브릿지. 클라이언트가 Firebase Admin SDK 사용 불가 |
 | `verifyNaverToken` | 동일 | accessToken | 동일 (`naver_{naverUid}`) | 동일 |
+| `onReviewWritten` | customer (평가 작성·수정·삭제) | `reviews/{reviewId}` written 트리거 | 해당 `storeId` 의 리뷰를 `count()` + `sum('score')` 로 **전량 재계산**해 `stores.averageScore` / `reviewCount` **2필드만** overwrite | 1) 고객은 `stores` 를 쓸 권한이 없고, Rules 를 완화하면 **점주가 자기 평점을 조작**할 수 있다 2) 전량 재계산이라 멱등하고 시드 오염이 자기 치유되며, 수정·삭제가 생성과 같은 코드 경로를 타 **집계 보정 로직이 불필요**하다 |
 
 **규칙**: 결제 / 외부 OAuth / 다중 collection batch + 권한 재검증이 필요한 작업은 모두 Cloud Function.
+
+**추가 규칙 (2026-10-22, `store_reviews`)**: **A 가 쓴 문서로 B 소유 문서의 집계값을 갱신해야 하면 Cloud Function 이다.** Rules 를 완화해 B 에게 직접 쓰기를 허용하면 B 가 자기 통계를 조작할 수 있다.
+`onReviewWritten` 이 `stores.updatedAt`(점주 운영 필드)과 `grade`(파생 필드)를 건드리지 않는 것도 같은 이유 — **소유권 경계를 넘는 쓰기는 최소 필드로 제한**한다.
 
 ---
 
@@ -244,7 +256,7 @@ flowchart TD
 | `owner → brand` UI 미구현 (rules 는 허용) | UI 누락 | 점주가 추후 본사 전환 못함 |
 | `stores/{storeId}/menuItems` Rules 는 owner 도 write 허용, Repository 는 brand 매장은 brand only | Rules 가 느슨 | 점주가 SDK 직접 호출로 우회 가능성? |
 | `stores/{storeId}/menuOverrides` Rules 는 owner 도 핵심 필드 write 허용 | Rules 가 느슨 | 점주가 마스터 가격을 임의로 set 가능성? |
-| `reviews` Rules 만 있고 UI 없음 / `stores.averageScore`, `reviewCount` 갱신 경로 없음 | 미구현 | 통계 불일치 |
+| ~~`reviews` Rules 만 있고 UI 없음 / `stores.averageScore`, `reviewCount` 갱신 경로 없음~~ | **해소 (2026-10-22)** `store_reviews` task — Rules 전면 교체 + `onReviewWritten` CF 집계 | — |
 | `users/{uid}/favoriteStores`, `/favoriteMenuItems` admin read 권한 명시 안 됨 | 정책 모호 | admin 운영 시 favorites 통계 못 봄 |
 
 각 항목은 별도 spec.md 또는 추적 task 로 해결해야 한다.
