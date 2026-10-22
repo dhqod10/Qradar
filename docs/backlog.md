@@ -13,7 +13,6 @@ Phase 3c 완결 시점의 스냅샷. **문서가 아니라 코드를 읽어 작�
 
 | 화면 | 위치 | 비고 |
 |---|---|---|
-| 점주 매출 조회 | `owner_scaffold.dart:63` → `OwnerSalesPlaceholder` | 점주 4탭 중 1개가 통째로 빔. 데이터는 이미 존재 |
 | 고객 Qoin | `customer/qoin/qoin_page.dart:50` | Phase 4 Qoin 도메인으로 별도 분리 결정됨 |
 
 ### 진입점만 있고 동작 없음 (SnackBar `준비 중`)
@@ -112,10 +111,22 @@ Log 탭은 `lib/presentation/customer/log/orders_page.dart` (`OrdersPage`) 를 �
 `lib/presentation/owner/orders/owner_orders_page.dart` (`OwnerOrdersPage`).
 신규 / 조리 중 / 환불 요청 3탭, 접수·거절·조리 시작·준비 완료·픽업 완료 전이 전부 동작.
 
-### ⬜ 점주 매출 조회 — **미구현 (유일하게 탭에 연결된 placeholder)**
-`lib/presentation/owner/placeholders/owner_sales_placeholder.dart` 가 `owner_scaffold.dart:63` 에 **실제로 연결돼 있다.**
-점주 4개 탭 중 하나가 통째로 비어 있는 상태.
-필요: 시간대 / 일 / 월 / 연 / 카드사별 매출 통계. 데이터는 `orders` 컬렉션에 이미 쌓여 있어 집계만 하면 된다.
+### ✅ 점주 매출 조회 — 1차 구현 완료 (2026-10-22)
+`lib/presentation/owner/sales/` (`OwnerSalesPage`). placeholder 는 삭제됐고 **점주 4개 탭이 모두 실구현**됐다.
+일/주/월 요약(총 매출·주문 건수·평균 객단가) + 주문 목록 + 환불 주문일 기준 차감, 클라이언트 집계.
+문서: `docs/tasks/owner_sales/{spec,design,implementation,test_report}.md`
+남은 품질 항목은 아래 "owner_sales 후속", 2차 기능 범위는 "2차 범위 (S1~S6)" 참조.
+
+### ⬜ owner_sales 후속 (1차 완료 후 남은 품질 항목)
+
+출처: `docs/tasks/owner_sales/test_report.md` §Z-5.
+
+| # | 항목 | 비고 |
+|---|---|---|
+| Q1 | `isTruncated` 가 `>=` 판정이라 정확히 1,000건일 때도 경고가 뜬다 | 보수적 오탐이라 숫자가 틀리지는 않는다. 정확히 하려면 `limit + 1` 로 조회해 초과 여부를 판정 |
+| Q2 | provider·위젯 계약 테스트 0건 | 있었다면 F2(재시도 시 skeleton 미표시)를 정적으로 잡았다. N1 과 함께 처리 |
+| Q3 | `test_rules` 에 `orders` 시드 + R13~R18 추가 | 점주 자기 매장 allow / 타 매장 deny / `storeId` 조건 없는 쿼리 deny / 고객 deny / pending 매장 allow / 비로그인 deny |
+| Q4 | 오프라인·재시도 경로 라이브 미검증 | `Source.server` 로 수정했으나 눈으로 확인하지 못했다. Wi-Fi 차단이 가능한 환경에서 확인 |
 
 ### ⬜ `OrderRemoteDataSource.streamPaidByStore` 개명
 
@@ -134,6 +145,7 @@ owner_sales 설계 중 발견. **이번에는 개명하지 않았다** — 주�
 | S2 | **시간대별 분포 차트** | 차트 라이브러리 도입 여부를 함께 결정해야 한다 (현재 리포지토리에 차트 의존성 없음) | 라이브러리 선정 |
 | S3 | **카드사별 매출** | 1차 범위를 좁히기 위해 제외 | ~~PG 응답 저장 여부 확인~~ → **선행조건 해소 (2026-10-21)**. `PaymentInfoEntity` 에 `cardCompany` / `cardNumberMasked` / `easyPayProvider` 가 **이미 저장 중**임을 owner_sales 설계 중 실측 확인 |
 | S4 | **연 단위 / 기간 비교** (전월 대비 등) | 1차는 일/주/월까지. 비교 UI 는 별도 판단 | — |
+| S6 | **갱신 시각 표기 (`n분 전 기준`)** | `IndexedStack` + `get()` 1회라 오래된 숫자가 남을 수 있다. `StoreSalesEntity.fetchedAt` 추가가 필요한 spec 변경이라 1차 제외. **자정을 넘겨 앱을 켜 둔 경우 '오늘' 이 어제로 남는 한계도 같은 원인** | 라이브에서 체감 여부 확인 |
 | S5 | **Cloud Function 집계 문서** | 1차는 클라이언트 집계. 주문량이 늘어 읽기 비용이 문제될 때 전환 | 전환 기준 수치 정의 + 기존 주문 백필 |
 
 **S5 전환 시점 판단**: 클라이언트 집계는 조회 기간의 주문 수만큼 document read 가 발생한다. 단일 매장 기준으로는 충분하나, 월 주문 수가 수천 건대에 들어가거나 점주가 연 단위 조회를 요구하면 전환을 검토한다.

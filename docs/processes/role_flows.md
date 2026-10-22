@@ -145,12 +145,12 @@ stateDiagram-v2
 | 픽업 완료 (ready→completed) | `OwnerInProgressOrderTile` 픽업 완료 다이얼로그 | `MarkOrderCompletedUseCase` → `orders.update` O7 |
 | 환불 요청 거절 | `owner/orders/**` | `orders.update` (refundRequest.deniedAt 채움) |
 | 환불 요청 승인(전액 환불) | `owner/orders/**` | `processRefund` Cloud Function |
-| 매출 조회 | `owner/placeholders/owner_sales_placeholder.dart` | **미구현 (placeholder)** |
+| 매출 조회 | `owner/sales/owner_sales_page.dart` | 구현 — 일/주/월 기간별 총 매출·주문 건수·평균 객단가 + 주문 목록 (클라이언트 집계, 결제 성공 전체 포함·환불/취소 제외, KST 기준). 상세는 `docs/tasks/owner_sales/` |
 | 알림 설정 변경 | `common/notification/notification_settings_page.dart` (더보기 > 알림 설정) | `users/{uid}.notificationSettings` (`newOrder` / `refundRequest`), OS 권한 3-state, 명시 재요청 (앱 내 요청 먼저 → 실패 시 설정 앱 폴백) |
 | 알림 권한 다이얼로그 (진입 시) | `common/notification/notification_permission_prompt_flow.dart` | `나중에` 선택 시 `notificationPermissionLaterCount` +1, 최대 3회까지 재노출. `허용` 선택 시 `notificationPermissionPrompted=true` 후 재노출 없음(설정 화면 경유). 주문 접수 화면 denied 배너는 `prompted \|\| laterCount>0` 인 사용자에게만 노출 |
 | 고객 모드 전환 | `owner/more/owner_more_page.dart` | `DowngradeToCustomerUseCase` |
 
-**핵심 진입점**: `OwnerScaffold` — 4탭 (내 매장 / 주문 접수 / 매출 / 더보기). MVP 는 "내 매장" 탭만 실구현, 매출은 placeholder.
+**핵심 진입점**: `OwnerScaffold` — 4탭 (내 매장 / 주문 접수 / 매출 / 더보기). "내 매장" / "주문 접수" / "매출" 탭 실구현.
 
 ### 4.3 brand
 
@@ -212,7 +212,7 @@ stateDiagram-v2
 | 리뷰 작성/평점 UI | **미구현** — `reviews` Rules 만 정의 |
 | Qoin 적립 / 사용 | **미구현** — 컬렉션 미정의, `no_op_qoin_accrual_hook` placeholder 만 존재 |
 | 선물하기 (기프트카드/쿠폰) | **미구현** |
-| 매출 조회 (owner/admin) | **미구현** — `OwnerSalesPlaceholder` |
+| 매출 조회 (owner) | 구현 — `OwnerSalesPage` (`docs/tasks/owner_sales/`). admin 전체 매출은 **미구현** |
 | FCM 푸시 (주문 상태 변화) | **확인 필요** — `users.fcmToken` 필드는 Rules 허용, 실제 발송 로직 미확인 |
 | 회원 정지 / 탈퇴 (admin) | **미구현** — Rules `users.delete: if isAdmin()` 만 정의 |
 | 공지 / 배너 / 쿠폰 관리 (admin) | **미구현** |

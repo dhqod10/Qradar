@@ -6,7 +6,7 @@ import 'package:qradar/presentation/common/notification/notification_permission_
 import 'package:qradar/presentation/owner/more/owner_more_page.dart';
 import 'package:qradar/presentation/owner/my_store/my_store_page.dart';
 import 'package:qradar/presentation/owner/orders/owner_orders_page.dart';
-import 'package:qradar/presentation/owner/placeholders/owner_sales_placeholder.dart';
+import 'package:qradar/presentation/owner/sales/owner_sales_page.dart';
 
 final ownerTabIndexProvider =
     NotifierProvider<_OwnerTabNotifier, int>(_OwnerTabNotifier.new);
@@ -60,7 +60,7 @@ class _OwnerScaffoldState extends ConsumerState<OwnerScaffold> {
         children: const [
           MyStorePage(),
           OwnerOrdersPage(),
-          OwnerSalesPlaceholder(),
+          OwnerSalesPage(),
           OwnerMorePage(),
         ],
       ),

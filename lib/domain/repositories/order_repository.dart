@@ -18,6 +18,16 @@ abstract class OrderRepository {
     Set<OrderStatus>? statusFilter,
   });
 
+  /// 특정 매장의 [startInclusive, endExclusive) 기간 주문 1회 조회. createdAt 내림차순.
+  /// status 필터 없음 — 환불/취소 포함 전체 (집계는 UseCase 책임).
+  /// 권한 부족 시 `PermissionDeniedException`.
+  Future<List<OrderEntity>> getStoreOrdersInPeriod(
+    String storeId, {
+    required DateTime startInclusive,
+    required DateTime endExclusive,
+    int? limit,
+  });
+
   /// 특정 매장의 환불 요청 주문 stream (refundRequest != null && status != refunded).
   Stream<List<OrderEntity>> watchStoreRefundRequests(String storeId);
 

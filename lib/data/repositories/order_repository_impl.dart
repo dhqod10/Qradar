@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qradar/core/constants/sales_query_limits.dart';
 import 'package:qradar/data/datasources/remote/order_remote_data_source.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
@@ -49,6 +50,22 @@ class OrderRepositoryImpl implements OrderRepository {
         .streamRefundRequestsByStore(storeId)
         .map((models) =>
             models.map((m) => m.toEntity()).toList(growable: false));
+  }
+
+  @override
+  Future<List<OrderEntity>> getStoreOrdersInPeriod(
+    String storeId, {
+    required DateTime startInclusive,
+    required DateTime endExclusive,
+    int? limit,
+  }) async {
+    final models = await _ds.fetchByStoreInPeriod(
+      storeId,
+      startInclusive: startInclusive,
+      endExclusive: endExclusive,
+      limit: limit ?? SalesQueryLimits.maxDocumentsPerQuery,
+    );
+    return models.map((m) => m.toEntity()).toList(growable: false);
   }
 
   // ── 상태 전이 ────────────────────────────────────────────────────────────────
