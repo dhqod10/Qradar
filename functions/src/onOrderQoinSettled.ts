@@ -44,7 +44,17 @@ async function loadConfig(
     return null;
   }
   const rate = data.accrualRate;
-  if (typeof rate !== "number" || !Number.isFinite(rate) || rate < 0 || rate > 1) {
+  // 관리자 화면의 경계(0.1~20%)와 동일하게 서버에서도 막는다.
+  // CF 가 0..1 만 보면 Console 로 `0.5` 를 써 50% 적립이 가능해진다 — 화면 검증은
+  // 우회될 수 있으므로 돈을 발행하는 쪽에도 같은 경계가 있어야 한다.
+  const MIN_RATE = 0.001; // 0.1%
+  const MAX_RATE = 0.2; //  20%
+  if (
+    typeof rate !== "number" ||
+    !Number.isFinite(rate) ||
+    rate < MIN_RATE ||
+    rate > MAX_RATE
+  ) {
     console.error(`${LOG} skipped_invalid_rate: accrualRate invalid. orderId:`, orderId, "value:", rate);
     return null;
   }
@@ -161,6 +171,9 @@ export const onOrderQoinSettled = onDocumentUpdated(
           orderId,
           storeId: (after.storeId as string | undefined) ?? "",
           storeName: (after.storeName as string | undefined) ?? "",
+          // brandId 는 매장별/브랜드별 적립 비용 정산에 필요하다 (audit_trail.md §5).
+          // 나중에 추가하면 과거 원장에 값이 없어 소급 집계가 불가능하므로 지금부터 남긴다.
+          brandId: (after.brandId as string | undefined) ?? null,
           orderTotalPrice: total,
           accrualRate: config.accrualRate,
         },
@@ -193,6 +206,7 @@ export const onOrderQoinSettled = onDocumentUpdated(
         orderId,
         storeId: (earn.storeId as string | undefined) ?? (after.storeId as string | undefined) ?? "",
         storeName: (earn.storeName as string | undefined) ?? (after.storeName as string | undefined) ?? "",
+        brandId: (earn.brandId as string | undefined) ?? (after.brandId as string | undefined) ?? null,
         orderTotalPrice: earn.orderTotalPrice ?? 0,
         accrualRate: earn.accrualRate ?? 0,
       },

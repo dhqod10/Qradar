@@ -68,10 +68,16 @@ service cloud.firestore {
       // 가입 직후 self-create.
       // uid 가 자기 자신이고 role='customer' 인 doc 만 허용.
       // brandId 를 가입 시점에 임의 set 하는 것 차단.
+      //
+      // qoinBalance 차단: update 의 화이트리스트(isSelfProfileUpdate)는 create 에
+      // 적용되지 않는다. 막지 않으면 신규 계정이 처음부터 `qoinBalance: 999999` 로
+      // 문서를 만들 수 있고, CF 는 기존 잔액을 믿고 거기에 더하므로 그 값이 그대로
+      // 유효해진다. 2차(Qoin 사용)에서 곧바로 무한 Qoin 이 된다.
       allow create: if isSignedIn()
                     && uid() == userId
                     && request.resource.data.get('role', 'customer') == 'customer'
-                    && !('brandId' in request.resource.data);
+                    && !('brandId' in request.resource.data)
+                    && !('qoinBalance' in request.resource.data);
 
       // delete 는 admin 만
       allow delete: if isAdmin();

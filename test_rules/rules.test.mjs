@@ -264,6 +264,19 @@ await run('QR18 내역 쿼리 (createdAt desc limit 50)', 'allow', () =>
 await run('QR12 admin 이 qoinBalance update (§4.4 수용)', 'allow', () =>
   updateDoc(doc(asAdmin, 'users', CUSTOMER), { qoinBalance: 500 }));
 
+// ── 회귀: users self-create 로 qoinBalance 를 심는 경로 (F1) ──────────────
+// update 화이트리스트는 create 에 적용되지 않는다. 막지 않으면 신규 계정이
+// 처음부터 잔액을 들고 시작하고, CF 는 그 값을 믿고 더한다.
+const NEWBIE = 'newbieUid00000000000000000001';
+const asNewbie = env.authenticatedContext(NEWBIE).firestore();
+
+await run('F1 self-create 에 qoinBalance 포함', 'deny', () =>
+  setDoc(doc(asNewbie, 'users', NEWBIE),
+    { uid: NEWBIE, role: 'customer', qoinBalance: 999999 }));
+
+await run('F1 self-create (qoinBalance 없음)', 'allow', () =>
+  setDoc(doc(asNewbie, 'users', NEWBIE), { uid: NEWBIE, role: 'customer' }));
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {
