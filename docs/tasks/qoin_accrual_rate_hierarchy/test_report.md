@@ -1,5 +1,11 @@
 # Qoin 적립률 계층화 테스트 리포트
 
+> **1차 리포트(아래 "1차" 절)는 이력으로 보존한다.** 2차 검증(대상 커밋 `2caf3d3`)은 파일 맨 아래 "2차" 절에 있다. 1차 FAIL 6건의 종결 여부는 2차 절 §C 참조.
+
+---
+
+# 1차 (커밋 `9068fa9`) — 이력
+
 검증일 2026-10-22 / 대상 커밋 `9068fa9` (+ 백엔드는 `68ee77a` 에 선행 포함) / 기준 `spec.md` · `design.md` · `implementation.md` · `audit_trail.md` §4 · `data_ownership.md` · CLAUDE.md 절대 규칙
 
 결과 요약: **PASS 14 / FAIL 6 / 보류 3.** 자동 테스트(analyze, flutter 260, TS 50, Rules 163)는 구현자 보고를 신뢰하고 재실행하지 않았다. 대신 테스트가 보지 못하는 곳(실제 주문 경로, Rules 경로 독립 열거, 운영 시나리오)을 코드 추적과 에뮬레이터 임시 스크립트로 검증했다.
@@ -106,3 +112,176 @@
 1. F1 (주문 brandId — 서버가 store.brandId 를 신뢰원으로) — 배포 전 필수. 이대로 배포하면 브랜드 단계가 죽어 있고 클라이언트 지정 brandId 로 임의 브랜드 요율을 받을 수 있다.
 2. F2 + H-1 (덮어쓰기: 0% 보호와 매장별 기록) — 같이 설계하면 한 번에 닫힌다.
 3. F3, F4, F5, F6.
+
+
+---
+---
+
+# 2차 (커밋 `2caf3d3`)
+
+검증일 2026-10-22 / 기준 `spec.md` §20(+§20.3.1 개정판·§20.14) · `design.md` §18 개정 2·3 · `implementation.md` 개정 2 · `audit_trail.md` §4 · `data_ownership.md` §2.11/§3 · CLAUDE.md 절대 규칙
+
+**결과 요약: PASS 17 / FAIL 6 / 보류 1.** 돈이 새는 FAIL 은 없다. 배포를 막을 FAIL 도 없다(§ 마지막 "배포 판단"). 자동 테스트는 재실행하지 않았다(`flutter analyze` 만 확인: 이슈 0). 대신 **자동 테스트가 보지 못하는 곳**을 직접 재현했다: CF 에뮬레이터 임시 스크립트, Rules 에뮬레이터 임시 스크립트, 위젯 임시 테스트(저장소에는 남기지 않음, working tree 깨끗). 스크립트는 스크래치패드에 있다.
+
+## 검증 방법 (재현 가능)
+
+- CF 에뮬레이터: 스크래치패드 `cf_probe.mjs` 를 `cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 emulators:exec --only firestore,functions --project order-app-5957e "node <스크래치패드>/cf_probe.mjs q1,n4,race,partial,f2,f3"` 로 실행. 주문은 운영과 같은 `buildOrderData` 로 만들었다(손 시드 0).
+- Rules: 같은 방식으로 `rules_probe.cjs`(178 경우의 수, 5필드 × stores/brands × 4역할 × update/merge/deleteField/create + 추가 경로), `rules_probe2.cjs`, 구 Rules(`git show 30315fd:firestore.rules`) 대조.
+- Dart: 임시 위젯 테스트로 브랜드 편집 페이지를 pointer / history 가 어긋난 상태로 그려 확인 후 삭제.
+
+---
+
+## A. developer 자진 신고 3건 판정
+
+### A. 브랜드 편집 `이어서 적용` 배너 → **FAIL (S1)** — 1차 H-3 와 같은 패턴이 남아 있다, 그리고 더 나쁜 방향도 있다
+
+코드: 편집 페이지는 `qoinRateHistoryProvider(brand, limit 20)` 의 `asData?.value.where(isUnfinished).firstOrNull` 로 배너를 정한다. 허브·브랜드 목록 태그는 **브랜드 문서의 포인터**(`qoinBulkStatus`)를 쓴다. 같은 사실을 두 화면이 서로 다른 출처로 판정한다.
+
+**임시 위젯 테스트로 재현한 결과**
+
+| 상태 | 허브 | 브랜드 편집 페이지 |
+|---|---|---|
+| 포인터 `partial` + 이력 스트림 에러 | 배너 **보임** | 배너 **없음**, `이어서 적용` **없음**, 에러 표시도 **없음** (PROBE1: 제목 0 / 버튼 0 / 에러 0) |
+| 포인터 **없음**(완료됨) + 옛 이력이 `partial` 로 남음 | 배너 없음 | 배너 **보임 + `이어서 적용` 버튼** (PROBE3: 제목 1 / 버튼 1) → 누르면 서버가 `브랜드 값이 그 뒤에 변경됐어요` 로 거부 |
+
+1. **중단을 알리는 표면은 둘이 아니라 "알리는 곳 + 고치는 곳" 이다.** 허브는 알리기만 하고, 유일한 복구 버튼(`이어서 적용`)은 편집 페이지에만 있다. 허브 배너 탭 → 편집 페이지 → 아무것도 없음 = **막다른 길.** "둘 다 깨지면" 이 아니라 **한쪽(고치는 곳)만 깨져도** 중단은 알려지되 복구할 수 없다.
+2. **③~④ 구간 에뮬레이터 재현**: 구 Rules(`30315fd`)로 `admin` 이 `brands/{id}/qoinRateHistory` 를 읽으면 **거부**된다(`rules_probe` 의 "admin read brand history sub" 가 구 Rules 에서만 UNEXPECTED). 이 구간에서 편집 페이지는 PROBE1 상태와 같다 — 에러 문구조차 없다. 사용자는 "이력이 안 보이네" 가 아니라 "배너가 사라졌네 → 중단이 해결됐나?" 로 읽을 위험이 크다. 안전 측 실패가 아니다(1차 H-3 판정이 그대로 적용된다).
+3. 이력 20건 창 문제도 같은 뿌리다: 중단 뒤 단건 변경·스위치 변경이 20건 쌓이면 포인터는 `partial` 인데 편집 페이지 배너는 사라진다.
+4. 반대 방향(PROBE3)은 A 신고에 없던 **새 결함**이다: 중단 뒤 admin 이 폼에서 그냥 다시 적용(가장 자연스러운 복구)하면 새 이력이 `completed` 가 되고 포인터가 사라지지만 **옛 이력은 영구히 `partial`** 이라, 편집 페이지는 **거짓 경고 + 항상 실패하는 버튼**을 계속 보인다.
+- 재현 경로(designer/developer 가 고칠 때): 편집 페이지의 `unfinished` 를 **이력이 아니라 `brand.qoinBulkStatus/qoinBulkHistoryId` 포인터**로 판정하고, 배너 본문에 쓸 `processed/total` 은 `qoinBulkHistoryId` 로 이력 문서 1건을 읽어 채운다(이력 읽기가 실패하면 본문 숫자만 생략하고 배너·버튼은 유지). design §18-8 은 "허브만" 규정했으므로 design 에 편집 페이지 항목 추가가 선행된다.
+
+### B. F5(b) 동시 호출 → **FAIL (S3, Low-Medium)** — 잠금은 의도대로 동작하나, 신고된 불변식 자체가 사실이 아니다
+
+- **포인터 잠금은 정상**: 지연 150ms 로 겹친 호출은 `FAILED_PRECONDITION 이 브랜드에 일괄 적용이 진행 중이에요` 로 거부됐다(스크래치패드 `race` 2번째 케이스). 1차에 지적한 "`running` 조회가 트랜잭션 밖" 은 **닫혔다**(검사가 트랜잭션 안에서 브랜드 문서 read 와 함께 직렬화).
+- **하지만 거부가 안 나오는 구간이 있다**: 스캔(`scanStores`)이 트랜잭션 **밖**이라, 첫 호출이 끝난 뒤에 트랜잭션에 도달한 호출은 (a) 포인터는 이미 지워져 있고 (b) 브랜드 값이 같으니 `sameValue` (c) **오래된 스캔의 `withOverride=1500 > 0`** 이라 "할 일 있음" 으로 판단해 **빈 이력을 새로 만든다.**
+- **에뮬레이터 실측 (1500곳, 3동시)**: 응답 3개 모두 `changed=true`, `completed`. **브랜드 이력 3건**: `cleared=1500/total=1500` 1건 + `cleared=0/total=1500/processed=0` 2건. developer 의 단언은 `clearedCount>0` 인 이력만 세므로 "이력 1건" 이 통과한다. 신고의 "불변식(브랜드 이력 1건)" 은 **틀렸다**. 매장 이력 1500건 중복 0 · 이중 보고 0 은 맞다(결정적 ID 덕).
+- 다른 타이밍(60곳, 지연 300ms/800ms/2500ms)에서는 `changed=false` noop 이 나왔고 이력은 1건이다. 즉 "거부 / noop / 빈 이력 생성" 이 타이밍에 따라 섞인다.
+- **noop 이 화면에 무엇으로 보이나**: Dart 어디에서도 `changed` 를 읽지 않는다(grep: `presentation`·`usecases` 에서 소비 0). 결과 카드는 `status == completed` 만 보고 **"적용을 마쳤어요 / 새 적립률 6% / 적용된 매장 0곳 · 초기화된 개별 설정 0곳"** 을 그린다. 이미 같은 값이라 아무것도 안 했다는 사실은 어디에도 없다. "적용했는데 0곳" 으로 읽힌다 — 사용자 질문 기준상 그 자체로 결함.
+- 돈 영향 0(빈 이력은 숫자만 지저분). 이력 화면에 "개별 설정 1500곳 중 0곳" 행이 추가되어 감사 기록이 오독된다.
+- 수정 방향: 트랜잭션 안에서 `sameValue` 일 때 포인터의 `qoinBulkHistoryId`/완료 시각이 스캔 시작 이후면 noop 처리하거나, `changed=false` 를 결과 카드가 `이미 같은 값이에요` 로 말하게 한다.
+
+### C. Dart 가 CF 응답을 파싱하는 경로 → **PASS (읽기 대조) / 실기기 확인은 보류 1건**
+
+| 대상 | CF 가 보내는 형태 (코드+에뮬레이터 실응답) | Dart 파싱 | 판정 |
+|---|---|---|---|
+| 레거시 가드 `details` | `{legacyZeroCount: 1, storeIds: ["…"]}` (에뮬레이터 응답으로 직접 확인, F2 스크립트에서 의도치 않게 발생) | `QoinCallable._fromFunctionsException`: `d is Map` → `d['legacyZeroCount'] is num` → `storeIds is List` → `whereType<String>()`. Android 의 `Map<Object?,Object?>` 도 통과 | 형태 일치. `classify('failed-precondition')` = rejected → `failure()` 가 `isLegacyZeroGuard` 를 먼저 본다 |
+| 마이그레이션 `raw` | `describeRaw`: 문자열 `"3"` → `"\"3\""`(따옴표 포함 JSON), 숫자 `0.5` → `0.5`, NaN → `NaN`, 부재 → `(absent)` | `parse`: `e['raw']?.toString()`, 카드 `_raw`: `"` 로 시작하면 그대로, 숫자로 파싱되면 그대로 | 일치. **사소한 불일치**: bool `true` / 배열 / 객체는 숫자가 아니라 따옴표가 한 번 더 붙어 `"true"` 로 보인다(타입 표시 취지에 어긋남, 표시 오류, 낮음) |
+| 포인터 `qoinBulkStatus` | `"in_progress"` / `"partial"` (Firestore 문자열) | `QoinBulkStatus.fromCode` 의 `code` 가 정확히 같은 두 문자열, `BrandModel.fromFirestore` 단위 테스트 있음 | 일치 |
+| 일괄 적용 응답 | `status:"completed"`, 카운트 전부 number | `n(k)` = `(num).toInt()`, `status` 없으면 `partial` 로 폴백 | 일치 (폴백이 안전 측) |
+| `partial` 마감 시 | `HttpsError("internal")` | `classify('internal')` → `unknownOutcome` → "결과를 알 수 없어요" 문구 | 서버는 상태를 알지만 화면은 "알 수 없음". 중단은 허브/포인터가 알리므로 허용. S1 이 고쳐져야 의미가 있다 |
+
+- **자동 테스트 공백**: `_fromFunctionsException` 은 private 이라 `details` 파싱을 직접 부르는 테스트가 없다(`qoin_rate_models_test` 는 포인터·모델만). 읽기 대조로는 맞다.
+- **보류 1건**: 실기기에서 `FirebaseFunctionsException.details` 가 `Map` 으로 오는지(플러그인이 `additionalData` 를 넘기는 경로)는 에뮬레이터/위젯 테스트로 확인 불가. 배포 ②~③ 후 앱에서 확인: 레거시 `qoinAccrualRate: 0` 인 매장이 하나 있는 브랜드에서 일괄 적용 실행 → "레거시 0% 매장이 있어요 (N곳)" 문구가 뜨면 PASS, 일반 실패 문구가 뜨면 `details` 가 안 넘어온 것. 조작: 앱 admin → Qoin 설정 → 브랜드별 적립률 → 해당 브랜드 → 값 입력 → `덮어쓰고 적용`. 로컬 빌드는 `cd /Users/Byeonguk/Developer/OrderApp && flutter run -d <device-id>`.
+
+---
+
+## B. developer "설계 문제" 4건 판정
+
+1. **레거시 0 가드에 브랜드 자신의 0 포함 → 타당 (PASS).** 브랜드 값 0(= 사실상 꺼짐)을 숫자로 덮으면 산하 전체 적립이 재개된다 — Q1 이 막으려던 바로 그 사고다. spec 이 산하 매장만 언급한 것은 누락이다. 단 **구멍 하나**: `setQoinAccrualRate`(단건)는 같은 가드가 없다. 레거시 0 브랜드에 단건 callable 로 `rate` 를 쓰면 가드 없이 전체 적립이 재개된다. 앱 UI 는 브랜드 쓰기를 항상 `applyBrandQoinRate` 로 보내므로 UI 경로는 안전하고 admin 직접 호출만 해당(낮음). spec 에 "브랜드 자신 포함" 을 명시하고 마이그레이션 완료 뒤엔 어차피 삭제되는 코드다.
+2. **옛 `partial` 이 영구히 `partial` → 운영상 문제다 (FAIL S1/S2).** 위 PROBE3(거짓 배너+실패 버튼)이 직접 결과다. 추가로 에뮬레이터(`partial` 시나리오)에서 확인한 것:
+   - (i) `partial` 뒤 새 overwrite: 포인터 해제, **옛 이력 `partial` 유지**, 옛 이력 재개 → `FAILED_PRECONDITION`.
+   - (ii) `partial` 뒤 **preserve** 적용: 브랜드 값이 바뀌었는데 **포인터가 `partial/옛 id` 로 남는다.** 허브가 계속 "끝나지 않은 일괄 적용" 을 띄우고, 재개는 항상 거부된다.
+   - (iii) `partial` 뒤 `setQoinAccrualRate`(브랜드 단건), (iv) `setQoinAccrualEnabled`(브랜드): 둘 다 성공하고 포인터는 `partial` 로 남는다 → 허브 경고 영구화.
+   - 탈출구는 **값이 달라지는 overwrite 적용**(또는 남은 개별 설정이 있는 같은 값 overwrite). 개별 설정이 하나도 안 남았고 같은 값이면 noop 이라 **포인터를 지울 방법이 없다**(`sameValue && withOverride==0` → 아무것도 안 함).
+   - 수정 방향: 포인터를 쓰는 모든 CF 경로(새 apply 시작, 단건 변경)에서 옛 이력을 `superseded` 로 마감하거나, 포인터를 해제하는 admin 동작(`중단 기록 닫기`)을 둔다. spec 에 추가 규정이 필요하다.
+3. **`enabledChangedAt` 미강제 → 안전 측이라는 설명은 반만 맞다 (PASS, 사유 정정).** 직접 Rules 에뮬레이터로 확인:
+   - 시각 위조(`enabledChangedAt` 을 2020년으로)는 **허용**되지만 무해하다: 이력의 `changedAt` 은 `serverTimestamp`, 행위자는 `enabledChangedBy == uid()` 로 사칭 불가.
+   - **실제 틈은 위조가 아니라 "생략"이다**: admin 이 `enabledChangedBy` 만 쓰고 `enabledChangedAt` 을 안 쓰면 허용되고 이력은 `source:'direct', changedBy:null` 로 **행위자가 지워진다**. 같은 admin 이 이전에 토글했다면 `enabledChangedBy` 조차 안 써도 통과한다(`enabled` 만 단독 update 허용, 이전 uid 와 같으므로). 에뮬레이터 실측: 앱형 토글 → `app_direct`+uid, Console형 → `direct`/null, 행위자 생략형 → `direct`/null.
+   - 앱은 항상 둘 다 쓰므로 정상 경로는 안전. 수정은 Rules 한 줄: `enabled` 변경 시 `request.resource.data.enabledChangedAt == request.time` 요구. 우선순위 낮음, 배포 막지 않음.
+4. **일괄 완료 화면의 K 줄 숨김을 form 섹션에도 → 과하지 않다 (PASS).** 사실 확인: form 의 K 줄(`qoin_rate_edit_form.dart` L474 `s.disabled > 0 && !brandSwitch.isDisabled`)은 "어느 쪽을 골라도 적립이 시작되지 않아요" 라는 문장이며, 브랜드가 꺼져 있으면 산하 **전체**가 멈추므로 K 줄은 부분 사실이 되어 전체 정지 plate 와 모순된다. design §18 이 다이얼로그/결과 카드에서 같은 이유로 숨기라 했으므로 같은 규칙의 일관된 확장이다. 단 design 에 한 줄 추가해 문서와 코드를 맞출 것(문서 후행).
+
+---
+
+## C. 1차 FAIL 6건 종결 여부
+
+| 1차 | 판정 | 근거 |
+|---|---|---|
+| F1 | **닫힘 (PASS)** | 주문 문서를 쓰는 곳은 `emulator.test.mjs` L91 하나이고 `buildOrderData` 산출물이다(`orderOverrides` 는 스푸핑용 명시 덧씌우기뿐). `verifyTossPayment` 는 `buildOrderData(data.cart…)`, brandId 는 항상 null, 신뢰원은 `stores.brandId`. T2 골든(Dart `cartToMap` 키 = TS `CONSUMED_CART_KEYS`)이 양쪽을 고정. 내 스크립트도 `buildOrderData` 로 주문을 만들어 브랜드 `source:'brand'` 500 적립 확인 |
+| F2 | **닫힘 (PASS)** | 450곳 개별 설정(유효 449 + 무효 `"abc"` 1) 덮어쓰기: 매장 이력에 `op:clearByBulk`, `before`, `beforeState`, `beforeRaw`(무효는 `"abc"`), `bulkHistoryId`, `changedBy`=실행 admin uid, `source:'bulk'`. 개별 설정 없는 매장(455번)은 이력 0. CHUNK 225×2 write = 450 ≤ 500 으로 460곳(2청크) 통과. 브랜드 이력에 `clearedValueCount`/`clearedInvalidCount`. 레거시 0 이 섞이면 가드가 막는다(의도) |
+| F3 | **닫힘 (PASS, 단 위 B-3 의 생략 틈)** | 앱 토글(`enabledChangedBy`+`At` 갱신) → `app_direct`+uid, Console 편집/At 미갱신 → `direct`/null 로 **실제 구별**됨(에뮬레이터 트리거) |
+| F4 | **닫힘 (PASS)** | 내 Rules 프로브: 점주 delete(개별 설정+스위치 있는 매장) 허용, 같은 ID 재생성(`pending`) 허용, 두 필드 포함 재생성 거부. 하네스 F4a/F4b/F4c/F4c2/F4c3 가 정확히 이 경로를 때리고 시드가 `qoinAccrualRate`+`qoinAccrualEnabled:false` 를 함께 가져 "스위치도 제거되어 적립 사용으로 복귀" 가 반영됐다 |
+| F5 | **부분 (FAIL S3)** | (a) 재개 재검증 닫힘: 값 변경·포인터 불일치 거부 확인. (c) 진행 중 단건·스위치 거부는 developer 시드 테스트로 확인. **(b) 위 B** |
+| F6 | **부분 (FAIL S5)** | §2.11 은 구현과 대체로 일치하나 아래 드리프트가 남음 |
+
+---
+
+## D. 핵심 회귀 (직접 재현)
+
+- **Q1 PASS**: 브랜드 2%, 매장 4곳(`off`=10% 개별+스위치 off, `offnr`=스위치 off, `ov`=10% 개별, `pl`=없음). 브랜드 5% overwrite → `clearedCount=2, disabledUntouchedCount=2`. 주문 결과: `off` 적립 **없음**(스위치 `false` 유지, 개별 설정만 삭제), `offnr` 없음, `ov` **500 `source:brand`**, `pl` 500. 스위치는 일괄 적용이 쓰지 않는다.
+- **N4 PASS**: 브랜드 5%, 매장 개별 10% → 먼저 1000 적립(`source:store`). 브랜드 스위치 off 후 같은 매장 주문 → 적립 **없음**, `qoinSettlementIssues` **미기록**. 환불 → `clawback -1000` **통과**(잔액 0). 매장 스위치 off + 브랜드 on + 매장 개별 10% → 적립 없음.
+- **사슬 순서·진리표**: developer 확인을 신뢰(사슬 줄 단위 동일, R06 반전).
+
+## E. Rules 20경로 독립 열거 (처음부터 다시)
+
+보호 필드 5개(`qoinAccrualRate`, `qoinAccrualEnabled`, `qoinBulkHistoryId`, `qoinBulkStatus`, `qoinBulkAt`) × `{stores, brands}` × `{create, update}` = **20 경로**. 코드 읽기로 20 이 맞음을 확인하고 에뮬레이터로 4역할(admin/owner/brand/customer) × `update` / `setDoc(merge)` / `deleteField` / `create` = 160 + 추가 경로를 쏘았다. 보호 필드 값 변경·추가·삭제·full-replace(`set` 으로 필드 누락)·dotted(`qoinAccrualRate.x`)·`config` 의 `accrualRate`/삭제·`qoinSettlementIssues` 쓰기 **전부 거부**. 25건이 "예상 밖" 으로 찍혔으나 전부 **문서에 없는 필드에 대한 `deleteField`(diff 없음, no-op)** 라 쓰기가 아니다(프로브 설계상 허위 양성).
+
+**20 은 맞다. 보호 필드 쓰기 경로의 21번째는 없다.** 다만 "돈의 계수를 결정하는 입력" 으로 범위를 넓히면 **두 경로가 더 있다**:
+
+1. **`stores.brandId` 자가 지정 (create)** — 1차 F1 수정으로 `stores.brandId` 가 금액 신뢰원이 됐는데, 점주의 `stores` create 는 `brandId` 를 검사하지 않는다. 에뮬레이터: 점주가 `brandId:'bA'`(임의 브랜드) 인 `pending` 매장 생성 **ALLOWED**. update 로 `brandId` 변경은 거부(점주·브랜드 모두). 완화 요소: admin 승인 필요 + 승인 상세 화면이 `BrandScopeBadge` 를 표시한다. 하네스에 이 케이스 없음.
+2. **자가 `brand` 역할 + 임의 `brandId` → 모든 브랜드/가맹점 Qoin 이력 열람** — 에뮬레이터: `customer` 가 `users/{self}` 에 `{role:'brand', brandId:'bX'}`(허용된 자가 전이) 후 `brands/bX/qoinRateHistory` 와 가맹점 `stores/sX/qoinRateHistory` **읽기 ALLOWED**. `isBrandHolder` 는 `role==brand && users.brandId==brandId` 만 보고 브랜드 승인/소유를 확인하지 않는다. 이력에는 admin uid(`changedBy`)·자유 입력 `reason`·요율 변경 전/후가 있다. 하네스 RH20 은 고정 시드 사용자만 써서 이 경로를 못 잡는다. (users 규칙은 이번 변경 범위 밖의 기존 구멍이지만, 이번에 만든 이력 데이터가 그 위에 올라탔다.)
+
+## F. 과도기 자산 (`TRANSITIONAL(spec §20.4.5)`)
+
+마커가 붙은 파일은 **21개**(코드 20 + `implementation.md`)이고 일괄 삭제 가능한 형태로 모여 있다. 단 **마커 없이 레거시 분기를 가진 파일이 있다**: `lib/presentation/admin/qoin/widgets/qoin_rate_chain.dart`(L120 `setting.isLegacyZero`), `lib/presentation/common/widgets/qoin/qoin_reenable_hint.dart`(L58·64·93·97), `lib/data/models/qoin_config_model.dart`(L24), 테스트 `functions/test/emulator.test.mjs`(섹션 I·`expectOf`), `test/data/qoin_rate_models_test.dart`, `test/presentation/qoin_hub_states_test.dart`, 픽스처 `test_fixtures/qoin_rate_truth_table.json`(`resolve_legacy`, `transitionalExpect` — JSON 이라 주석 불가). 마커 grep 으로만 정리하면 이 파일들이 삭제된 `isLegacyZero`/`QoinRateCellKind.legacyZero` 를 참조해 **컴파일이 깨진다**(조용히 남지는 않음). 가드 테스트(`qoin_architecture_guard_test`)는 3개 파일만 확인한다.
+
+---
+
+## FAIL
+
+### S1. [Medium] 브랜드 편집 페이지의 중단 배너가 이력 스트림에 의존 — 허브와 판정 출처가 다르다
+위 §A 참조. 재현 경로: (1) admin 이 일괄 적용 중 중단을 만든다(포인터 `partial`). (2) ③~④ 구간이거나 이력 읽기가 실패하면 허브는 "끝나지 않은 일괄 적용이 있어요" 를 보이고, 탭하면 도착한 편집 페이지에 배너·버튼·에러가 모두 없다. (3) 반대로 중단 후 폼에서 다시 적용해 완료시키면 허브는 깨끗하지만 편집 페이지는 영구히 "일부 매장에는 아직 적용되지 않았어요 / 이어서 적용" 을 보이고 버튼은 항상 실패한다. 증거: 임시 위젯 테스트 PROBE1/PROBE3.
+
+### S2. [Medium-Low] 중단 포인터/이력 수명주기 — 포인터를 지울 수 없는 상태가 있다
+위 §B-2. 재현 경로: 포인터 `partial` 상태에서 admin 이 (a) 브랜드 단건 변경, (b) 스위치 토글, (c) preserve 적용 중 하나를 하면 포인터는 `partial/옛 id` 로 남고 허브 경고가 영구화된다. 재개는 항상 `FAILED_PRECONDITION`(문구는 "다시 적용하세요" 로 안내되지만 같은 값 + 남은 개별 설정 0 이면 noop 이라 지울 수 없다). 옛 `partial` 이력은 새 적용 후에도 영구 `partial`. spec 에 규정이 없다 → architect 결정 필요.
+
+### S3. [Low-Medium] F5(b): 스캔이 트랜잭션 밖 → 빈 이력 생성, noop 이 "0곳 적용" 으로 보임
+위 §B. 재현: 1500곳 브랜드에 같은 값 overwrite 를 3동시 호출 → 이력 3건(실제 1 + 빈 2, 응답 모두 `changed:true`). 결과 카드는 `changed` 를 읽지 않아 noop 도 "적용을 마쳤어요 · 적용된 매장 0곳".
+
+### S4. [Medium] Rules: 금액 입력 신뢰원(`stores.brandId`)의 자가 지정 + 자가 `brand` 역할로 이력 열람
+위 §E. 재현 경로: (1) 점주 계정이 SDK 로 `{ownerId:self, status:'pending', brandId:<고효율 브랜드>}` 매장을 생성 → admin 승인 시 해당 브랜드 요율을 상속(승인 화면에 브랜드 배지는 보인다). (2) 임의 사용자가 `users/{self}` 를 `{role:'brand', brandId:<아무 브랜드>}` 로 바꾸면 그 브랜드와 가맹점의 Qoin 이력(admin uid·reason)을 읽는다. 둘 다 돈이 직접 새지는 않는다(1은 admin 승인 필요).
+
+### S5. [Low] `data_ownership.md` 드리프트 (1차 F6 부분 해소)
+- L119·L219 가 존재하지 않는 함수명(`hasQoinRateOnCreate()`, `touchesQoinRate()`)을 가리킨다(실제 `hasQoinManagedOnCreate()`/`touchesQoinManaged()`, `grep` 으로 Rules 에 구명 0건 확인).
+- L118·L121·L159 의 stores/brands 행이 `qoinAccrualRate` 만 말하고 `qoinAccrualEnabled`/`qoinBulk*` 가 빠져 있다. 포인터 3필드의 의미·작성자(`applyBrandQoinRate` 만)·읽는 쪽(허브·목록)을 설명하는 곳이 없다.
+- §2.11.5 제목이 "설계 확정 / 미구현" 인데 구현됐다. 같은 절의 `skipped_rate_zero` 는 코드에서 삭제됨.
+- L120 "재생성 `pending` → admin 재승인 전까지 주문·적립 불가" 는 서버가 보증하지 않는다: `verifyTossPayment` 는 `stores` 를 읽지 않고(grep 0) 적립 트리거도 `status` 를 보지 않는다. UI 에서만 막힌다.
+
+### S6. [Low] 과도기 자산 마커가 불완전 — 정리 커밋 grep 에서 누락되는 파일 7+개
+위 §F. 가드 테스트가 3개만 확인.
+
+---
+
+## PASS (2차)
+
+1. C 파싱 3건(레거시 details / 마이그레이션 raw / 포인터 상태) 형태 일치(§A-C). 
+2. F1~F4 종결(§C 표).
+3. Q1 핵심 회귀 재현 통과(§D).
+4. N4 핵심 + 환불 회수 통과 재현(§D).
+5. 포인터 잠금: 겹친 호출 거부 확인, `running` 조회는 트랜잭션 안으로 이동해 닫힘.
+6. 재개 재검증(값 변경/포인터 불일치 거부), 거부 시 매장 불변.
+7. Rules 보호 필드 20경로 전부 거부(독립 열거).
+8. 설계 의문 1(브랜드 레거시 0 포함) 타당, 4(K 줄) 타당, 3(`enabledChangedAt`) 수용 가능(사유 정정).
+9. 허브 3상태(로딩/에러/없음)는 이력이 에러여도 포인터로 정상 동작(PROBE2: 배너 표시).
+10. 앱 → `verifyTossPayment` → 주문 → 적립 경로가 `buildOrderData` 를 공유하고 손 시드 주문 0건.
+11. `flutter analyze` 이슈 0 (직접 확인). 
+12. 절대 규칙: presentation·domain Firebase import 신규 0, `Color(0x` 신규 0 (developer 확인 신뢰, `flutter analyze` 클린).
+13. 매장별 `clearByBulk` 이력이 원인 추적에 충분(before/beforeState/beforeRaw/bulkHistoryId/uid).
+14. 앱 토글/Console 구별(F3).
+15. 전역 비상 정지 `enabled` 의 Rules 가 타 admin uid 사칭을 거부.
+16. `config/qoin` `accrualRate` 쓰기·삭제, `qoinSettlementIssues` 쓰기 전면 거부.
+17. 환불 회수는 스위치와 무관하게 통과 (회수 경로가 스위치를 읽지 않음).
+
+## 보류
+
+- H-A. 실기기에서 `FirebaseFunctionsException.details` 가 `Map` 으로 도착하는지(레거시 가드 문구가 뜨는지). 확인 방법은 §A-C 보류 항목.
+
+## 우선순위 제안
+
+1. S1 (+ design §18-8 에 편집 페이지 항목 추가) — 배포 전 수정 권장이나 필수 아님.
+2. S2 — architect 규정 먼저(포인터 수명주기).
+3. S4 — Rules 한두 줄(`stores` create 에서 점주는 `brandId` 금지, `isBrandHolder` 에 브랜드 승인/소유 확인) + 하네스 케이스 추가. 사용자 판단 필요(users 규칙 변경이라 영향 범위가 큼).
+4. S3, S5, S6.
+
+## 배포 판단
+
+돈이 새거나 고객 적립이 틀어지는 FAIL 은 **없다.** 배포를 막는 FAIL 도 없다. 단 ③~④ 구간에서는 S1 때문에 편집 페이지에 이력 에러조차 표시되지 않으니, 배포 절차의 "③ 직후 이력 화면이 권한 오류" 고지에 "브랜드 편집 페이지의 중단 배너도 보이지 않는다" 를 추가하고 ④ 를 ③ 직후에 올릴 것(spec §20.11 의 기존 권고).
