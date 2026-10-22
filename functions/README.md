@@ -175,3 +175,24 @@ region 을 변경하려면:
 | `failed-precondition` | 상태 불일치 (이미 cancelled 인데 cancel 요청 등) |
 | `not-found` | 주문 / 매장 문서 없음 |
 | `internal` | Toss API 호출 실패 |
+
+---
+
+## Qoin 적립률 테스트 (결제 0회, 실 Firestore 접촉 0)
+
+| 대상 | 실행 (모두 `functions/` 에서) | 환경 |
+|---|---|---|
+| 단위 (경계 상수 · 계층 해석 진리표) | `cd /Users/Byeonguk/Developer/OrderApp/functions && npm test` | 불필요 |
+| CF 에뮬레이터 (트리거 · callable · 일괄 적용 · read 수 실측) | `cd /Users/Byeonguk/Developer/OrderApp/functions && npm run test:emulator` | JDK 17+ |
+
+- 진리표는 `test_fixtures/qoin_rate_truth_table.json` — Dart 테스트(`test/domain/qoin_rate_resolution_test.dart`)도 같은 파일을 읽는다.
+- `npm run test:emulator` 는 `tsc` 빌드 후 `firebase emulators:exec --only firestore,functions` 로 `test/emulator.test.mjs` 를 실행한다 (포트는 루트 `firebase.json` 의 `emulators`).
+- 에뮬레이터는 Firestore **인덱스를 강제하지 않는다.** 통과가 인덱스 존재의 증거가 아니다.
+- 적립 발화는 `orders` 를 `ready` 로 만든 뒤 `completed` 로 **수정**해야 한다 (`onDocumentUpdated`).
+
+| 함수 | 타입 | 역할 |
+|---|---|---|
+| `onOrderQoinSettled` | onDocumentUpdated | 적립/회수. 적립률은 계층 해석(매장 → 브랜드 → 전역) |
+| `setQoinAccrualRate` | onCall (admin) | 한 범위의 적립률 설정 + 이력 (같은 트랜잭션) |
+| `applyBrandQoinRate` | onCall (admin) | 브랜드 값 설정 + 산하 매장 개별 설정 처리 (보존/덮어쓰기, 재개 가능) |
+| `onQoinConfigWritten` | onDocumentWritten | `config/qoin` 직접 수정(Console · 비상 정지 토글) 이력 기록 |

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/domain/entities/qoin_rate_scope.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_info_row.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
@@ -74,6 +77,11 @@ class _BrandInfoContent extends StatelessWidget {
             delegate: SliverChildListDelegate([
               _BrandCard(brand: brand),
               const SizedBox(height: 16),
+              // 승인된 브랜드에서만: 승인 전·반려 브랜드는 아직 적립이 일어나지 않는다.
+              if (brand.status == EntityApprovalStatus.approved) ...[
+                _QoinRateCard(brand: brand),
+                const SizedBox(height: 16),
+              ],
               _SubmitInfoSection(brand: brand),
               if (brand.status == EntityApprovalStatus.rejected) ...[
                 const SizedBox(height: 16),
@@ -258,6 +266,37 @@ class _BrandKeyRow extends StatelessWidget {
           style: TextStyle(fontSize: 13, color: AppColors.textMuted),
         ),
       ],
+    );
+  }
+}
+
+/// Qoin 적립률 — 읽기 전용 카드. 이 화면 AppBar 의 `수정` 은 브랜드 정보 수정이라 적립률과 무관하다.
+/// 혼동을 막기 위해 이 카드에는 어떤 수정 어피던스도 두지 않는다.
+class _QoinRateCard extends StatelessWidget {
+  final BrandEntity brand;
+  const _QoinRateCard({required this.brand});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: QoinBrandRateInfo(
+        brand: brand,
+        onOpenHistory: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => QoinRateHistoryPage(
+              scope: QoinRateScope.brand,
+              targetId: brand.id,
+              targetName: brand.name,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

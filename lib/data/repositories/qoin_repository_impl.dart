@@ -20,8 +20,5 @@ class QoinRepositoryImpl implements QoinRepository, QoinConfigAdminRepository {
   Stream<QoinConfigEntity?> watchConfig() => _ds.watchConfig();
 
   @override
-  Future<void> saveAccrualRate(double rate) => _ds.saveAccrualRate(rate);
-
-  @override
   Future<void> setEnabled(bool enabled) => _ds.setEnabled(enabled);
 }

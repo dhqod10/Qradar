@@ -1,0 +1,263 @@
+# Qoin 적립률 계층화 구현 내역
+
+기준: `spec.md` (§17 전건 확정), `design.md` (+ **맨 끝 "잔여 결정 확정 (2026-10-22)" 우선**), `docs/tasks/qoin/{implementation,test_report}.md` (1차 F1~F3), `docs/processes/audit_trail.md` §4.
+
+실결제 0회. 배포는 하지 않았다 (사용자 배포 명령은 아래 §배포).
+
+---
+
+## 1. 구현 완료 항목
+
+| 영역 | 내용 |
+|---|---|
+| 해석 | 매장 → 브랜드 → 전역. **무효 값은 상위로 폴백하지 않고 멈춘다.** 필드 부재 = 상속 / `0` = 명시적 적립 중단. CF(TS)·클라이언트(Dart) 각 1곳 |
+| CF | `onOrderQoinSettled` 교체 (계층 읽기는 earn 분기 안 `getAll` 1 라운드트립), `setQoinAccrualRate`, `applyBrandQoinRate`, `onQoinConfigWritten` 신규 |
+| 원장 | `accrualRateSource` (`'store'｜'brand'｜'global'`) 추가 — **배포 전이라 과거 원장 소급 문제 없음.** clawback 은 earn 문서에서 상속 |
+| Rules | 적립률 쓰기 경로 12개 전수 차단 (admin 전권 분기 · create 포함), 이력 서브컬렉션 3종 + collection-group 블록 |
+| Dart | 4값(`QoinRateSetting`) · 해석(`resolveEffectiveQoinRate`) · 엔티티/모델/Repository/UseCase/DataSource · provider 공용 위치로 이동 |
+| 화면 | 관리자 7화면(허브·전역·브랜드 목록/편집·매장 목록/편집·이력), 점주·브랜드 읽기 행 3곳 + 이력 화면, 고객 plate 숫자 제거 |
+| 이력(H7) | 값과 이력을 **같은 트랜잭션**에 기록. 일괄 적용은 1건 + 서버가 센 영향 수·덮어쓰기 여부 |
+| 테스트 | Rules 하네스 163건, CF 에뮬레이터 42건(저장소에 커밋 가능한 스크립트), TS 단위 50건, Dart 260건 |
+
+---
+
+## 2. 변경 파일
+
+### 인프라 (배포 필요)
+
+| 파일 | 변경 |
+|---|---|
+| `firestore.rules` | **수정**: `touchesQoinRate()` / `hasQoinRateOnCreate()` 헬퍼 추가. `stores` update(`!touchesQoinRate()` 를 **최상위 조건**으로 — admin 전권 포함 3분기 모두) · create, `brands` update · create(admin 포함), `config/{docId}` (create: `accrualRate` 금지 / update: `accrualRate` 변경 금지, `enabled` 허용 / **delete 금지**). **신규**: `config/qoin/qoinRateHistory`, `brands/{id}/qoinRateHistory`, `stores/{id}/qoinRateHistory`, `{path=**}/qoinRateHistory`(collection group, admin read 만). 이력 쓰기는 전부 `if false` (admin 도 불가) |
+| `firestore.indexes.json` | `qoinRateHistory.changedAt` fieldOverride (COLLECTION + **COLLECTION_GROUP** ASC/DESC) 추가 — §6 인덱스 실측 참조 |
+| `firebase.json` | `emulators.functions` (포트 5137) 추가 |
+| `functions/src/qoinRate.ts` | **신규.** TS 경계 상수의 유일한 출처 (`MIN_RATE`/`MAX_RATE`/`BULK_STALE_MS`), `classifyRate`, `resolveEffectiveRate`, `isValidCallableRate`, `computeEarnAmount` — 순수 함수 |
+| `functions/src/qoinAdmin.ts` | **신규.** admin 서버 재검증(`users/{uid}.role === 'admin'`), `parseReason`, 이력 컬렉션 헬퍼 |
+| `functions/src/onOrderQoinSettled.ts` | `loadConfig` → kill switch 판정만 (적립률 검증 분리), earn 분기에서 계층 해석, `accrualRateSource` 기록, `skipped_rate_zero` / `skipped_invalid_store` / `skipped_invalid_rate: invalid_{store｜brand｜global}` 로그. `MIN_RATE`/`MAX_RATE` 로컬 선언 삭제 |
+| `functions/src/setQoinAccrualRate.ts` | **신규** onCall |
+| `functions/src/applyBrandQoinRate.ts` | **신규** onCall (timeout 540s) |
+| `functions/src/onQoinConfigWritten.ts` | **신규** onDocumentWritten `config/{docId}` (docId=`qoin` 만 처리) |
+| `functions/src/index.ts` | export 3줄 |
+| `functions/package.json` | `test`, `test:emulator` 스크립트 |
+| `functions/test/qoinRate.test.mjs` | **신규** TS 단위 (50건) |
+| `functions/test/emulator.test.mjs` | **신규** CF 에뮬레이터 (42건) — 저장소에 둔다 (1차 test_report ⑧ 해소) |
+| `test_fixtures/qoin_rate_truth_table.json` | **신규** Dart·TS 가 같이 읽는 진리표 (resolve 20행 / classify 14 / callable 13) |
+| `test_rules/rules.test.mjs` | 기존 73건 유지(2건 의미 변경, §5) + RH 90건 신규 |
+
+### Core / Domain / Data
+
+| 레이어 | 파일 |
+|---|---|
+| core | `utils/qoin_policy.dart` (확장: `isValidRate`, `isValidCallableRate`, `explicitOffRate`, `bulkStaleAfter`, `historyPageSize`, `reasonMaxLength`), **신규** `utils/qoin_rate_resolver.dart` (`QoinRateSetting` 4값, `QoinRateSource`, `EffectiveQoinRate`, `resolveEffectiveQoinRate`), **신규** `errors/qoin_rate_exception.dart`, `constants/firestore_paths.dart` (이력 경로/필드 키) |
+| domain | **신규** `qoin_rate_scope.dart`, `qoin_rate_change_entity.dart`(+freezed), `qoin_rate_results.dart`, `repositories/qoin_rate_repository.dart`, UseCase 4 (`set_qoin_accrual_rate`, `apply_brand_qoin_rate`, `watch_qoin_rate_history`, `watch_all_qoin_rate_history`). **수정** `StoreEntity`/`BrandEntity` (`qoinAccrualRate`), `QoinConfigEntity` (`accrualRateSetting`), `QoinConfigAdminRepository` (`saveAccrualRate` 제거). **삭제** `save_qoin_accrual_rate_use_case.dart` |
+| data | **신규** `qoin_rate_remote_data_source.dart` (callable 2 + 이력 쿼리 — 적립률 관련 Firebase 직접 사용의 전부), `qoin_rate_change_model.dart`, `qoin_rate_repository_impl.dart`. **수정** `StoreModel`/`BrandModel` (읽기 추가, **쓰기 맵에는 넣지 않음**), `QoinConfigModel` (경계를 `QoinPolicy` 로 — 아래 ② 참조), `qoin_remote_data_source.dart`/`qoin_repository_impl.dart` (`saveAccrualRate` 삭제) |
+
+### Presentation
+
+| 위치 | 파일 |
+|---|---|
+| `common/providers/` | `qoin_di_providers.dart` (customer 에서 **이동**, 적립률 DI 추가), `qoin_config_providers.dart` (`qoinConfigProvider` 이동), `qoin_rate_providers.dart` (이력 · 유효 적립률 · 변경자 이름) |
+| `common/widgets/qoin/` | `qoin_rate_labels.dart` (`QoinRateLabels`/`QoinRateBadgeKind`/`QoinRateValueLabel`/`QoinScopeLabel`/`QoinScopeIcons`), `qoin_rate_source_badge.dart` (+`QoinRateValueText`), `qoin_rate_info_row.dart` (block/summary/tile + 래퍼 2), `qoin_rate_history_tile.dart`, `qoin_rate_history_list.dart`, `qoin_rate_history_page.dart` (+`QoinHistoryFooter`), `qoin_partial_banner.dart`, `qoin_load_error.dart` |
+| `admin/qoin/widgets/` | `qoin_rate_input_field`, `qoin_rate_preview`, `qoin_dialog_shell`, `qoin_kill_switch_card`, `qoin_current_rate_card`, `qoin_scope_band`, `qoin_rate_chain`, `qoin_rate_confirm_dialog`, `qoin_rate_edit_form`, `qoin_bulk_resume`, `qoin_filter_chip`, `qoin_admin_ui` |
+| `admin/qoin/` | `admin_qoin_settings_page` (**허브로 교체**), `admin_qoin_global_rate_page`, `admin_qoin_brand_rates_page`, `admin_qoin_brand_rate_edit_page`, `admin_qoin_store_rates_page`, `admin_qoin_store_rate_edit_page`, `admin_qoin_rate_history_page`, `providers/qoin_admin_providers.dart` |
+| 수정 | `admin/more/admin_more_page.dart` (부제 `전역 기본값 3% · 적립 중`), `owner/my_store/my_store_page.dart` (`_StoreInfoSection` 에 읽기 행), `brand/brand_info/brand_info_page.dart` (승인된 브랜드에 카드 1개), `brand/stores/brand_stores_page.dart` (타일에 행 1개), `customer/qoin/widgets/qoin_balance_card.dart` (문구 교체, `비율 모름` 분기 삭제), `customer/qoin/providers/qoin_providers.dart` (config provider 이동) |
+
+1차 `admin_qoin_settings_page.dart` 는 design §13 추출 표대로 **분해 후 재사용**했다: `_LoadError`→`QoinLoadError`, `_RateField`→`QoinRateInputField`(동작 그대로), `_RatePreview`→`QoinRatePreview`, `_dialog`→`QoinDialogShell`, `_CurrentConfigCard`→`QoinCurrentRateCard`, `_EnabledSwitchCard`+켜기/끄기 다이얼로그→`QoinKillSwitchCard`(문구 변경 없음, 캡션만 추가), `_RateChangeDialog`→`QoinRateConfirmDialog`(확장).
+
+---
+
+## 3. 데이터 모델 · 계약
+
+```
+config/qoin                 accrualRate(전역, 0 불가) / enabled
+brands/{id}.qoinAccrualRate 부재=전역 상속 / 0=적립 안 함 / 0.001~0.2
+stores/{id}.qoinAccrualRate 부재=상위 상속 / 0=적립 안 함 / 0.001~0.2
+
+{config/qoin | brands/{id} | stores/{id}}/qoinRateHistory/{autoId}
+  scope targetId targetName(D9 박제) field(accrualRate|enabled) before after
+  changedBy changedByRole changedAt reason source(callable|bulk|direct) op(set|clear|bulkApply)
+  [bulkApply] bulkMode status(in_progress|completed|partial)
+              affectedCount clearedCount preservedCount processedCount totalCount lastProgressAt
+
+users/{uid}/qoinTransactions/{txId}  + accrualRateSource('store'|'brand'|'global'; 과거 원장/옛 earn 상속분은 null)
+```
+
+- `setQoinAccrualRate({scope, targetId?, rate | clear:true, reason?})` → `{before, after, historyId, changed}`. rate/clear 정확히 하나, 전역은 `0`·`clear` 불가. **같은 값이면 아무것도 쓰지 않는다** (결과 불명 후 재시도해도 중복 이력 없음).
+- `applyBrandQoinRate({brandId, rate | clear:true, mode, reason?, resumeHistoryId?})`. preserve 는 1 트랜잭션에서 값 + `completed` 이력까지 한 번에 쓴다. overwrite 는 **이력 선기록(in_progress) + 브랜드 값 1 write = 한 트랜잭션 → 개별 설정 ≤450건 청크 삭제 → 마감**. 실패 시 `partial` + `HttpsError('internal')`. 진행 중(최근 5분 이내 갱신) 이력이 있으면 새 시작 거부(`failed-precondition`). `isStale` 5분은 `BULK_STALE_MS` / `QoinPolicy.bulkStaleAfter` 각 1곳.
+- 일괄 적용 수치 의미 (design 잔여 결정 7): `affectedCount` = 새 값을 따르게 된 매장 수 (preserve: N−M, overwrite: N), `clearedCount` = 지운 개별 설정 수, `preservedCount` = 유지된 개별 설정 수, `totalCount` = 시작 시 개별 설정 매장 수(partial 배너의 "T곳 중 P곳"). 단일 브랜드 값 쓰기도 `op: bulkApply` 로 남긴다.
+- `onQoinConfigWritten`: `accrualRate`/`enabled` 변경 필드마다 1건. callable 이 방금 남긴 이력(`source:callable`, after 일치, 이벤트 시각 ±2분)이 있으면 skip, 아니면 `source:direct`, `changedBy:null`. 문서 ID `direct_{eventId}_{field}` 로 이벤트 재전달 중복 방지. 문서 삭제도 기록한다.
+
+---
+
+## 4. 1차 결함 재발 방지 — 어떻게 막았나
+
+### ① F1 — 쓰기 경로 전수 (spec §9 의 12경로)
+
+| 경로 | 차단 위치 | 하네스 |
+|---|---|---|
+| P1 customer/owner/brand `stores` update | `allow update: if !touchesQoinRate() && (…)` | RH1, RH1b, RH1c, RH1d, RH2 |
+| P2 owner `stores` create | `&& !hasQoinRateOnCreate()` | RH4 (+RH4b 회귀) |
+| P3 brand `stores` create | 같음 (+ owner 전용 규칙) | RH4c, RH4d(admin) |
+| P4 brand/admin `brands` update·create | `!touchesQoinRate()` / `!hasQoinRateOnCreate()` | RH6b, RH6c, RH7, RH7b (+RH7c/7d/8/8b 회귀) |
+| **P5 admin 전권 분기** `stores`/`brands` update | 최상위 조건이라 **전권도 예외 없음** | RH3, RH3b, RH3c, RH6 |
+| **P6 admin `config` update·delete** | `accrualRate` 변경 금지, delete 금지 | RH9, RH9b, RH9c, RH9d, RH11c (+RH10 enabled 허용) |
+| **P7 admin `config` create** | `accrualRate` 포함 금지 | RH11 (+RH11b 회귀) |
+| P8/P9 callable 2종 | admin 서버 재검증 + 경계 검증 + 이력 동일 트랜잭션 | CF 에뮬레이터 CH19~CH24 |
+| P10 `onOrderQoinSettled` | 읽기만 | 코드 |
+| P11 Console / Admin SDK | Rules 로 막을 수 없음 — `config/qoin` 은 트리거가 `direct` 로 기록, `stores`/`brands` 는 **감시 없음(N6, 2차)** | CH26 |
+| P12 `qoinRateHistory` 직접 쓰기 | 전부 `if false` | RH13~15 (3범위 × 4역할 × create/update/delete = 36건) |
+
+**변이 검증**: 보호 조건을 일부러 제거하고 하네스를 돌려 해당 케이스가 FAIL 하는 것을 확인했다 (stores update 보호 제거 → RH3/3b/3c FAIL, create 보호 제거 → RH4/7/7b/11 FAIL, brands/config update·delete 보호 제거 → RH6/6b/6c/9/9b/9c/9d/11c FAIL). 복원 후 163/163.
+
+### ② F3 — 경계는 양쪽에, 상수는 각 1곳
+
+- Dart: `QoinPolicy.minTenths/maxTenths` 1곳. TS: `functions/src/qoinRate.ts` `MIN_RATE/MAX_RATE` 1곳. `onOrderQoinSettled` 의 로컬 선언 삭제.
+- **같은 진리표** `test_fixtures/qoin_rate_truth_table.json` 을 `test/domain/qoin_rate_resolution_test.dart` 와 `functions/test/qoinRate.test.mjs` 가 읽는다. CF 에뮬레이터 스크립트도 같은 JSON 으로 resolve 20행을 **end-to-end**(실제 트리거)로 돌린다.
+- **Dart 쪽 F3 도 발견·수정**: 1차 `QoinConfigModel` 이 전역 적립률을 `0..1` 로 검증하고 있었다 (CF 는 0.001~0.2). 지금은 `QoinRateSetting.fromRaw` → `QoinPolicy` 경계 (전역은 0 도 무효). 회귀 테스트 `qoin_rate_models_test.dart`.
+- 자동 가드: Dart `qoin_architecture_guard_test.dart` (`minTenths` 선언 1곳), TS `qoinRate.test.mjs` (`MIN_RATE=` 선언 1곳 + 다른 파일에 `0.001`/`0.2` 리터럴 0건).
+
+### ③ F2 교훈 — `accrualRateSource`
+
+배포 전에 원장에 넣었다 (earn: 해석 결과, clawback: earn 상속). CH18 에서 실측.
+
+---
+
+## 5. 검증 결과 (전부 직접 실행)
+
+| 항목 | 결과 |
+|---|---|
+| `flutter analyze` | **No issues found** |
+| `flutter test` | **260건 전건 PASS** (1차 129 → +131: 해석 진리표 · UseCase · 모델 · 폼 위젯 19 · 읽기 행 11 · 관리자 화면 스모크 13 · 구조 가드 8) |
+| `functions` `npm run build` (tsc) | 통과 |
+| `functions` `npm test` | 50/50 PASS |
+| **Rules 하네스** (`cd test_rules && npm test`) | **163/163 PASS** = 기존 73 + 신규 RH 90. 기존 73건 중 **71건은 무변경 PASS, 2건(QR16, QR16b)은 의도된 의미 변경**: 1차는 "admin 이 `config/qoin` 에 `accrualRate` 쓰기/신규 문서 create 허용" 이었으나 spec §8 에 따라 `accrualRate` 는 거부, `enabled` 만 허용으로 바꿨다 (케이스도 `enabled` 쓰기 / `accrualRate` 없는 create 로 수정) |
+| **CF 에뮬레이터** (`cd functions && npm run test:emulator`) | **42/42 PASS** — 저장소에 스크립트 포함, `firebase.json` 에 functions 에뮬레이터 설정 추가 |
+
+### CF 에뮬레이터 케이스 (spec §15.2 대응)
+
+| ID | 검증 | 결과 |
+|---|---|---|
+| CH1~CH10 (+확장 R11~R20) | 진리표 20행 end-to-end (적립액 / `accrualRate` / `accrualRateSource` / INVALID 중단) | PASS |
+| CH11 / 11b / 11c | **매장 0% · 브랜드 0% · 전역이 깨져도(0.5) 환불 회수는 정상** + 같은 매장 새 주문은 적립 안 됨 | PASS |
+| CH12 | `enabled=false` → 적립·회수 모두 중단 (1차 회귀) | PASS |
+| CH13 / CH14 | 매장 문서 없음 → 상속 / `storeId=''` → 중단 | PASS |
+| CH16 | **read 수 실측** (아래) | PASS |
+| CH17 / CH18 | 멱등 / 원장 `brandId`·`accrualRateSource` | PASS |
+| CH19~CH21 | non-admin `permission-denied`, 비로그인 `unauthenticated`, 서버 경계(0.5/0.0005/-1/"3"/1/0.0305/null → `invalid-argument`), 전역 0·clear 거부, 값+이력 동시 생성(`before` 정확, `status`/`updatedAt` 불변), 같은 값 재호출 no-op | PASS |
+| CH22 / 22b | 일괄 preserve (브랜드 값 1 write, 개별 설정 보존, 이력 1건), 입력 검증·권한·없는 브랜드(이력 0) | PASS |
+| CH23 | 일괄 overwrite **매장 600곳** — 청크 처리, `affected 600 / cleared 200`, 이력 1건 | PASS |
+| CH24 | 중단 후 `resumeHistoryId` 재개 — 멱등, 이력 1건 유지, completed 마감, 완료/진행 중 이력 재개 거부, 동시 시작 거부 | PASS |
+| CH25 | 일괄 적용 **중** 폴링 108회 — override 없는 매장은 `옛 브랜드 값 → 새 값` 만, override 매장은 `자기 값 → 새 값` 만 관측. **전역/옛 값으로 떨어진 관측 0** | PASS |
+| CH26 / CH27 / 27b | Admin SDK 직접 write → `source:direct` 1건, callable 직후 트리거 발화에도 중복 없음, 전역 최초 생성 이력 2건 | PASS |
+
+### CH16 read 수 실측 (Firestore SDK 요청을 직접 센 값)
+
+| 경로 | 문서 read | `batchGet` 왕복 | 계층 읽기 |
+|---|---|---|---|
+| earn (브랜드 소속) | **5** (config 1 + store 1 + brand 1 + 가드 1 + users 1) | 4 | `getAll` **1 라운드트립** |
+| earn (개인 매장) | **4** | 4 | 〃 |
+| clawback | **4** (1차와 동일) | 4 | **0** |
+
+spec §1.6 의 "적립 4~5 / 회수 4" 와 일치.
+
+---
+
+## 6. 인덱스 실측 결과 (⑧)
+
+**결론: admin 이력 화면의 `collectionGroup('qoinRateHistory') orderBy changedAt` 는 단일 필드 collection-group 인덱스가 필요하고, 자동 생성되지 않는다 → `firestore.indexes.json` 의 `fieldOverrides` 에 추가했다. 이 인덱스는 배포해야 한다.** 그 외 복합 인덱스는 쓰지 않도록 설계를 줄였다.
+
+근거 (측정한 것 / 못 한 것을 구분한다):
+
+| 사실 | 방법 | 결과 |
+|---|---|---|
+| 에뮬레이터는 인덱스를 강제하지 않는다 | 1차 test_report ⑧ + 이번에도 RH23 / CH 이력 쿼리가 통과 | **통과는 근거가 아니다** (같은 함정) |
+| 운영에 배포된 인덱스 | `firebase firestore:indexes --project order-app-5957e` (**읽기 전용** 조회) | 11개 composite + 2개 fieldOverride(`menuItems.mainCategory`/`subCategoryId`). **`qoinRateHistory` 관련 항목 0건** |
+| collection-group 단일 필드 인덱스가 자동인가 | 운영 설정 선례: `menuItems.mainCategory` 는 collection-group 쿼리를 위해 `fieldOverrides` 로 `COLLECTION_GROUP` 인덱스를 **명시 추가**해야 했다 (자동이었다면 override 가 필요 없다) | 자동 아님 (Firestore 규칙: collection-scope 단일 필드만 자동) |
+| 운영에서 실제 쿼리 프로브 | **수행하지 않음** (배포 금지 + 1차에 운영 프로브가 권한 분류기에 막힌 전례). 따라서 위 결론은 "문서화된 규칙 + 프로젝트 선례" 에 근거한 것이지 운영 실행 결과가 아니다 | **배포 후 admin 이력 화면이 `failed-precondition` 없이 뜨는지로 최종 확인 필요** |
+
+설계를 줄인 부분 (복합 인덱스 회피, design D10 "불가하면 축소"):
+
+- **허브 partial 배너 · 브랜드 목록의 `적용 중단됨` 태그 · 이력 필터(전역/브랜드/매장/미완료)** 는 `where status …` 서버 쿼리를 쓰지 않는다. **최근 이력 페이지(50건) 안에서 클라이언트가 판정**한다. 따라서 가장 최근 50건 밖으로 밀려난 `partial` 은 허브에서 보이지 않는다 (브랜드 편집 화면은 그 브랜드의 최근 20건을 직접 조회하므로 보인다 — 브랜드 서브컬렉션 쿼리는 자동 인덱스).
+- 서버 쿼리를 쓰는 곳이 모두 자동 인덱스 범위인지 점검: 대상별 이력 `orderBy changedAt desc limit` (collection scope, 자동), `histCol.where('status','==','in_progress')` (단일 필드 동등, 자동), CF 의 `stores where brandId ==` (동등 단독 + 기본 문서 ID 정렬 + `startAfter` — 에뮬레이터가 못 잡는 함정을 피하려고 **명시적 `orderBy(documentId)` 를 제거**했다), 트리거의 `orderBy changedAt desc limit 10` (자동).
+- 인덱스 배포 전에 새 admin 이력 화면을 열면 일반 에러 뷰(`이력을 불러오지 못했어요`)가 뜬다 (인덱스 오류 문자열은 노출하지 않음).
+
+---
+
+## 7. 사용자 배포 명령 (순서 중요)
+
+배포는 하지 않았다.
+
+```
+# 1) 인덱스 (collection-group 인덱스는 빌드에 시간이 걸린다. 가장 먼저)
+cd /Users/Byeonguk/Developer/OrderApp && npx firebase-tools deploy --only firestore:indexes
+
+# 2) Cloud Functions — Rules 보다 먼저 (callable 이 살아 있어야 새 앱이 적립률을 저장할 수 있다)
+cd /Users/Byeonguk/Developer/OrderApp/functions && npm run build && cd /Users/Byeonguk/Developer/OrderApp && npx firebase-tools deploy --only functions:onOrderQoinSettled,functions:setQoinAccrualRate,functions:applyBrandQoinRate,functions:onQoinConfigWritten
+
+# 3) Rules — 이 시점부터 1차 앱(admin 이 적립률을 직접 쓰던 버전)의 적립률 저장은 거부된다
+cd /Users/Byeonguk/Developer/OrderApp && npx firebase-tools deploy --only firestore:rules
+
+# 4) 앱 빌드/배포 (새 admin 화면은 callable 로 저장)
+```
+
+- 마이그레이션/백필 **불필요**: `config/qoin` 은 그대로 전역 기본값, `stores`/`brands` 필드는 부재 = 상속.
+- 순서가 틀려도 데이터가 깨지지는 않는다: (2) 전에 앱이 callable 을 부르면 `not-found`, (3) 후 구앱의 직접 쓰기는 `permission-denied`. 어느 쪽도 "적립률이 이력 없이 바뀌는" 방향은 아니다.
+- `onOrderQoinSettled` 새 버전은 필드가 없는 기존 데이터에서 1차와 동일하게 동작한다 (`source:'global'`).
+
+---
+
+## 8. 테스트 포인트 (tester)
+
+### grep / 자동 확인
+
+| 확인 | 명령 / 위치 |
+|---|---|
+| 경계 상수 중복 선언 0건 | `grep -rn "minTenths\|maxTenths" lib/ \| grep "static const"` → `qoin_policy.dart` 1곳. `grep -rn "MIN_RATE\|MAX_RATE" functions/src` → 선언은 `qoinRate.ts` 1곳. 자동: `qoin_architecture_guard_test.dart`, `qoinRate.test.mjs` 마지막 케이스 |
+| 검증 문구가 공용 2파일에만 | `grep -rn "이상 입력해주세요\|까지 입력할 수 있어요\|소수 첫째 자리\|2배 이상이거나" lib/` → `qoin_rate_input_field.dart`, `qoin_rate_confirm_dialog.dart` 만 (**리터럴 `0.1% 이상` 은 `${QoinPolicy.minPercentLabel}%` 보간이라 grep 하면 안 잡힌다**) |
+| 범위 페이지가 `validateRateInput` 직접 호출 0 | `grep -rn "validateRateInput" lib/presentation` → `qoin_rate_input_field.dart` 만 |
+| Firebase import | `grep -rn "package:cloud_firestore\|package:cloud_functions\|package:firebase_" lib/presentation lib/domain` → 0건 (`cloud_functions_remote_data_source.dart` 같은 **파일명** 매칭은 패키지 import 가 아니다) |
+| `Color(0x` | `grep -rn "Color(0x" lib/presentation/admin/qoin lib/presentation/common/widgets/qoin` → 0건 |
+| 쓰기 맵에 `qoinAccrualRate` 0 | `grep -rn "'qoinAccrualRate'" lib/data` → 0건 (`FirestorePaths.qoinAccrualRateField` 상수로 **읽기만**) |
+
+### 수동 UI (spec §15.4, 실결제 0회 — Console 로 `ready` → `completed` **수정**)
+
+MH1~MH16 그대로. 특히:
+
+- MH4+MH5: 매장을 `적립 안 함` 으로 둔 뒤 환불 → **회수는 된다.** (CF 에뮬레이터 CH11 로 검증됐으나 라이브 확인 필요)
+- MH6/MH7: 전역·브랜드·매장 3범위에서 `0.03` / `30` 차단, 확인 다이얼로그 첫 줄에 범위+대상명.
+- MH8/MH9: 일괄 적용 보존/덮어쓰기. 덮어쓰기 확인에 **영향 수 / 적립 안 함 N곳 재활성 / 재설정 안내**가 보이고 체크 전 버튼 비활성.
+- 로딩 중 `0%`/이전 값이 그려지지 않는지 (네트워크 지연 상태에서 허브·목록·점주 화면).
+- 점주·브랜드 화면에 **입력란/수정 버튼/값 chevron 없음** (읽기 행 11건 + 구조 테스트로 자동 확인됨).
+- 허브 partial 배너와 `이어서 적용`: 실제 중단 재현은 어렵다 → Console 에서 이력 문서를 `status:'partial'` 로 편집해 확인 (CF 재개 로직 자체는 CH24 로 검증).
+- 인덱스 배포 후 admin `변경 이력` 이 에러 없이 뜨는지 (§6).
+
+### 내가 확인하지 못한 것
+
+- 실기기/에뮬레이터 UI 육안 검증은 하지 않았다 (위젯 테스트 + 관리자 화면 스모크 13건까지). 스크린리더 라벨 실청취 미수행.
+- 운영 Firestore 인덱스 프로브 미수행 (§6).
+
+---
+
+## 9. design / spec 대비 차이 · 판단
+
+1. **`QoinRateSetting`(4값) 을 엔티티 필드로**: spec 은 `StoreEntity.qoinAccrualRate: double?` 였으나 `double?` 은 부재 / 무효 / 0 을 구분하지 못한다 (작업 지시 ⑤). `QoinConfigEntity` 는 기존 `accrualRate: double?` 를 유지하고 `accrualRateSetting` 을 추가했다 (기존 사용처 무수정).
+2. **`WatchEffectiveQoinRateUseCase` 를 만들지 않았다**: 3스트림 결합은 Riverpod `AsyncValue` 합성이 로딩/에러 전파("3소스 모두 준비 전엔 숫자 금지")를 가장 직접 표현한다. 해석 규칙 자체는 순수 함수(`resolveEffectiveQoinRate`)라 테스트 가능하다. providers: `effectiveStoreQoinRateProvider`, `effectiveBrandQoinRateProvider`, 목록용 `resolveStoreQoinRate`.
+3. **`QoinPartialBanner`, `QoinLoadError` 를 `common/widgets/qoin/` 에 둠** (design 은 `admin/qoin/widgets/`): 공용 이력 타일이 배너를 품고 이력 화면(점주·브랜드)이 에러 뷰를 쓰므로, `common → admin` import 를 만들지 않으려고 옮겼다. 구조 가드 테스트가 `common` 의 admin import 0건을 확인한다.
+4. **이력 스키마 추가 필드**: `targetName`(D9 박제), `totalCount`, `preservedCount`, `lastProgressAt`. 전역 최초 생성 시 `enabled` 이력도 함께 남겨 `onQoinConfigWritten` 의 가짜 `direct` 이력을 막는다.
+5. **callable 은 0.1% 격자(tenths 정수 배수)도 검증**한다 (`0.0305` 거부). 적립 시점 검증(`classifyRate`)은 범위만 본다 (Console 값은 격자 밖이어도 범위 안이면 그대로 쓴다 — 기존 동작).
+6. **`config/qoin` delete 금지**: 삭제도 `accrualRate` 소멸 경로다. 1차에는 admin delete 가 열려 있었다. Console 삭제는 트리거가 `direct` 로 기록한다.
+7. **회수 경로가 전역 적립률 유효성에 더 이상 의존하지 않는다**: 1차 `loadConfig` 는 전역 적립률이 무효면 회수도 막았다. 이제 kill switch(`enabled`)만 회수를 멈춘다 — 전역 값이 깨져도 환불 회수는 돼야 돈이 새지 않는다 (CH11c).
+8. **허브 `전역 기본값` 버튼 문구**: 문서가 없을 때만 `전역 기본값 설정하기`.
+9. 점주 읽기 행은 `pending`/`rejected` 매장에도 보인다 (`_StoreInfoSection` 이 모든 상태에서 쓰이고 admin 이 승인 전에 미리 정할 수 있으므로). 브랜드 정보 카드는 design 대로 승인된 브랜드에서만.
+10. `이력` 의 변경자 이름은 admin 에게만 `users` 문서에서 조회(uid 당 1구독), 실패 시 `관리자 {uid 끝4}` (D9). 점주·브랜드에게는 항상 `관리자`.
+
+---
+
+## 10. 미구현 · 보류 · 알려진 한계
+
+- **N6**: `stores`/`brands` 적립률의 Console 직접 편집은 감시하지 않는다 (spec 확정 한계). `enabled` 토글의 행위자는 알 수 없다(`changedBy:null`, U3 확정).
+- **허브 partial 배너 축소 동작** (§6): 최근 50건 밖의 `partial` 은 허브/브랜드 목록에서 안 보인다. 브랜드 편집·해당 이력에서는 보인다.
+- **backlog 후속**: 덮어쓰기가 `적립 안 함` 매장을 다시 적립하게 만든다 — 이번엔 확인 다이얼로그에 알리는 것까지 (`docs/backlog.md` 에 후속 과제로 기록됨, 계층화 라이브 검증 때 결정).
+- `in_progress` 가 CF 타임아웃(540s)으로 끊긴 경우 서버는 마감하지 못하고 5분 후 클라이언트가 `partial` 취급한다 (재개 가능).
+- 문서 갱신(`backlog.md` 완료 처리, `data_ownership.md` §2.5/2.7/§3, `audit_trail.md` §3 A1 해소, `role_flows.md`)은 하지 않았다 — architect 후속.
+- 위젯/스모크 테스트 외 실기기 검증(MH1~MH16) 미수행.
+- 임시 파일 · `--target` 빌드 없음. `dart format` 은 **신규 파일 + 전면 교체한 허브 페이지만 개별 지정**했고, 수정한 기존 파일은 포맷하지 않았다 (디렉터리 전체 실행 없음).

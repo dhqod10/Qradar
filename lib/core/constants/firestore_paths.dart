@@ -115,4 +115,25 @@ class FirestorePaths {
 
   /// Qoin 설정 문서 ID — `config/qoin` (accrualRate / enabled).
   static const String qoinConfigDocId = 'qoin';
+
+  /// 적립률 필드 키 — `stores/{id}` / `brands/{id}` 의 `qoinAccrualRate`. **읽기 전용** (쓰기는 CF 전담).
+  static const String qoinAccrualRateField = 'qoinAccrualRate';
+
+  /// 전역 적립률 필드 키 — `config/qoin.accrualRate`. 읽기 전용 (쓰기는 CF 전담).
+  static const String qoinGlobalAccrualRateField = 'accrualRate';
+
+  /// 적립률 변경 이력 서브컬렉션 키. **세 범위(전역/브랜드/매장)가 같은 이름**이어야 collectionGroup 조회가 된다.
+  static const String qoinRateHistory = 'qoinRateHistory';
+
+  /// 전역 이력 경로 — `config/qoin/qoinRateHistory`.
+  static String get globalQoinRateHistory =>
+      '$config/$qoinConfigDocId/$qoinRateHistory';
+
+  /// 브랜드 이력 경로 — `brands/{brandId}/qoinRateHistory`.
+  static String brandQoinRateHistory(String brandId) =>
+      '$brands/$brandId/$qoinRateHistory';
+
+  /// 매장 이력 경로 — `stores/{storeId}/qoinRateHistory`.
+  static String storeQoinRateHistory(String storeId) =>
+      '$stores/$storeId/$qoinRateHistory';
 }

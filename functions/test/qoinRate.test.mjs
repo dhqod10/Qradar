@@ -61,3 +61,19 @@ test('산식: floor, ppm 정수 환산 (4500*0.03=135)', () => {
   assert.equal(computeEarnAmount(10000, 0.001), 10);
   assert.equal(computeEarnAmount(999, 0.001), 0);
 });
+
+test('경계 상수는 qoinRate.ts 1곳에서만 선언된다 (F3 재발 방지)', () => {
+  const src = path.join(here, '../src');
+  const decl = [];
+  const literal = [];
+  for (const f of fs.readdirSync(src)) {
+    if (!f.endsWith('.ts')) continue;
+    const text = fs.readFileSync(path.join(src, f), 'utf8');
+    if (/\b(MIN_RATE|MAX_RATE)\s*=/.test(text)) decl.push(f);
+    // 주석을 제외한 코드에서 경계 리터럴(0.001 / 0.2)이 다른 파일에 있으면 중복 선언이다.
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    if (f !== 'qoinRate.ts' && /(?<![\d.])(0\.001|0\.2)(?![\d])/.test(code)) literal.push(f);
+  }
+  assert.deepEqual(decl, ['qoinRate.ts']);
+  assert.deepEqual(literal, []);
+});

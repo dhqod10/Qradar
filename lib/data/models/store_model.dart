@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/core/utils/grade_calculator.dart';
+import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/data/models/business_hours_model.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
@@ -46,6 +48,10 @@ class StoreModel {
   final String? notice;
   final DateTime? updatedAt;
 
+  /// Qoin 적립률 개별 설정 — **읽기 전용 필드.** 어떤 `toFirestore*` 맵에도 넣지 않는다
+  /// (넣으면 점주의 매장 수정이 적립률을 덮어쓴다. 쓰기는 CF 전담).
+  final QoinRateSetting qoinAccrualRate;
+
   const StoreModel({
     required this.id,
     required this.name,
@@ -75,6 +81,7 @@ class StoreModel {
     this.imageUrls = const [],
     this.notice,
     this.updatedAt,
+    this.qoinAccrualRate = QoinRateSetting.absent,
   });
 
   factory StoreModel.fromFirestore(
@@ -139,6 +146,10 @@ class StoreModel {
       imageUrls: imageUrls,
       notice: data['notice'] as String?,
       updatedAt: tsField('updatedAt'),
+      qoinAccrualRate: QoinRateSetting.fromRaw(
+        data[FirestorePaths.qoinAccrualRateField],
+        present: data.containsKey(FirestorePaths.qoinAccrualRateField),
+      ),
     );
   }
 
@@ -174,6 +185,7 @@ class StoreModel {
       imageUrls: entity.imageUrls,
       notice: entity.notice,
       updatedAt: entity.updatedAt,
+      qoinAccrualRate: entity.qoinAccrualRate,
     );
   }
 
@@ -208,6 +220,7 @@ class StoreModel {
       imageUrls: imageUrls,
       notice: notice,
       updatedAt: updatedAt,
+      qoinAccrualRate: qoinAccrualRate,
     );
   }
 

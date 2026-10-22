@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/qoin_rate_resolver.dart';
+import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/admin/widgets/store_scope_badge.dart';
 import 'package:qradar/presentation/brand/customization/brand_store_customization_page.dart';
 import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_store_management_providers.dart';
+import 'package:qradar/presentation/common/providers/qoin_config_providers.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_info_row.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 
 /// 브랜드가 운영하는 가맹점 목록 (read-only).
@@ -24,6 +29,28 @@ class BrandStoresPage extends ConsumerWidget {
     final brandId = profile?.brandId ?? '';
 
     final brandName = brandAsync.asData?.value?.name ?? '';
+
+    // 적립률 해석: 타일마다 스트림을 만들지 않는다. 페이지에서 브랜드 값(myBrandProvider)과
+    // 전역 config 를 한 번만 구독하고, 타일은 store.qoinAccrualRate 와 합쳐 해석한다.
+    // 두 소스가 모두 준비되기 전에는 숫자를 그리지 않는다 (loading).
+    final cfgAsync = ref.watch(qoinConfigProvider);
+    final allStopped = cfgAsync.asData?.value?.enabled == false;
+    AsyncValue<EffectiveQoinRate> effectiveFor(StoreEntity s) {
+      for (final a in <AsyncValue<Object?>>[brandAsync, cfgAsync]) {
+        if (!a.hasValue) {
+          return a.hasError
+              ? AsyncValue.error(a.error!, a.stackTrace ?? StackTrace.current)
+              : const AsyncValue.loading();
+        }
+      }
+      return AsyncValue.data(
+        resolveEffectiveQoinRate(
+          store: s.qoinAccrualRate,
+          brand: brandAsync.value?.qoinAccrualRate ?? QoinRateSetting.absent,
+          global: cfgAsync.value?.accrualRateSetting ?? QoinRateSetting.absent,
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -63,6 +90,8 @@ class BrandStoresPage extends ConsumerWidget {
                   store: store,
                   brandName: brandName,
                   brandId: brandId,
+                  effective: effectiveFor(store),
+                  allStopped: allStopped,
                 ),
               );
             },
@@ -79,11 +108,15 @@ class _BrandStoreCard extends StatelessWidget {
   final StoreEntity store;
   final String brandName;
   final String brandId;
+  final AsyncValue<EffectiveQoinRate> effective;
+  final bool allStopped;
 
   const _BrandStoreCard({
     required this.store,
     required this.brandName,
     required this.brandId,
+    required this.effective,
+    required this.allStopped,
   });
 
   @override
@@ -154,7 +187,25 @@ class _BrandStoreCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
+              // 신규 행: Qoin 적립률 (읽기 전용) + 이력 링크. 값·배지 영역은 탭 반응이 없다
+              // (카드 탭으로 흘러가는 건 기존 동작). 이력 링크는 별도 InkWell 이라 카드 탭이 일어나지 않는다.
+              QoinRateInfoRow(
+                variant: QoinRateInfoVariant.tile,
+                target: QoinRateScope.store,
+                effective: effective,
+                allStopped: allStopped,
+                onOpenHistory: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => QoinRateHistoryPage(
+                      scope: QoinRateScope.store,
+                      targetId: store.id,
+                      targetName: store.name,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
               // 행 3: scope 배지 + 커스텀 관리 링크
               Row(
                 children: [

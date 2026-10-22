@@ -5,7 +5,7 @@ import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/presentation/admin/menu_categories/admin_main_category_list_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_settings_page.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
-import 'package:qradar/presentation/customer/qoin/providers/qoin_providers.dart';
+import 'package:qradar/presentation/common/providers/qoin_config_providers.dart';
 
 /// admin 더보기 — 로그아웃 / 앱 정보.
 class AdminMorePage extends ConsumerWidget {
@@ -19,7 +19,8 @@ class AdminMorePage extends ConsumerWidget {
         if (cfg == null) return '설정되지 않음';
         final r = cfg.accrualRate;
         final rate = r == null ? '설정 없음' : QoinPolicy.formatRatePercent(r);
-        return '적립률 $rate · ${cfg.enabled ? '적립 중' : '적립 중단됨'}';
+        // 적립률은 이제 계층(전역/브랜드/매장)이라 "적립률 3%" 가 전체를 뜻하는 것처럼 읽히면 거짓이다.
+        return '전역 기본값 $rate · ${cfg.enabled ? '적립 중' : '적립 중단됨'}';
       },
     );
     return SafeArea(

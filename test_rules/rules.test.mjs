@@ -1,6 +1,6 @@
 import { initializeTestEnvironment, assertFails, assertSucceeds }
   from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, increment, collection, query, where, orderBy, limit, getDocs, Timestamp, serverTimestamp, deleteDoc, deleteField } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, collection, query, where, orderBy, limit, getDocs, collectionGroup, Timestamp, serverTimestamp, deleteDoc, deleteField } from 'firebase/firestore';
 import fs from 'fs';
 
 const CUSTOMER = 'dUFcFv71FzVA4feodWnxv3k0MKF3';
@@ -252,10 +252,11 @@ await run('QR14b CUSTOMER 가 config/qoin enabled write', 'deny', () =>
   updateDoc(doc(asCustomer, 'config', 'qoin'), { enabled: true }));
 await run('QR15 OWNER 가 config/qoin write', 'deny', () =>
   updateDoc(doc(asOwner, 'config', 'qoin'), { accrualRate: 1 }));
-await run('QR16 admin 이 config/qoin write', 'allow', () =>
-  updateDoc(doc(asAdmin, 'config', 'qoin'), { accrualRate: 0.05, enabled: false }));
-await run('QR16b admin 이 config 신규 문서 create', 'allow', () =>
-  setDoc(doc(asAdmin, 'config', 'qoin_new'), { accrualRate: 0.03, enabled: false }));
+// 계층화(qoin_accrual_rate_hierarchy)로 의미 변경: 적립률 쓰기는 CF 전담, enabled 만 admin 직접 쓰기 유지.
+await run('QR16 admin 이 config/qoin enabled write', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false }));
+await run('QR16b admin 이 config 신규 문서 create (accrualRate 없음)', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_new'), { enabled: false }));
 await run('QR17 비로그인 config/qoin read', 'deny', () =>
   getDoc(doc(asAnon, 'config', 'qoin')));
 await run('QR18 내역 쿼리 (createdAt desc limit 50)', 'allow', () =>
@@ -276,6 +277,165 @@ await run('F1 self-create 에 qoinBalance 포함', 'deny', () =>
 
 await run('F1 self-create (qoinBalance 없음)', 'allow', () =>
   setDoc(doc(asNewbie, 'users', NEWBIE), { uid: NEWBIE, role: 'customer' }));
+
+
+// ══ Qoin 적립률 계층화 (docs/tasks/qoin_accrual_rate_hierarchy/spec.md §9 쓰기 경로 12개 전수) ══
+// 1차 F1 교훈: 보호가 update 에만 있고 create / admin 전권 분기에 없으면 구멍이다.
+// 아래 RH 케이스는 spec §9 의 경로 번호(P1~P12)와 1:1 로 대응한다.
+const BRAND_U = 'brandUid0000000000000000000001';
+const BRAND_X = 'brandUid0000000000000000000002'; // 다른 브랜드 보유자
+const B_A = 'brand_a';
+const B_X = 'brand_x';
+const S_BR = 'store_br_of_brand_a';   // OWNER 소유, brand_a 가맹점
+const S_OVR = 'store_with_override';  // OWNER 소유, 이미 qoinAccrualRate 가 있는 매장
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  await setDoc(doc(db, 'users', BRAND_U), { uid: BRAND_U, role: 'brand', brandId: B_A, displayName: 'brandA' });
+  await setDoc(doc(db, 'users', BRAND_X), { uid: BRAND_X, role: 'brand', brandId: B_X, displayName: 'brandX' });
+  await setDoc(doc(db, 'brands', B_A), { name: 'A브랜드', status: 'approved', submittedBy: BRAND_U, brandKey: 'AAA' });
+  await setDoc(doc(db, 'brands', B_X), { name: 'X브랜드', status: 'approved', submittedBy: BRAND_X, brandKey: 'XXX' });
+  await setDoc(doc(db, 'stores', S_BR), { ownerId: OWNER, name: 'BR', status: 'approved', brandId: B_A });
+  await setDoc(doc(db, 'stores', S_OVR), { ownerId: OWNER, name: 'OVR', status: 'approved', qoinAccrualRate: 0.1 });
+  const h = { scope: 'x', field: 'accrualRate', before: 0.03, after: 0.05, changedBy: ADMIN, changedAt: Timestamp.now(), source: 'callable', op: 'set' };
+  await setDoc(doc(db, 'config', 'qoin', 'qoinRateHistory', 'h1'), { ...h, scope: 'global' });
+  await setDoc(doc(db, 'brands', B_A, 'qoinRateHistory', 'h1'), { ...h, scope: 'brand' });
+  await setDoc(doc(db, 'stores', S_A, 'qoinRateHistory', 'h1'), { ...h, scope: 'store' });
+  await setDoc(doc(db, 'stores', S_BR, 'qoinRateHistory', 'h1'), { ...h, scope: 'store' });
+  await setDoc(doc(db, 'stores', S_B, 'qoinRateHistory', 'h1'), { ...h, scope: 'store' });
+});
+const asBrand  = env.authenticatedContext(BRAND_U).firestore();
+const asBrandX = env.authenticatedContext(BRAND_X).firestore();
+
+// P1/P5: stores update (customer·owner·brand·admin 전권)
+await run('RH1 P1 owner 가 자기 매장 qoinAccrualRate update', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { qoinAccrualRate: 0.2 }));
+await run('RH1b P1 owner 가 개별 설정 삭제(deleteField)', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_OVR), { qoinAccrualRate: deleteField() }));
+await run('RH1c P1 owner 가 qoinAccrualRate 를 정상 필드와 함께 update', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { name: 'A2', qoinAccrualRate: 0.2 }));
+await run('RH1d P1 customer 가 stores qoinAccrualRate update', 'deny', () =>
+  updateDoc(doc(asCustomer, 'stores', S_A), { qoinAccrualRate: 0.2 }));
+await run('RH2 P1 brand 가 가맹점 qoinAccrualRate update', 'deny', () =>
+  updateDoc(doc(asBrand, 'stores', S_BR), { qoinAccrualRate: 0.2 }));
+await run('RH3 P5 admin 이 stores qoinAccrualRate update (전권 분기)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'stores', S_A), { qoinAccrualRate: 0.2 }));
+await run('RH3b P5 admin 이 stores qoinAccrualRate 삭제(deleteField)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'stores', S_OVR), { qoinAccrualRate: deleteField() }));
+await run('RH3c P5 admin 이 stores 에 setDoc(merge) 로 qoinAccrualRate', 'deny', () =>
+  setDoc(doc(asAdmin, 'stores', S_A), { qoinAccrualRate: 0.2 }, { merge: true }));
+// P2/P3: stores create
+await run('RH4 P2 owner 가 stores create 에 qoinAccrualRate 포함', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'new_store_1'), { ownerId: OWNER, name: 'N', status: 'pending', qoinAccrualRate: 0.2 }));
+await run('RH4b P2 owner 가 stores create (qoinAccrualRate 없음, 회귀)', 'allow', () =>
+  setDoc(doc(asOwner, 'stores', 'new_store_2'), { ownerId: OWNER, name: 'N', status: 'pending' }));
+await run('RH4c P3 brand 가 stores create (qoinAccrualRate 포함)', 'deny', () =>
+  setDoc(doc(asBrand, 'stores', 'new_store_3'), { ownerId: OWNER, name: 'N', status: 'pending', brandId: B_A, qoinAccrualRate: 0.2 }));
+await run('RH4d P3 admin 이 stores create (qoinAccrualRate 포함)', 'deny', () =>
+  setDoc(doc(asAdmin, 'stores', 'new_store_4'), { ownerId: OWNER, name: 'N', status: 'pending', qoinAccrualRate: 0.2 }));
+await run('RH5 admin 이 stores 의 다른 필드 update (회귀)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'stores', S_A), { notice: 'hi' }));
+await run('RH5b owner 가 자기 매장 운영 필드 update (회귀)', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { notice: 'hello' }));
+await run('RH5c owner 가 개별 설정이 있는 매장의 다른 필드 update (필드 보존, 회귀)', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', S_OVR), { notice: 'x' }));
+await run('RH5d brand 가 가맹점 운영 필드 update (회귀)', 'allow', () =>
+  updateDoc(doc(asBrand, 'stores', S_BR), { notice: 'x' }));
+// P4: brands
+await run('RH6 P5 admin 이 brands qoinAccrualRate update (전권 분기)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'brands', B_A), { qoinAccrualRate: 0.2 }));
+await run('RH6b P4 brand 가 자기 brands qoinAccrualRate update', 'deny', () =>
+  updateDoc(doc(asBrand, 'brands', B_A), { qoinAccrualRate: 0.2 }));
+await run('RH6c P4 brand 가 자기 brands 에 qoinAccrualRate 와 정상 필드 동시 update', 'deny', () =>
+  updateDoc(doc(asBrand, 'brands', B_A), { description: 'd', qoinAccrualRate: 0.2 }));
+await run('RH7 P4 admin 이 brands create 에 qoinAccrualRate 포함', 'deny', () =>
+  setDoc(doc(asAdmin, 'brands', 'new_brand_1'), { name: 'N', status: 'approved', qoinAccrualRate: 0.2 }));
+await run('RH7b P4 brand 가 brands create(pending) 에 qoinAccrualRate 포함', 'deny', () =>
+  setDoc(doc(asBrand, 'brands', 'new_brand_2'), { name: 'N', status: 'pending', submittedBy: BRAND_U, brandKey: '', qoinAccrualRate: 0.2 }));
+await run('RH7c admin 이 brands create (qoinAccrualRate 없음, 회귀)', 'allow', () =>
+  setDoc(doc(asAdmin, 'brands', 'new_brand_3'), { name: 'N', status: 'approved' }));
+await run('RH7d brand 가 brands create(pending, qoinAccrualRate 없음, 회귀)', 'allow', () =>
+  setDoc(doc(asBrand, 'brands', 'new_brand_4'), { name: 'N', status: 'pending', submittedBy: BRAND_U, brandKey: '' }));
+await run('RH8 admin 이 brands 의 다른 필드 update (회귀)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'brands', B_A), { description: 'd' }));
+await run('RH8b brand 가 자기 brands 운영 필드 update (회귀)', 'allow', () =>
+  updateDoc(doc(asBrand, 'brands', B_A), { description: 'd2' }));
+// P6/P7: config
+await run('RH9 P6 admin 이 config/qoin.accrualRate update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { accrualRate: 0.2 }));
+await run('RH9b P6 admin 이 config/qoin.accrualRate 삭제(deleteField)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { accrualRate: deleteField() }));
+await run('RH9c P6 admin 이 config/qoin 을 setDoc 으로 교체(accrualRate 변경)', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin'), { accrualRate: 0.2, enabled: true }));
+await run('RH9d P6 admin 이 enabled 와 accrualRate 동시 update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true, accrualRate: 0.2 }));
+await run('RH10 admin 이 config/qoin.enabled update', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true }));
+await run('RH11 P7 admin 이 config 문서를 accrualRate 포함해 create', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_create_probe'), { accrualRate: 0.2, enabled: true }));
+await run('RH11b admin 이 config 문서를 accrualRate 없이 create (회귀)', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_create_probe2'), { enabled: false }));
+await run('RH11c P6 admin 이 config/qoin delete (삭제 = accrualRate 소멸)', 'deny', () =>
+  deleteDoc(doc(asAdmin, 'config', 'qoin')));
+await run('RH12 customer 의 config write', 'deny', () =>
+  updateDoc(doc(asCustomer, 'config', 'qoin'), { enabled: false }));
+await run('RH12b 비로그인 config write', 'deny', () =>
+  updateDoc(doc(asAnon, 'config', 'qoin'), { enabled: false }));
+await run('RH12c owner 의 config enabled write', 'deny', () =>
+  updateDoc(doc(asOwner, 'config', 'qoin'), { enabled: false }));
+// P12: qoinRateHistory 직접 쓰기 (전 역할 × 전 범위 × create/update/delete)
+const histPaths = [
+  ['global', (db) => doc(db, 'config', 'qoin', 'qoinRateHistory', 'h1'), (db) => doc(db, 'config', 'qoin', 'qoinRateHistory', 'forge')],
+  ['brand',  (db) => doc(db, 'brands', B_A, 'qoinRateHistory', 'h1'),   (db) => doc(db, 'brands', B_A, 'qoinRateHistory', 'forge')],
+  ['store',  (db) => doc(db, 'stores', S_A, 'qoinRateHistory', 'h1'),   (db) => doc(db, 'stores', S_A, 'qoinRateHistory', 'forge')],
+];
+const actors = [['customer', asCustomer], ['owner', asOwner], ['brand', asBrand], ['admin', asAdmin]];
+for (const [scope, existing, fresh] of histPaths) {
+  for (const [role, db] of actors) {
+    await run(`RH13 P12 ${role} 가 ${scope} 이력 create`, 'deny', () =>
+      setDoc(fresh(db), { scope, field: 'accrualRate', before: 0.03, after: 0.2, changedAt: serverTimestamp() }));
+    await run(`RH14 P12 ${role} 가 ${scope} 이력 update`, 'deny', () =>
+      updateDoc(existing(db), { after: 0.2 }));
+    await run(`RH15 P12 ${role} 가 ${scope} 이력 delete`, 'deny', () =>
+      deleteDoc(existing(db)));
+  }
+}
+// 이력 read (H6)
+await run('RH17 점주가 자기 매장 이력 read', 'allow', () =>
+  getDocs(query(collection(asOwner, 'stores', S_A, 'qoinRateHistory'), orderBy('changedAt', 'desc'), limit(50))));
+await run('RH18 점주가 남의 매장 이력 read', 'deny', () =>
+  getDocs(collection(asOwner, 'stores', S_B, 'qoinRateHistory')));
+await run('RH19 brand 가 자기 산하 매장 이력 read', 'allow', () =>
+  getDocs(collection(asBrand, 'stores', S_BR, 'qoinRateHistory')));
+await run('RH19b brand 가 자기 브랜드 이력 read', 'allow', () =>
+  getDocs(collection(asBrand, 'brands', B_A, 'qoinRateHistory')));
+await run('RH20 brand 가 남의 브랜드 이력 read', 'deny', () =>
+  getDocs(collection(asBrandX, 'brands', B_A, 'qoinRateHistory')));
+await run('RH20b brand 가 남의 브랜드 산하 매장 이력 read', 'deny', () =>
+  getDocs(collection(asBrandX, 'stores', S_BR, 'qoinRateHistory')));
+await run('RH20c brand 가 개인 매장 이력 read', 'deny', () =>
+  getDocs(collection(asBrand, 'stores', S_A, 'qoinRateHistory')));
+await run('RH20d owner 가 브랜드 이력 read', 'deny', () =>
+  getDocs(collection(asOwner, 'brands', B_A, 'qoinRateHistory')));
+await run('RH20e owner 가 전역 이력 read', 'deny', () =>
+  getDocs(collection(asOwner, 'config', 'qoin', 'qoinRateHistory')));
+await run('RH21 admin 이 전역 이력 read', 'allow', () =>
+  getDocs(collection(asAdmin, 'config', 'qoin', 'qoinRateHistory')));
+await run('RH21b admin 이 브랜드 이력 read', 'allow', () =>
+  getDocs(collection(asAdmin, 'brands', B_A, 'qoinRateHistory')));
+await run('RH21c admin 이 매장 이력 read', 'allow', () =>
+  getDocs(collection(asAdmin, 'stores', S_A, 'qoinRateHistory')));
+await run('RH22 customer 가 임의 이력 read', 'deny', () =>
+  getDocs(collection(asCustomer, 'stores', S_A, 'qoinRateHistory')));
+await run('RH22b 비로그인 이력 read', 'deny', () =>
+  getDocs(collection(asAnon, 'stores', S_A, 'qoinRateHistory')));
+await run('RH23 admin 의 collectionGroup(qoinRateHistory) 조회', 'allow', () =>
+  getDocs(query(collectionGroup(asAdmin, 'qoinRateHistory'), orderBy('changedAt', 'desc'), limit(50))));
+await run('RH24 owner 의 collectionGroup 조회', 'deny', () =>
+  getDocs(query(collectionGroup(asOwner, 'qoinRateHistory'), orderBy('changedAt', 'desc'), limit(50))));
+await run('RH24b brand 의 collectionGroup 조회', 'deny', () =>
+  getDocs(query(collectionGroup(asBrand, 'qoinRateHistory'), orderBy('changedAt', 'desc'), limit(50))));
+await run('RH24c customer 의 collectionGroup 조회', 'deny', () =>
+  getDocs(query(collectionGroup(asCustomer, 'qoinRateHistory'), orderBy('changedAt', 'desc'), limit(50))));
 
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;

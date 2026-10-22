@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 
 part 'brand_entity.freezed.dart';
@@ -30,5 +31,9 @@ abstract class BrandEntity with _$BrandEntity {
     String? rejectedReason,
     DateTime? createdAt,
     DateTime? updatedAt,
+
+    /// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속, 0 = 이 브랜드 적립 안 함.
+    /// **읽기 전용** — 쓰기는 CF 전담.
+    @Default(QoinRateSetting.absent) QoinRateSetting qoinAccrualRate,
   }) = _BrandEntity;
 }

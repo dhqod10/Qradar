@@ -2,11 +2,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
-import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/qoin_transaction_entity.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_view_providers.dart';
-import 'package:qradar/presentation/customer/qoin/providers/qoin_di_providers.dart';
+import 'package:qradar/presentation/common/providers/qoin_di_providers.dart';
 
 /// 본인 Qoin 내역 (최신순, 상한 [QoinPolicy.historyLimit]).
 ///
@@ -24,11 +23,6 @@ final qoinTransactionsProvider = StreamProvider<List<QoinTransactionEntity>>((
     uid,
     limit: QoinPolicy.historyLimit,
   );
-});
-
-/// `config/qoin` (null = 문서 없음). 고객은 안내 문구, 관리자는 편집 화면이 사용.
-final qoinConfigProvider = StreamProvider<QoinConfigEntity?>((ref) {
-  return ref.watch(watchQoinConfigUseCaseProvider)();
 });
 
 /// 진행 중(paid~ready) 주문 건수. 로딩/에러면 null (배너 생략).

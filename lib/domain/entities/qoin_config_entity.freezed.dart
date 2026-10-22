@@ -15,7 +15,9 @@ T _$identity<T>(T value) => value;
 mixin _$QoinConfigEntity {
 
 /// 적립 비율 (0.03 = 3%). 문서 값이 number 가 아니거나 범위 밖이면 null (CF 도 적립하지 않음).
- double? get accrualRate;/// kill switch. 부재 → false (fail-closed).
+ double? get accrualRate;/// 전역 기본값 원본 4값 (부재 / 유효 / 무효). 계층 해석과 "설정 확인 필요" 표기에 쓴다.
+/// 전역은 0 을 허용하지 않으므로 0 도 무효다. [accrualRate] 는 이 값이 유효일 때만 non-null.
+ QoinRateSetting get accrualRateSetting;/// kill switch. 부재 → false (fail-closed).
  bool get enabled;
 /// Create a copy of QoinConfigEntity
 /// with the given fields replaced by the non-null parameter values.
@@ -27,16 +29,16 @@ $QoinConfigEntityCopyWith<QoinConfigEntity> get copyWith => _$QoinConfigEntityCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is QoinConfigEntity&&(identical(other.accrualRate, accrualRate) || other.accrualRate == accrualRate)&&(identical(other.enabled, enabled) || other.enabled == enabled));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is QoinConfigEntity&&(identical(other.accrualRate, accrualRate) || other.accrualRate == accrualRate)&&(identical(other.accrualRateSetting, accrualRateSetting) || other.accrualRateSetting == accrualRateSetting)&&(identical(other.enabled, enabled) || other.enabled == enabled));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,accrualRate,enabled);
+int get hashCode => Object.hash(runtimeType,accrualRate,accrualRateSetting,enabled);
 
 @override
 String toString() {
-  return 'QoinConfigEntity(accrualRate: $accrualRate, enabled: $enabled)';
+  return 'QoinConfigEntity(accrualRate: $accrualRate, accrualRateSetting: $accrualRateSetting, enabled: $enabled)';
 }
 
 
@@ -47,7 +49,7 @@ abstract mixin class $QoinConfigEntityCopyWith<$Res>  {
   factory $QoinConfigEntityCopyWith(QoinConfigEntity value, $Res Function(QoinConfigEntity) _then) = _$QoinConfigEntityCopyWithImpl;
 @useResult
 $Res call({
- double? accrualRate, bool enabled
+ double? accrualRate, QoinRateSetting accrualRateSetting, bool enabled
 });
 
 
@@ -64,10 +66,11 @@ class _$QoinConfigEntityCopyWithImpl<$Res>
 
 /// Create a copy of QoinConfigEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? accrualRate = freezed,Object? enabled = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? accrualRate = freezed,Object? accrualRateSetting = null,Object? enabled = null,}) {
   return _then(_self.copyWith(
 accrualRate: freezed == accrualRate ? _self.accrualRate : accrualRate // ignore: cast_nullable_to_non_nullable
-as double?,enabled: null == enabled ? _self.enabled : enabled // ignore: cast_nullable_to_non_nullable
+as double?,accrualRateSetting: null == accrualRateSetting ? _self.accrualRateSetting : accrualRateSetting // ignore: cast_nullable_to_non_nullable
+as QoinRateSetting,enabled: null == enabled ? _self.enabled : enabled // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }
@@ -153,10 +156,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( double? accrualRate,  bool enabled)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( double? accrualRate,  QoinRateSetting accrualRateSetting,  bool enabled)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _QoinConfigEntity() when $default != null:
-return $default(_that.accrualRate,_that.enabled);case _:
+return $default(_that.accrualRate,_that.accrualRateSetting,_that.enabled);case _:
   return orElse();
 
 }
@@ -174,10 +177,10 @@ return $default(_that.accrualRate,_that.enabled);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( double? accrualRate,  bool enabled)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( double? accrualRate,  QoinRateSetting accrualRateSetting,  bool enabled)  $default,) {final _that = this;
 switch (_that) {
 case _QoinConfigEntity():
-return $default(_that.accrualRate,_that.enabled);case _:
+return $default(_that.accrualRate,_that.accrualRateSetting,_that.enabled);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -194,10 +197,10 @@ return $default(_that.accrualRate,_that.enabled);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( double? accrualRate,  bool enabled)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( double? accrualRate,  QoinRateSetting accrualRateSetting,  bool enabled)?  $default,) {final _that = this;
 switch (_that) {
 case _QoinConfigEntity() when $default != null:
-return $default(_that.accrualRate,_that.enabled);case _:
+return $default(_that.accrualRate,_that.accrualRateSetting,_that.enabled);case _:
   return null;
 
 }
@@ -209,11 +212,14 @@ return $default(_that.accrualRate,_that.enabled);case _:
 
 
 class _QoinConfigEntity implements QoinConfigEntity {
-  const _QoinConfigEntity({this.accrualRate, this.enabled = false});
+  const _QoinConfigEntity({this.accrualRate, this.accrualRateSetting = QoinRateSetting.absent, this.enabled = false});
   
 
 /// 적립 비율 (0.03 = 3%). 문서 값이 number 가 아니거나 범위 밖이면 null (CF 도 적립하지 않음).
 @override final  double? accrualRate;
+/// 전역 기본값 원본 4값 (부재 / 유효 / 무효). 계층 해석과 "설정 확인 필요" 표기에 쓴다.
+/// 전역은 0 을 허용하지 않으므로 0 도 무효다. [accrualRate] 는 이 값이 유효일 때만 non-null.
+@override@JsonKey() final  QoinRateSetting accrualRateSetting;
 /// kill switch. 부재 → false (fail-closed).
 @override@JsonKey() final  bool enabled;
 
@@ -227,16 +233,16 @@ _$QoinConfigEntityCopyWith<_QoinConfigEntity> get copyWith => __$QoinConfigEntit
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _QoinConfigEntity&&(identical(other.accrualRate, accrualRate) || other.accrualRate == accrualRate)&&(identical(other.enabled, enabled) || other.enabled == enabled));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _QoinConfigEntity&&(identical(other.accrualRate, accrualRate) || other.accrualRate == accrualRate)&&(identical(other.accrualRateSetting, accrualRateSetting) || other.accrualRateSetting == accrualRateSetting)&&(identical(other.enabled, enabled) || other.enabled == enabled));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,accrualRate,enabled);
+int get hashCode => Object.hash(runtimeType,accrualRate,accrualRateSetting,enabled);
 
 @override
 String toString() {
-  return 'QoinConfigEntity(accrualRate: $accrualRate, enabled: $enabled)';
+  return 'QoinConfigEntity(accrualRate: $accrualRate, accrualRateSetting: $accrualRateSetting, enabled: $enabled)';
 }
 
 
@@ -247,7 +253,7 @@ abstract mixin class _$QoinConfigEntityCopyWith<$Res> implements $QoinConfigEnti
   factory _$QoinConfigEntityCopyWith(_QoinConfigEntity value, $Res Function(_QoinConfigEntity) _then) = __$QoinConfigEntityCopyWithImpl;
 @override @useResult
 $Res call({
- double? accrualRate, bool enabled
+ double? accrualRate, QoinRateSetting accrualRateSetting, bool enabled
 });
 
 
@@ -264,10 +270,11 @@ class __$QoinConfigEntityCopyWithImpl<$Res>
 
 /// Create a copy of QoinConfigEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? accrualRate = freezed,Object? enabled = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? accrualRate = freezed,Object? accrualRateSetting = null,Object? enabled = null,}) {
   return _then(_QoinConfigEntity(
 accrualRate: freezed == accrualRate ? _self.accrualRate : accrualRate // ignore: cast_nullable_to_non_nullable
-as double?,enabled: null == enabled ? _self.enabled : enabled // ignore: cast_nullable_to_non_nullable
+as double?,accrualRateSetting: null == accrualRateSetting ? _self.accrualRateSetting : accrualRateSetting // ignore: cast_nullable_to_non_nullable
+as QoinRateSetting,enabled: null == enabled ? _self.enabled : enabled // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }

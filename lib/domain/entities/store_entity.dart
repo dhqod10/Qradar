@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
@@ -68,5 +69,9 @@ abstract class StoreEntity with _$StoreEntity {
 
     /// 최종 수정 시점.
     DateTime? updatedAt,
+
+    /// Qoin 적립률 개별 설정 (`qoinAccrualRate`). 부재 = 상위 상속, 0 = 적립 안 함.
+    /// **읽기 전용** — 쓰기는 CF(setQoinAccrualRate / applyBrandQoinRate) 전담.
+    @Default(QoinRateSetting.absent) QoinRateSetting qoinAccrualRate,
   }) = _StoreEntity;
 }

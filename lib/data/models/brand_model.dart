@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qradar/core/constants/firestore_paths.dart';
+import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 
@@ -24,6 +26,9 @@ class BrandModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// Qoin 적립률 브랜드 설정 — **읽기 전용 필드.** `toFirestore()` 에 넣지 않는다 (쓰기는 CF 전담).
+  final QoinRateSetting qoinAccrualRate;
+
   const BrandModel({
     required this.id,
     required this.name,
@@ -44,6 +49,7 @@ class BrandModel {
     this.rejectedReason,
     this.createdAt,
     this.updatedAt,
+    this.qoinAccrualRate = QoinRateSetting.absent,
   });
 
   factory BrandModel.fromFirestore(
@@ -71,6 +77,10 @@ class BrandModel {
       rejectedReason: data['rejectedReason'] as String?,
       createdAt: _toDate(data['createdAt']),
       updatedAt: _toDate(data['updatedAt']),
+      qoinAccrualRate: QoinRateSetting.fromRaw(
+        data[FirestorePaths.qoinAccrualRateField],
+        present: data.containsKey(FirestorePaths.qoinAccrualRateField),
+      ),
     );
   }
 
@@ -95,6 +105,7 @@ class BrandModel {
       rejectedReason: entity.rejectedReason,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      qoinAccrualRate: entity.qoinAccrualRate,
     );
   }
 
@@ -119,6 +130,7 @@ class BrandModel {
       rejectedReason: rejectedReason,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      qoinAccrualRate: qoinAccrualRate,
     );
   }
 

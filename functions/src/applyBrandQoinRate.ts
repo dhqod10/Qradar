@@ -27,6 +27,10 @@ const LOG = "[applyBrandQoinRate]";
 const CHUNK = 450; // Firestore batch 500 한도 아래
 const PAGE = 450;
 
+// 산하 매장 조회는 `where brandId ==` 단독 + 기본(문서 ID) 정렬 + startAfter 페이징이다.
+// 명시적 orderBy(documentId) 를 두지 않는다 — 에뮬레이터는 인덱스를 강제하지 않아, 복합 인덱스가 필요한 쿼리를
+// 만들어도 테스트가 통과한다. 동등 필터 단독 쿼리는 자동 단일 필드 인덱스로 충분하다.
+
 interface Request {
   brandId?: unknown;
   rate?: unknown;
@@ -49,7 +53,6 @@ async function scanStores(db: admin.firestore.Firestore, brandId: string): Promi
     let q = db
       .collection("stores")
       .where("brandId", "==", brandId)
-      .orderBy(admin.firestore.FieldPath.documentId())
       .select("qoinAccrualRate")
       .limit(PAGE);
     if (cursor) q = q.startAfter(cursor);
@@ -82,7 +85,6 @@ async function clearOverrides(
     let q = db
       .collection("stores")
       .where("brandId", "==", brandId)
-      .orderBy(admin.firestore.FieldPath.documentId())
       .select("qoinAccrualRate")
       .limit(CHUNK);
     if (cursor) q = q.startAfter(cursor);

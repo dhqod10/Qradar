@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_formatters.dart';
-import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/presentation/common/q_logo.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
-import 'package:qradar/presentation/customer/qoin/providers/qoin_providers.dart';
+import 'package:qradar/presentation/common/providers/qoin_config_providers.dart';
 
 /// Qoin 탭 잔액 카드 + 적립 정책 안내 plate.
 ///
@@ -201,7 +200,7 @@ class _BalanceFallback extends StatelessWidget {
 class QoinPolicyPlate extends StatelessWidget {
   const QoinPolicyPlate({super.key, required this.config});
 
-  /// null = 로딩 중 / 읽기 실패 / 문서 없음 → 비율 생략 (틀린 비율을 보이지 않는다).
+  /// null = 로딩 중 / 읽기 실패 / 문서 없음 → 중단 판정 안 함 (정상 문구). 적립률 숫자는 어디에도 보이지 않는다.
   final QoinConfigEntity? config;
 
   bool get _paused {
@@ -213,7 +212,6 @@ class QoinPolicyPlate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = config;
     final paused = _paused;
 
     final IconData icon;
@@ -224,11 +222,11 @@ class QoinPolicyPlate extends StatelessWidget {
       title = '지금은 Qoin 적립이 잠시 중단되어 있어요';
       sub = '이 기간에 픽업 완료된 주문은 적립 대상에서 빠질 수 있어요';
     } else {
+      // 적립률 숫자를 보이지 않는다: 매장·브랜드별로 달라 전역 숫자는 거짓이 될 수 있다 (매장별 표시는 N2).
+      // config 로딩·에러·정상 모두 같은 문구라 로딩 중 문구가 바뀌며 깜빡이지 않는다.
       icon = Icons.shopping_bag_outlined;
-      title = c?.accrualRate == null
-          ? '픽업 완료 시 적립돼요'
-          : '픽업 완료 시 결제액의 ${QoinPolicy.formatRatePercent(c!.accrualRate!)} 적립';
-      sub = '결제 직후가 아니라, 매장에서 픽업 완료 처리가 되면 반영돼요';
+      title = '픽업 완료 시 결제액의 일부가 적립돼요';
+      sub = '적립률은 매장마다 달라요. 결제 직후가 아니라, 매장에서 픽업 완료 처리가 되면 반영돼요';
     }
 
     return Container(

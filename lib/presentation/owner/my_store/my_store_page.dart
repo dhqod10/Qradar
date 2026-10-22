@@ -1,6 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/domain/entities/qoin_rate_scope.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_info_row.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
@@ -685,6 +688,23 @@ class _StoreInfoSection extends StatelessWidget {
               text: store.description!,
             ),
           ],
+          // Qoin 적립률 — 읽기 전용 (편집 어피던스 0). 변경은 관리자 문의.
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Divider(height: 1, color: AppColors.border),
+          ),
+          QoinStoreRateInfo(
+            store: store,
+            onOpenHistory: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => QoinRateHistoryPage(
+                  scope: QoinRateScope.store,
+                  targetId: store.id,
+                  targetName: store.name,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
