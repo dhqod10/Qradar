@@ -285,3 +285,117 @@
 ## 배포 판단
 
 돈이 새거나 고객 적립이 틀어지는 FAIL 은 **없다.** 배포를 막는 FAIL 도 없다. 단 ③~④ 구간에서는 S1 때문에 편집 페이지에 이력 에러조차 표시되지 않으니, 배포 절차의 "③ 직후 이력 화면이 권한 오류" 고지에 "브랜드 편집 페이지의 중단 배너도 보이지 않는다" 를 추가하고 ④ 를 ③ 직후에 올릴 것(spec §20.11 의 기존 권고).
+
+---
+
+# 3차 검증 (커밋 `7f5db1c` — 개정 3: S1·S2·S3·S5·S6 + 정정 4건)
+
+범위: 이번 커밋의 변경분과 그 주변만. 자동 테스트(analyze 0 / flutter 447 / TS 86 / CF 에뮬레이터 97 / Rules 332 / flow 27)와 RM07 핀은 architect 가 직접 재실행해 확인했으므로 **다시 돌리지 않았다.** 대신 테스트가 못 보는 곳을 에뮬레이터 임시 스크립트(저장소 밖 스크래치패드, 종료 후 삭제)와 독립 열거로 봤다. 보안 쪽은 `docs/tasks/brand_authorization_hardening/test_report.md`.
+
+결과 요약(이 task 몫): **FAIL 4 (모두 Low~Medium-Low) / 배포 차단 0.** 보안 task 몫 FAIL 2 는 그쪽 문서.
+
+## 1. developer "설계 문제" 5건 판정
+
+### 판정 1. staleScan 가드 — 재현됨. 단 경쟁 조건에서만. 거짓 안내가 맞다 (F-1, Low)
+
+- **순차로는 재현되지 않는다.** preserve 0.06 완료 직후 overwrite 0.06 → 정상 진행(10곳 초기화, 남은 개별 설정 0).
+- **경쟁에서는 재현된다.** 3000개 매장(전부 개별 설정) 브랜드에서 B(preserve 0.06)를 먼저 쏘고 20/50/90/140/200ms 뒤 A(overwrite 0.06)를 쏨. 20ms 는 정상 순서, **50·90·140·200ms 4건 전부** A 가 `{changed:false, staleScan:true}`, 이력 문서 1건, **개별 설정 3000곳 그대로.** 서버 로그: `stale scan guard fired. scanStartedAt < qoinBulkAt`.
+- 화면: `_UnchangedCard` 는 `staleScan` 을 소비하지 않는다(코드 주석이 "운영자가 알아야 할 사실이 아니다" 라고 적고 있다). 즉 admin 은 "이미 같은 값이에요 · 바뀐 것이 없어요" 를 본다. **값이 같다는 건 참이나, 의도한 "개별 설정 초기화" 가 안 됐다는 사실은 숨는다.** S3(noop 이 거짓으로 보임)와 같은 모양이 가드 안에 남은 것.
+- 심각도 Low: 두 admin 이 같은 브랜드에 수백 ms 안에 서로 다른 모드로 같은 값을 적용해야 한다. 돈 영향 없음(적립률은 이미 V), 재시도하면 정상 진행.
+- 원인은 developer 진단 그대로: 포인터가 "overwrite 로 끝났는가" 를 모른다. 수정안: 가드 분기에서만 포인터가 가리키는 이력 문서를 1회 읽어 `bulkMode == 'overwrite' && status == 'completed'` 일 때만 발동(가드 분기는 write 가 없어 read-before-write 제약도 없다). 또는 `staleScan` 을 `_UnchangedCard` 가 별도 문구("방금 다른 곳에서 바뀌었어요. 다시 확인하고 적용하세요")로 소비.
+
+### 판정 2. stale `in_progress` — **S2 와 같은 모양의 재발. 맞다. 더 나쁜 변형이 있다 (F-2, Medium-Low)**
+
+에뮬레이터 재현(포인터 `in_progress` + `qoinBulkAt` 20분 전 + 이력 `in_progress`/`lastProgressAt` 20분 전 = CF 인스턴스가 중간에 죽은 상태):
+
+| 시나리오 | 결과 |
+|---|---|
+| (a) 새 overwrite(다른 값) | 완료. 포인터는 새 이력으로 교체. **옛 이력은 `in_progress` 로 영구 잔류.** 옛 id 로 재개 → `FAILED_PRECONDITION "브랜드 값이 그 뒤에 변경됐어요"`. 행은 `resolveHistoryRow` 상 `lastProgressAt` 이 5분 초과 + 포인터 불일치 → **plate 만 있고 버튼 없음, 영구.** |
+| (b) **브랜드 단건 적립률 변경** | 변경 성공, **포인터는 `in_progress` 그대로**(supersede 는 `partial` 만). 화면의 stale 배너가 계속 뜨고, `이어서 적용` 은 **항상 실패**("값이 그 뒤에 변경됐어요. 다시 적용하세요"). |
+| (b') 그 뒤 같은 값을 `덮어쓰고 적용` / `보존하고 적용` | **둘 다 `{changed:false}` noop, 포인터 그대로 `in_progress`.** 개별 설정 0곳일 때 사용자가 할 수 있는 일이 없다. 탈출구는 "다른 값으로 일괄 적용" 뿐(= 돈이 걸린 동작을 청소 수단으로 강요). |
+| (c) 브랜드 스위치 변경 | 포인터 `in_progress` 그대로, 옛 이력 `in_progress` 그대로. |
+
+- **배너가 거짓 약속을 한다.** `QoinPartialBanner.disappearNote` = "이어서 적용을 끝내거나 **브랜드 설정을 다시 바꾸면** 이 안내는 저절로 사라져요". `partial` 에는 참이지만 stale `in_progress`(같은 위젯이 `staleTitle` 로 그림)에는 (b)(c) 에서 거짓이다.
+- 근본 원인은 spec §21.2 가 "마감 대상 = `partial`" 만 정했고 `isBulkInProgress` 가 5분 뒤 거짓이 되는 순간부터 포인터가 `in_progress` 라는 값 그대로 **사실상 partial 과 같은 의미**가 되는데 `isBulkPartial` 이 그걸 포함하지 않은 것. 판정 쪽(`resolveBulkBanner`)은 stale 을 중단으로 읽고 CF 마감 쪽(`readPartialHistory`/`supersededPointerFields`/`nothing_left`)은 안 읽는다 — **한 사실에 두 판정**(R1 위반).
+- 심각도 Medium-Low: 전제가 "CF 인스턴스가 catch 도 못 탄 채 죽음"(타임아웃 540s 초과·인스턴스 종료)이라 드물다. 돈 영향 없음. 그러나 2차에서 내가 S2 로 올린 "지울 수 없는 상태" 의 정의에 정확히 들어맞는다.
+- 수정안(작다): CF 쪽에 `isBulkUnfinished(snap) = partial || (in_progress && stale)` 를 두고 `readPartialHistory`·`supersededPointerFields` 적용 조건·`nothing_left` 조건을 전부 그것으로 교체. Dart `resolveBulkBanner` 와 같은 5분 기준을 상수 1곳에서 공유.
+
+### 판정 3. `config` create 에 `enabledChangedAt` 미강제 — 수용 가능, 단 한 줄로 닫을 수 있다 (H-1, 보류)
+
+- 코드 읽기: create 는 `enabled` 가 있으면 `enabledChangedBy == uid()` 만 요구, update 는 `enabledChangedAt == request.time` 까지 요구. 트리거는 `enabledChangedAt` 이 **바뀌었을 때만** 행위자를 쓰므로 create 에 `enabledChangedAt` 이 없으면 이력은 `source:'direct', changedBy:null` 로 남는다(행위자 정보 손실, **사칭·위조는 불가**).
+- 1차 F1 의 "한쪽만 막혔다" 형태와 비슷하나 결과가 다르다: F1 은 돈이 틀어졌고 이건 행위자 라벨이 `direct` 로 안전 측 폴백한다. 또 `config/qoin` 은 이미 존재하는 문서(CF 가 적립률을 쓴다)라 admin 이 create 를 경유할 일이 사실상 없다.
+- 비용 1줄이므로 같은 창에서 닫기를 권고: create 의 `enabled` 분기에 `&& request.resource.data.get('enabledChangedAt', null) == request.time`.
+
+### 판정 4. `EntityApprovalStatus.fromString` vs 매장 create Rules — **developer 의 전제가 브랜드에는 해당하지 않는다. 갈리지 않는다 (PASS, 정정)**
+
+- 코드: `BrandModel.fromFirestore` 는 `status: (data['status'] as String?) ?? 'pending'` — **브랜드의 `status` 부재는 `pending` 으로 읽는다.** `toEntity()` 는 이미 채워진 문자열을 `fromString` 에 넘기므로 `approved` 폴백이 개입하지 않는다.
+- 에뮬레이터: `status` 필드 없는 브랜드를 가리키는 매장 create → Rules 거부(D5 의도대로). 화면은 `pending` → `unapproved` → "승인되지 않은 브랜드라 승인할 수 없어요" → 승인 버튼 비활성. 감사(`auditBrandLinks`)도 `status !== 'approved'` 로 `store_unapproved_brand`. **셋이 일치한다.**
+- `fromString` 의 `approved` 폴백이 실제로 효력을 내는 곳은 `StoreModel`·`MenuOverrideModel` (매장·메뉴의 `status` 부재) — 이건 spec §11.3 이 이미 다룬 T1 레거시 호환이고 이번 변경과 무관.
+- 주의 1건(보류 H-2): 기준선 §11.2 의 `store_unapproved_brand = 0` 은 시드 브랜드 `phase3_seed_brand_001` 이 `status` 필드를 갖고 있고 그 브랜드를 가리키는 매장이 없거나 approved 라는 전제다. 시드 문서가 `phase1_seed_store_001` 처럼 `status` 부재이면 감사 카드가 `store_unapproved_brand` 를 보고하는데, 이는 오탐이 아니라 정상 분류다(에뮬레이터로 확인).
+
+### 판정 5. 메뉴 승인 큐 `'브랜드'` 폴백 — **R2 가 막으려던 것의 재발이 맞다 (F-3, Low)**
+
+- spec §21.7 R2 는 "한 사실 = 한 행, 모든 화면 전수" 인데 보안 task 의 표면 인벤토리(§1)는 "브랜드 연결 상태" 사실을 **매장 승인 표면 4개**로만 열거했다. 같은 질문("이 항목이 어느 브랜드 것인가, 그 브랜드가 지금 존재하는가")에 답하는 표면이 인벤토리 밖에 있다.
+- 독립 열거(lib 전체 grep): `admin_approval_queue_page.dart:388` `brand?.name ?? '브랜드'` (로딩·미존재·조회 실패를 가짜 이름으로 덮는다) / `owner/my_store/my_store_page.dart:335` `?.name ?? '브랜드 매장'` (점주에게 브랜드 매장이라고 말함. 브랜드가 사라졌어도 동일) / `brand_info_page.dart` `_EmptyView` (아래 보안 문서 F-S2).
+- **가드 테스트가 면제를 기계로 굳혔다**: `"메뉴 승인 큐의 브랜드 묶음 타일은 다른 표면이다"` 라는 주석과 함께 검사 대상 파일 4개만 나열. R3(기계로 고정)의 의도는 정반대(전수 grep)다.
+- 심각도 Low: 메뉴 문서의 `brandId` 는 `isBrandHolder` 가 쓰기를 통제하므로(D2 이후) 가짜 brandId 가 생기기 어렵고, 승인 대상이 메뉴 묶음이지 적립률 상속이 아니다. 매장 쪽처럼 "admin 이 속는" 위험이 낮다. 그러나 **규칙을 인벤토리로 둔 이유가 사람 판단("다른 표면이니 건드리지 않는다")을 없애려는 것**이었으므로 재발로 판정한다.
+- 수정안: 폴백을 `resolveStoreBrandLink` 류의 분류(확인 중 / 미존재 / 조회 실패)로 대체하거나 최소한 표면 인벤토리에 행을 추가하고 가드가 `lib/presentation` 전체에서 `?? '브랜드` 패턴을 찾게 한다.
+
+## 2. 작업표 차이 7건 중 검증이 필요한 4건
+
+| # | 항목 | 판정 |
+|---|---|---|
+| 1 | `BrandIdMissingView` 신규 작성, 조회 전·실패·연결 실패에서 폼 금지 | **PASS (코드 + 위젯 테스트 대조).** 폼은 `BrandGateNeedsRegistration` 분기 1곳. 테스트가 조회 중/실패/연결 실패(retryable·alreadyLinked·notSubmitter)에서 폼·`새로 등록` 버튼 부재를 단언. **단, 폼의 두 번째 진입점이 남아 있다 → 보안 task F-S2.** |
+| 2 | 등록 폼 저장 직후 `ref.invalidate(brandLinkGateProvider)` | **PASS (게이트 경로 한정).** 게이트 안의 폼은 invalidate → 폼 해체 → 방금 만든 브랜드 조회 → 재 claim(멱등). 에뮬레이터로 claim 5동시 호출: `changed` 1건 + `roleHistory` 문서 1건. **`BrandInfoPage._EmptyView` 에서 push 한 폼은 이 경로를 타지 않는다**(F-S2). |
+| 3 | `orphan_brand` 정의 불일치 | **구현이 맞고 spec §4.1 문장이 틀렸다.** §4.1 은 "`submittedBy == null` 또는 `approved`" 인 고아만 센다 — D1-2 가 우려한 **"2건 이상 중 연결 안 된 pending 브랜드"** 를 정확히 제외한다. §4.2 조치표는 "`pending` 이고 아무도 가리키지 않으면 삭제" 로 그 pending 을 대상으로 한다. 구현(전수 스캔 후 미참조 전부 + status 동봉)이 두 문장의 합집합이라 과보고 쪽이고 읽기 전용이라 안전. **architect 가 §4.1 문구를 정정할 것.** 에뮬레이터 확인: `phase3_seed_brand_001`(status·submittedBy 부재)·pending(`submittedBy` 있음)·approved(`submittedBy` 부재) 3종이 모두 `orphan_brand`. |
+| 4 | 마커 8개, `qoin_hub_states_test.dart` 가 목록 밖 | **목록 밖인 게 맞지 않다 → F-4 (Low, 정리 시점).** 아래. |
+
+(나머지 3건 — `describeRaw` 원인이 Dart, `isUnfinished(` 이력 행 → `resolveHistoryRow`, `.freezed.dart` 제외 — 은 코드 읽기에서 합리적이며 가드 테스트가 지킨다. 재검증하지 않았다.)
+
+### F-4. S6 가드가 "토큰 보유 파일" 만 소유한다 — 정리 시 컴파일이 깨지는 테스트 파일이 목록 밖 (Low)
+
+- 토큰 grep 은 `qoin_hub_states_test.dart` 에 걸리지 않는다(토큰 없음). 그러나 이 파일은 `admin_qoin_migration_card.dart`·`migrate_qoin_zero_rates_use_case.dart`·`qoin_zero_migration_repository.dart`·`qoin_zero_migration_result.dart` 를 import 하고 "임시 마이그레이션 카드" 그룹을 가진다 — 정리 커밋이 지우는 대상들이다. 마커 파일을 지우면 `flutter analyze` 가 이 테스트에서 깨진다. **spec §20.4.5 가 7개 목록에 이 파일을 넣은 이유가 바로 이것이었다**(2차 S6 원문).
+- 가드는 `allowed ⊂ marker` 방향만 단언하고 `marker ⊂ allowed` 는 단언하지 않는다. 실측: 마커를 가진 비생성 파일 중 허용 목록에 없는 것이 8개(대부분 마커 grep 으로 잡히는 순수 과도기 파일이라 문제 없음).
+- 수정안: 가드에 "허용 목록·마커 파일을 import 하는 `test/` 파일은 마커나 허용 목록 중 하나에 있어야 한다" 를 추가하거나, `qoin_hub_states_test.dart` 에 마커 한 줄을 달고 허용 목록에 넣는다(후자가 즉시 가능한 최소 조치).
+
+## 3. S1·S2·S3 가 닫혔는가
+
+### S1 두 방향 — PASS (위젯 테스트 코드를 읽고 에뮬레이터 CF 동작과 대조)
+- ① `PROBE1` 은 **실제 `AdminQoinBrandRateEditPage`** 를 올리고 이력 스트림 에러 + 문서 읽기 에러를 동시에 주입. 배너·`이어서 적용` 있음, 수치 문구만 생략, 에러 문구 없음. 로딩 중에도 즉시 배너. 판정은 포인터 단일 함수.
+- ② `PROBE3`: 포인터 `completed`/`superseded` + 옛 이력 `partial` → 배너·버튼 없음(두 상태 모두). 이력 행은 `resolveHistoryRow` 로 종결 줄.
+- 표면 5개(허브·목록 태그·편집·정보 plate·이력 행)가 전부 `resolveBulkBanner` 를 호출함을 내가 grep 으로 독립 확인 — 원시 `qoinBulkStatus` 직접 비교는 `qoin_bulk_banner.dart` 한 곳. **단 이 "한 곳" 이 stale in_progress 에서 CF 쪽 판정과 어긋난다(F-2).**
+
+### S2 4경로 — PARTIAL (F-2)
+K1~K5(overwrite / preserve / 단건 / 스위치 / nothing_left)는 테스트 코드를 읽고 전부 같은 트랜잭션에서 이력 문서 + 포인터를 마감함을 확인. 이력 문서는 삭제되지 않음. `partial` 대상 "지울 방법이 없는 상태" 는 없다. **`in_progress`(stale) 대상으로는 있다 — 판정 2.**
+
+### S3 — PASS
+- 빈 이력: 내 경쟁 재현에서도 가드 발동 시 **이력 문서 수 1**(B 의 것만) — `clearedCount>0` 이 아니라 `brands/{id}/qoinRateHistory` 문서 수로 셌다. K7·K8 도 문서 수 단언.
+- 가드는 순서(B 먼저)가 올바르면 동작하지만 판정 1 의 거짓 안내 부작용이 있다.
+
+### `changed` 소비 — PASS (독립 열거)
+쓰기 응답 소비자를 `lib` 전체에서 4개 provider(`setQoinAccrualRate/Enabled`, `applyBrandQoinRate`, `runBulkResume`)로 grep: 전역 적립률 페이지 · 매장 편집 · 브랜드 편집(`_apply`, `_resume`) · 이력 화면(`_resume`) · 스위치 카드 = **5개 화면 + 재개 헬퍼 1개**, 가드가 요구한 5와 일치하고 전부 `!r.changed` 분기가 성공 문구보다 앞선다. 누락된 화면 없음.
+- 가드 테스트의 약점(Low, 보류 H-3): 파일 수준 `RegExp(r'\.changed')` 라 한 파일에 호출이 2개이면 하나만 읽어도 통과한다. 지금은 사실에 부합하지만 호출 지점별 단언이 아니다. 새 소비자가 provider 가 아닌 repository 를 직접 부르면 `entryPoints` grep 에 안 잡힌다.
+
+## 4. 판정 요약표
+
+| ID | 내용 | 심각도 | 배포 차단 |
+|---|---|---|---|
+| F-1 | staleScan 가드가 preserve 완료 포인터에도 발동, 화면은 "이미 같은 값" (경쟁에서 재현) | Low | 아니오 |
+| F-2 | stale `in_progress` 가 마감되지 않음 + 단건/스위치로 못 지움 + 배너가 거짓 약속 (S2 재발) | Medium-Low | 아니오 (같은 창에서 닫기 권고) |
+| F-3 | 메뉴 승인 큐 `'브랜드'` 폴백 + 가드가 면제를 굳힘 (R2 재발) | Low | 아니오 |
+| F-4 | S6 가드 한 방향만 — `qoin_hub_states_test.dart` 가 목록 밖 | Low | 아니오 (정리 커밋 전) |
+| H-1 | `config` create `enabledChangedAt` | 보류 | — |
+| H-2 | 기준선 `store_unapproved_brand = 0` 전제 (시드 브랜드 `status`) | 보류 | — |
+| H-3 | `changed` 가드가 파일 수준 | 보류 | — |
+
+## 5. 우선순위
+
+1. F-2 (CF `isBulkUnfinished` 로 마감 조건 통일 + 에뮬레이터 케이스 K10: stale in_progress 4경로).
+2. 보안 task F-S1(`submittedBy` 양도) — Rules 한 줄.
+3. 보안 task F-S2(dangling 계정의 등록 버튼).
+4. F-3, F-1, F-4.
+
+## 6. 내가 이번에 보지 않은 것
+- 구버전 앱 + 신 CF 구간 거동(개정 3 ② 후 ③ 전). implementation C8-4.
+- 실기기 `details` Map 수신(H-A, 1차 보류 그대로).
+- 운영 인덱스·실배포 화면 (배포 금지).
