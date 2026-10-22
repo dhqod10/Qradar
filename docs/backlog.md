@@ -9,11 +9,11 @@
 
 Phase 3c 완결 시점의 스냅샷. **문서가 아니라 코드를 읽어 작성했다.**
 
-### 탭에 연결된 미구현 화면
+### 탭에 연결된 미구현 화면 — **2026-10-22 기준 0건**
 
 | 화면 | 위치 | 비고 |
 |---|---|---|
-| 고객 Qoin | `customer/qoin/qoin_page.dart:50` | Phase 4 Qoin 도메인으로 별도 분리 결정됨 |
+| ~~고객 Qoin~~ | ~~`customer/qoin/qoin_page.dart:50`~~ | **완료 (2026-10-22)** — `docs/tasks/qoin/`. **네비 탭 placeholder 가 모두 사라졌다** |
 
 ### 진입점만 있고 동작 없음 (SnackBar `준비 중`)
 
