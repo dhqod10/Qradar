@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/errors/permission_denied_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
+import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
@@ -56,6 +57,15 @@ class _AdminQoinRateHistoryPageState
         : _HistoryFilter.all;
   }
 
+  /// `미완료 적용` 필터: 일괄 적용 행 중 **끝나지 않은 것으로 그려지는 행**. 행이 그려지는 규칙과 같은 판정 함수를 쓴다 —
+  /// 포인터는 브랜드 스트림(이미 admin 이 구독 중인 전체 브랜드 목록)에서 가져온다.
+  bool _isUnfinishedRow(QoinRateChangeEntity c, DateTime now) {
+    if (!c.isBulk || c.scope != QoinRateScope.brand) return false;
+    final brand = ref.read(qoinAdminBrandByIdProvider(c.targetId)).asData?.value;
+    final pointer = brand == null ? null : resolveBulkBanner(brand, now);
+    return resolveHistoryRow(c, pointer: pointer, now: now).isUnfinished;
+  }
+
   bool _match(QoinRateChangeEntity c, DateTime now) {
     switch (_filter) {
       case _HistoryFilter.all:
@@ -67,7 +77,7 @@ class _AdminQoinRateHistoryPageState
       case _HistoryFilter.store:
         return c.scope == QoinRateScope.store;
       case _HistoryFilter.unfinished:
-        return c.isUnfinished(now);
+        return _isUnfinishedRow(c, now);
     }
   }
 
@@ -98,15 +108,27 @@ class _AdminQoinRateHistoryPageState
   }
 
   Future<void> _resume(QoinRateChangeEntity c) async {
+    final total = c.totalCount;
     final r = await runBulkResume(
       context,
       ref,
-      c,
+      brandId: c.targetId,
+      brandName: c.targetName,
+      historyId: c.id,
+      remaining: total == null
+          ? null
+          : (total - (c.processedCount ?? 0)).clamp(0, total),
       onRunning: (v) {
         if (mounted) setState(() => _running = v);
       },
     );
-    if (r != null && mounted) qoinSnack(context, '적용을 마쳤어요');
+    if (r == null || !mounted) return;
+    // changed 를 성공 분기보다 먼저 본다 (spec §21.3-b) — 바뀐 것이 없으면 "마쳤어요" 라고 말하지 않는다.
+    if (!r.changed) {
+      qoinSnack(context, QoinMessages.alreadySameValue);
+      return;
+    }
+    qoinSnack(context, '적용을 마쳤어요');
   }
 
   @override

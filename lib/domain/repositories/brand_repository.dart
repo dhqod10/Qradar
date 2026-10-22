@@ -43,4 +43,16 @@ abstract class BrandRepository {
   ///
   /// 미매칭 시 null. 점주 매장 등록 시 brandKey 검증 진입점.
   Future<BrandEntity?> findByBrandKey(String brandKey);
+
+  // ─── brand_authorization_hardening (D1) ────────────────────────────────
+
+  /// 내가 제출한 브랜드들 (`brands where submittedBy == 내 uid`), 가장 이른 `submittedAt` 순. 없으면 빈 목록.
+  ///
+  /// 조회 **실패는 예외**다 — 빈 목록과 구별해야 한다 (실패를 "0건" 으로 읽으면 이미 등록한 사용자가 등록 폼으로 떨어져
+  /// 같은 브랜드를 다시 등록하고 고아 브랜드가 쌓인다).
+  Future<List<BrandEntity>> fetchMySubmittedBrands();
+
+  /// 내가 제출한 브랜드를 내 계정에 연결한다 (`users.brandId` 는 Cloud Function 만 쓴다). 멱등.
+  /// 실패는 [BrandClaimException].
+  Future<void> claimSubmittedBrand(String brandId);
 }

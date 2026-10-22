@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
+import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
@@ -95,6 +96,7 @@ class QoinRateInfoRow extends StatelessWidget {
     this.brandName,
     this.onOpenHistory,
     this.onRetry,
+    this.footer,
   });
 
   final QoinRateInfoVariant variant;
@@ -113,6 +115,9 @@ class QoinRateInfoRow extends StatelessWidget {
 
   final VoidCallback? onOpenHistory;
   final VoidCallback? onRetry;
+
+  /// summary 변형 전용: 이력 링크 바로 위에 끼우는 안내 (예: 중단 plate). 해석의 로딩·에러와 무관하게 그려진다.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -410,10 +415,10 @@ class _Summary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return row.effective.when(
-      loading: () => const Column(
+      loading: () => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
@@ -423,11 +428,12 @@ class _Summary extends StatelessWidget {
               _Skeleton(width: 64, height: 20),
             ],
           ),
-          SizedBox(height: 6),
-          Align(
+          const SizedBox(height: 6),
+          const Align(
             alignment: Alignment.centerRight,
             child: _Skeleton(width: 72, height: 22),
           ),
+          if (row.footer != null) row.footer!,
         ],
       ),
       error: (_, _) => Column(
@@ -438,6 +444,7 @@ class _Summary extends StatelessWidget {
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           _ErrorLine(onRetry: row.onRetry),
+          if (row.footer != null) row.footer!,
           _HistoryLink(onTap: row.onOpenHistory),
         ],
       ),
@@ -507,6 +514,7 @@ class _Summary extends StatelessWidget {
               ),
             ),
             if (row.allStopped) const _AllStoppedPlate(),
+            if (row.footer != null) row.footer!,
             const Divider(height: 24, color: AppColors.border),
             _HistoryLink(onTap: row.onOpenHistory),
           ],
@@ -633,6 +641,8 @@ class QoinBrandRateInfo extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final effective = ref.watch(effectiveBrandQoinRateProvider(brand.id));
     final cfg = ref.watch(qoinConfigProvider);
+    // 중단 안내(표면 #5): 판정은 허브·목록·편집과 같은 `resolveBulkBanner` 하나. 버튼 없음 — 이어서 적용은 관리자만 한다.
+    final unfinished = resolveBulkBanner(brand, DateTime.now()).isUnfinished;
     return QoinRateInfoRow(
       variant: QoinRateInfoVariant.summary,
       target: QoinRateScope.brand,
@@ -640,6 +650,56 @@ class QoinBrandRateInfo extends ConsumerWidget {
       allStopped: cfg.asData?.value?.enabled == false,
       onOpenHistory: onOpenHistory,
       onRetry: () => ref.invalidate(qoinConfigProvider),
+      footer: unfinished ? const _BulkUnfinishedPlate() : null,
+    );
+  }
+}
+
+/// 브랜드 정보 화면의 중단 안내 plate (design §19-1 표면 #5). 버튼 없음.
+class _BulkUnfinishedPlate extends StatelessWidget {
+  const _BulkUnfinishedPlate();
+
+  static const String text = '일부 가맹점에는 새 적립률이 아직 적용되지 않았어요. 관리자가 이어서 적용해요';
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: text,
+      excludeSemantics: true,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.only(top: 1),
+              child: Icon(
+                Icons.info_outline_rounded,
+                size: 16,
+                color: AppColors.textMuted,
+              ),
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: AppColors.textBody,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

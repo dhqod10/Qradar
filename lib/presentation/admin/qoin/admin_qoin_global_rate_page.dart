@@ -80,12 +80,17 @@ class _Body extends ConsumerWidget {
             followingStores: ref.watch(qoinGlobalFollowingStoresProvider),
             onSubmit: (s) async {
               try {
-                await ref.read(setQoinAccrualRateUseCaseProvider)(
+                final r = await ref.read(setQoinAccrualRateUseCaseProvider)(
                   scope: QoinRateScope.global,
                   value: s.value,
                   reason: s.reason,
                 );
                 if (!context.mounted) return;
+                // changed 를 성공 분기보다 먼저 본다 — 값이 같으면 "변경했어요" 라고 말하지 않는다 (spec §21.3-b).
+                if (!r.changed) {
+                  qoinSnack(context, QoinMessages.rateUnchanged(r, s.value));
+                  return;
+                }
                 qoinSnack(context, QoinMessages.saved(s.value, global: true));
               } catch (e) {
                 if (context.mounted) {

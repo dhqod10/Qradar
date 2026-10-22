@@ -35,6 +35,13 @@ abstract class QoinRateRepository {
     String? reason,
   });
 
+  /// 이력 문서 1건을 직접 읽는다 (스트림 아님). 없으면 null. 실패는 예외 — 호출자가 "수치 없음" 으로 접는다.
+  Future<QoinRateChangeEntity?> fetchHistory(
+    QoinRateScope scope,
+    String targetId,
+    String historyId,
+  );
+
   /// 한 대상의 이력 (최신순). 점주/브랜드/admin 공용.
   Stream<List<QoinRateChangeEntity>> watchHistory(
     QoinRateScope scope,

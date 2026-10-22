@@ -43,11 +43,12 @@
 - **트리거**:
   1. 고객 더보기 → "브랜드 운영자이신가요?" → `UpgradeToBrandUseCase` (`users.role='brand'`)
   2. `RoleRouter` → `BrandScaffold` 진입
-  3. `BrandScaffold` 가 `users.brandId` 비어있으면 **자동으로 `BrandInfoFormPage` 강제 진입** (V8)
-  4. 폼 제출 → `BrandRepository.upsertBrand` → batch write 로 `brands/{brandId}` (status=pending) + `users/{uid}.brandId` 갱신
+  3. `BrandScaffold` 가 `users.brandId` 비어있으면 **게이트(`BrandIdMissingView`)** 로 진입한다 (brand_authorization_hardening D1-2). 게이트는 먼저 `brands where submittedBy == uid` 를 조회한다 — **0건일 때만** `BrandInfoFormPage`, 1건 이상이면 자동으로 `claimSubmittedBrand` 를 호출한다. 조회 중·조회 실패·연결 실패에서는 **등록 폼을 그리지 않는다** (같은 브랜드 재등록 → 고아 브랜드 방지).
+  4. 폼 제출 → `BrandRepository.upsertBrand` → `brands/{brandId}` (status=pending) **문서 1건만** 쓴다 → CF `claimSubmittedBrand({brandId})` 가 `brands/{id}.submittedBy == uid` 를 검증하고 `users/{uid}.brandId` + `users/{uid}/roleHistory` 1건을 **같은 트랜잭션**에 쓴다 (클라이언트는 `users.brandId` 를 쓸 수 없다)
   5. admin 승인 후 `brands/{brandId}.status='approved'` + `brandKey` 발급 → 본격 운영 시작
-- **핵심 결정**: `users.role='brand'` 가 되는 시점과 `users.brandId` 가 채워지는 시점이 **분리** 됨. Security Rules `users.create` 는 `brandId` 동시 set 차단. brand doc create 시 batch 로 `users.brandId` 동기화.
-- **확인 필요**: `users.role='brand'` 이지만 `brandId=''` 상태에서 로그아웃 후 재로그인하면 동일하게 `BrandInfoFormPage` 로 진입함. 명확한 "도중에 포기" 회복 경로(예: customer 로 다운그레이드 버튼)는 BrandInfoFormPage 내부에는 없음 → **잠재적 UX 막다른 길**.
+- **핵심 결정**: `users.role='brand'` 가 되는 시점과 `users.brandId` 가 채워지는 시점이 **분리** 됨. `brandId` 는 **권한 값**이라 발급 주체가 클라이언트 → Cloud Function 으로 바뀌었다 (구 방식은 brand doc create 와 `users.brandId` 를 한 batch 로 썼으나, Rules 의 `get()` 은 batch 적용 전 상태를 보므로 Rules 로 `submittedBy` 를 검증할 수 없었다). 4 가 실패하면 3 으로 되돌아가 게이트가 자동 재연결한다 (멱등).
+- **교정**: 잘못 연결된 계정(`mismatch`/`dangling`/`duplicate`)은 **admin 만** `users/{uid}.brandId` 를 고친다 (D4). `claimSubmittedBrand` 는 기존 값을 절대 덮지 않는다.
+- **확인 필요**: 게이트 실패 화면에서는 AppBar 의 `로그아웃` 으로만 빠져나갈 수 있다. 등록 폼(0건) 쪽의 "고객 모드로 돌아가기" X 버튼은 그대로다.
 
 ### admin
 - **진입 조건**: Firestore 콘솔에서 수동으로 `users/{uid}.role='admin'` 설정.
@@ -100,7 +101,7 @@ stateDiagram-v2
 
 **불일치 (재설계 후보)**:
 - Rules 상으로는 `owner → brand` / `brand → customer` 양방향 자유롭지만 UI 가 한쪽 방향만 제공.
-- `users.brandId` 가 한 번 set 되면 Rules 의 `isSelfProfileUpdate` 의 마지막 조건(`brandId` 변경은 빈 값일 때만)으로 인해 **재변경 불가**. 따라서 `brand → customer → 다시 brand` 같은 흐름은 새로운 brand doc 생성이 불가능 → 사실상 brand 는 일회성. **이게 의도된 정책인지 확인 필요.**
+- `users.brandId` 는 이제 클라이언트가 **어떤 경로로도** 쓸 수 없다 (Rules 화이트리스트에서 제거 — brand_authorization_hardening D1). `claimSubmittedBrand` 는 이미 값이 있으면 `failed-precondition` 이라 한 번 연결되면 **본인 재변경 불가**이고, 교정은 admin 전용이다 (D4, 의도). `brand → customer → 다시 brand` 로 새 브랜드를 만들 수 없다는 점은 그대로이며 **의도된 정책인지는 여전히 확인 필요.**
 
 ---
 
@@ -158,7 +159,7 @@ stateDiagram-v2
 
 | 액션 | 화면(파일) | 의존 데이터 |
 |---|---|---|
-| 브랜드 등록 (최초) | `brand/brand_info/brand_info_form_page.dart` (자동 진입) | `BrandRepository.upsertBrand` (batch: brand doc + users.brandId) |
+| 브랜드 등록 (최초) | `brand/brand_info/brand_info_form_page.dart` (게이트 `brand/brand_id_missing_view.dart` 가 0건일 때 진입시킨다) | `BrandRepository.upsertBrand` (brand doc 1건) → CF `claimSubmittedBrand` (`users.brandId` + `roleHistory`) |
 | 브랜드 정보 수정 (이름/설명/로고) | `brand/brand_info/brand_info_page.dart` | `upsertBrand` — 핵심 필드 변경 시 status=pending 회귀 |
 | 마스터 메뉴 CRUD | `brand/master_menu/**` | `brands/{brandId}/menuItems` (status=pending → admin 승인) |
 | 브랜드 서브 카테고리 CRUD | `brand/sub_categories/**` | `brands/{brandId}/subCategories` |
@@ -170,7 +171,7 @@ stateDiagram-v2
 | 검토 현황(승인 대기 추적) | `brand/approval_tracking/brand_approval_tracking_page.dart` | 모든 본인 brand 산하 pending 엔티티 집계 |
 | 로그아웃 | `brand/more/brand_more_page.dart` | `authProvider.signOut()` |
 
-**핵심 진입점**: `BrandScaffold` — 4탭 (브랜드 정보 / 마스터 메뉴 / 매장 / 더보기). `users.brandId` 비어있으면 등록 폼 강제.
+**핵심 진입점**: `BrandScaffold` — 4탭 (브랜드 정보 / 마스터 메뉴 / 매장 / 더보기). `users.brandId` 비어있으면 게이트(`BrandIdMissingView`) — 0건일 때만 등록 폼.
 
 **미구현**: brand 가 가맹점 마스터 옵션그룹 직접 수정(매장 한정) — sub-phase 7 S2 에 따라 마스터 메뉴는 master ∪ brand scope 만 허용.
 
@@ -220,7 +221,7 @@ stateDiagram-v2
 | 공지 / 배너 / 쿠폰 관리 (admin) | **미구현** |
 | brand role 자체 다운그레이드 UI | **미구현 (불일치)** — Rules 는 허용하나 UI 진입점 없음 |
 | owner → brand UI 진입점 | **미구현** — 점주 더보기에 없음 |
-| `users.brandId` 재할당 | **불일치 (재설계 후보)** — Rules 가 빈 값일 때만 set 허용, 한번 채워지면 재변경 불가 |
+| `users.brandId` 재할당 | **admin 전용 (의도, D4)** — 클라이언트는 쓸 수 없고 CF 는 기존 값을 덮지 않는다 |
 
 ---
 

@@ -3,6 +3,8 @@
 //   migrate_qoin_zero_rates_use_case / qoin_zero_migration_* (domain·data) / qoin_zero_migration_result 삭제.
 // 상태·provider·UseCase 호출을 전부 이 파일 안에 둔다 (공용 위젯·공용 provider 재사용 금지).
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
@@ -28,6 +30,28 @@ enum _Phase { idle, checking, checked, checkFailed, running, done, runFailed }
 /// 실행 실패 뒤에는 곧바로 재실행을 주지 않고 반드시 dry-run 으로 돌아가게 한다.
 class AdminQoinMigrationCard extends ConsumerStatefulWidget {
   const AdminQoinMigrationCard({super.key});
+
+  /// 무효 값의 원형 표시. 서버(`describeRaw`)는 값의 **JSON 표기**를 보낸다: 문자열 `"3"` · 숫자 `0.5` · `true` · `[1]` · `{}` · `null`
+  /// (NaN / Infinity / `(absent)` 는 JSON 이 아니라 그대로). 이미 그 표기이므로 **그대로 보여준다** — 따옴표를 한 번 더 두르면
+  /// `true` 가 `"true"` 로 보여 "어떤 타입의 쓰레기 값이 들어 있나" 를 보여주는 `raw` 의 존재 이유가 깨진다.
+  /// 어느 형태로도 해석되지 않는 문자열만 따옴표로 감싼다 (방어).
+  @visibleForTesting
+  static String formatRaw(String? raw) {
+    if (raw == null) return 'null';
+    if (const {'NaN', 'Infinity', '-Infinity', '(absent)'}.contains(raw)) {
+      return raw;
+    }
+    // 100자에서 잘린 문자열·배열·객체는 JSON 으로 완결되지 않아도 그 표기를 그대로 둔다.
+    if (raw.startsWith('"') || raw.startsWith('[') || raw.startsWith('{')) {
+      return raw;
+    }
+    try {
+      jsonDecode(raw); // null · true · false · 숫자
+      return raw;
+    } catch (_) {
+      return '"$raw"';
+    }
+  }
 
   @override
   ConsumerState<AdminQoinMigrationCard> createState() =>
@@ -314,12 +338,12 @@ class _AdminQoinMigrationCardState
                 const SizedBox(height: 4),
                 for (final t in r.invalidStores)
                   Text(
-                    '· ${t.name}  값 ${_raw(t.raw)}',
+                    '· ${t.name}  값 ${AdminQoinMigrationCard.formatRaw(t.raw)}',
                     style: QoinDialogShell.bodyStyle,
                   ),
                 for (final t in r.invalidBrands)
                   Text(
-                    '· 브랜드 ${t.name}  값 ${_raw(t.raw)}',
+                    '· 브랜드 ${t.name}  값 ${AdminQoinMigrationCard.formatRaw(t.raw)}',
                     style: QoinDialogShell.bodyStyle,
                   ),
                 const SizedBox(height: 4),
@@ -363,14 +387,6 @@ class _AdminQoinMigrationCardState
         _outlined('다시 확인', _check),
       ],
     );
-  }
-
-  /// raw 값은 문자열이면 `"3"`, 숫자면 `0.5` 로 타입이 보이게. 서버는 값의 JSON 표기(`"3"` / `0.5` / `null`)를 보내는 것이
-  /// 가장 정확하다. 따옴표 없는 문자열이 오면 숫자로 파싱되는 경우만 숫자로, 아니면 따옴표를 붙인다.
-  static String _raw(String? raw) {
-    if (raw == null) return 'null';
-    if (raw.startsWith('"') || raw == 'null') return raw;
-    return num.tryParse(raw) != null ? raw : '"$raw"';
   }
 
   Widget _doneView(QoinZeroMigrationResult r) {

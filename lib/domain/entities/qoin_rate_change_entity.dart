@@ -1,5 +1,4 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 
 part 'qoin_rate_change_entity.freezed.dart';
@@ -102,10 +101,20 @@ enum QoinBulkMode {
   }
 }
 
+/// 일괄 적용의 상태 — **이력 문서의 `status`** 이자 **브랜드 문서 포인터(`qoinBulkStatus`)의 값**이다.
+///
+/// 포인터는 지워지는 값이 아니라 상태 기계다 (spec §21.2): `in_progress` -> `completed` | `partial`,
+/// `partial` -> `superseded` | `completed(nothing_left)`. 종결(`completed` / `superseded`)은 "중단 없음"이다.
+///
+/// [fromCode] 는 모르는 코드에 **null** 을 돌려준다 — 구버전 앱이 새 코드를 만나면 판정이 `none`("중단 없음") 이 되는데,
+/// 새 코드는 둘 다 종결 상태라 의미가 정확히 일치한다. 이 관대함을 없애지 말 것.
 enum QoinBulkStatus {
   inProgress('in_progress'),
   completed('completed'),
-  partial('partial');
+  partial('partial'),
+
+  /// `partial` 뒤의 설정 변경이 그 기록을 마감했다 (이력 문서 + 포인터).
+  superseded('superseded');
 
   const QoinBulkStatus(this.code);
   final String code;
@@ -171,9 +180,16 @@ abstract class QoinRateChangeEntity with _$QoinRateChangeEntity {
     String? bulkHistoryId,
 
     /// 마이그레이션이 사라지게 한 옛 숫자(0). 박제용.
+    // TRANSITIONAL(spec §20.4.5): 정리 커밋에서 이 필드를 삭제한다 (freezed 재생성).
     double? migratedFromRate,
     DateTime? resumedAt,
     int? resumeCount,
+
+    /// 마감 사유 (`nothing_left` = 같은 값 + 남은 개별 설정 0 으로 닫음). 부재 = 일반 완료.
+    String? closedReason,
+
+    /// `superseded` 로 마감시킨 관리자 uid (표시용 `관리자 {끝4}`).
+    String? supersededByUid,
 
     /// 일괄 적용 후에도 적립이 시작되지 않는(스위치 off) 산하 매장 수. `cleared*` 합에 들어가지 않는다.
     int? disabledUntouchedCount,
@@ -186,17 +202,7 @@ abstract class QoinRateChangeEntity with _$QoinRateChangeEntity {
 
   bool get isBulk => op == QoinRateChangeOp.bulkApply;
 
-  /// 끝나지 않은 일괄 적용인가: partial, 또는 오래 갱신이 없는 in_progress (고아 — design D8).
-  bool isUnfinished(DateTime now) {
-    if (!isBulk) return false;
-    if (status == QoinBulkStatus.partial) return true;
-    if (status != QoinBulkStatus.inProgress) return false;
-    final last = lastProgressAt ?? changedAt;
-    if (last == null) return true;
-    return now.difference(last) > QoinPolicy.bulkStaleAfter;
-  }
-
-  /// 진행 중(아직 stale 아님)인가.
-  bool isRunning(DateTime now) =>
-      isBulk && status == QoinBulkStatus.inProgress && !isUnfinished(now);
+  /// `nothing_left` 로 닫힌 이력인가 (같은 값 + 남은 개별 설정 0).
+  bool get isClosedNothingLeft =>
+      status == QoinBulkStatus.completed && closedReason == 'nothing_left';
 }

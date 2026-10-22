@@ -13,6 +13,7 @@ import 'package:qradar/presentation/admin/qoin/admin_qoin_rate_history_page.dart
 import 'package:qradar/presentation/admin/qoin/admin_qoin_store_rates_page.dart';
 import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart';
+import 'package:qradar/presentation/admin/widgets/admin_brand_link_audit_card.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_admin_ui.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_current_rate_card.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_kill_switch_card.dart';
@@ -89,6 +90,8 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
           children: [
             // TRANSITIONAL(spec §20.4.5): 임시 마이그레이션 카드. 정리 커밋에서 이 한 줄과 import 를 삭제한다.
             const AdminQoinMigrationCard(),
+            // TRANSITIONAL(brand_authorization_hardening §4): 임시 브랜드 링크 점검 카드. 정리 커밋에서 이 한 줄과 import 를 삭제한다.
+            const AdminBrandLinkAuditCard(),
             const _PartialSection(),
             // 전역 카드 + 비상 정지: config 상태에만 묶인다.
             cfgAsync.when(

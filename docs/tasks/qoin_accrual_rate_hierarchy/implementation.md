@@ -341,3 +341,92 @@ Q1 수용(일괄 덮어쓰기 후 미적립) 재현 · N4 6건 · 회수 통과 
 - 설계 보고(뒤집지 않음): ① 레거시 0 가드는 브랜드 자신의 레거시 0 도 포함시켰다(spec 은 산하 매장만 언급; 브랜드 0 덮어쓰기 시 전체 적립 재개 위험 때문). ② 새 일괄 적용이 기존 `partial` 포인터를 대체하면 옛 partial 이력은 영구 `partial` 로 남는다(spec 미규정). ③ `enabledChangedAt` 은 Rules 가 강제하지 않는다(spec 은 `enabledChangedBy` 만) — 사칭은 막히나 시각 위조는 가능, 기록은 `direct` 로 안전 측. ④ 마이그레이션은 무효 값 탐지를 위해 `orderBy('qoinAccrualRate')` 로 필드 보유 문서만 스캔(전 매장 read 없음).
 - 확인 불가: 운영 인덱스 동작·실제 배포 후 화면(배포 금지). `npm run test:emulator` 는 `functions/` 에서, Rules 는 `cd /Users/Byeonguk/Developer/OrderApp/test_rules && npm test` 로 재현.
 - 임시 파일/실험용 엔트리포인트: `lib/tmp_*` 없음, 생성하지 않음. 스크래치패드 로그만 사용.
+
+---
+
+# 개정 3 구현 — 2차 검증 FAIL S1·S2·S3·S5·S6 + 정정 4건 (spec §21, design §19)
+
+실결제 0회. **배포하지 않았다.** 보안 task(`docs/tasks/brand_authorization_hardening/implementation.md`)와 **같은 배포 창**이다. S4 는 그 문서에 있다.
+
+## C1. 구현 완료 항목
+
+| FAIL | 처리 | 핵심 |
+|---|---|---|
+| S2 포인터를 지울 수 없다 | 포인터를 **상태 기계**로 (`in_progress` / `partial` / `completed` / `superseded`) | 삭제 0. `partial` 뒤의 모든 CF 성공(새 일괄 overwrite·preserve · 브랜드 단건 · 브랜드 스위치)이 옛 이력 문서와 포인터를 **같은 트랜잭션**에 마감한다. 같은 값 + 지울 것 0 + `partial` 이면 새 이력 없이 옛 이력을 `completed(closedReason:'nothing_left', closedBy)` 로 닫고 `{changed:false, closed:true}`. 신규 필드·Rules·인덱스 0 |
+| S3-a 빈 이력 | `scanStartedAt` 가드 | `sameValue && 포인터 종결(completed/superseded) && qoinBulkAt > scanStartedAt` → `{changed:false, staleScan:true}` + `console.warn`. **`partial` 은 가드에 넣지 않았다** |
+| S3-b `changed` 미소비 | 소비 지점 전수 | 일괄 결과 카드(`_UnchangedCard`) · 단건 SnackBar(전역·매장) · 스위치 SnackBar · 이력 화면 재개. 전부 `changed == false` 분기를 **성공 분기보다 먼저** 검사 |
+| S1 판정 출처 | `resolveBulkBanner(BrandEntity, now)` 단일 함수 | 허브 provider · 브랜드 목록 태그 · 브랜드 편집 배너 · 브랜드 정보 plate · 이력 행(포인터 일치 조건)이 공유. 수치만 `qoinBulkHistoryId` 로 이력 문서 1건을 **직접 읽는다**(`qoinBulkHistoryDocProvider`, 스트림 아님). 로딩·실패·문서 없음이어도 **배너와 `이어서 적용` 은 유지, 수치만 생략** |
+| S6 과도기 마커 | 기계가 목록을 소유 | `qoin_architecture_guard_test` 가 레거시 토큰 10종으로 `lib/ functions/src/ functions/test/ test/ test_fixtures/` 를 grep → **파일 집합 == 허용 목록**(초과·누락 둘 다 FAIL) + 허용 목록 전 파일의 마커/`_transitional` 메타 키 단언 |
+| S5 | 설계자가 직접 갱신 (완료) | — |
+| 정정 1 | `enabledChangedAt == request.time` | Rules 1줄 (update 의 `enabled` 변경 시) |
+| 정정 2 | 단건 `setQoinAccrualRate` 레거시 0 가드 | 대상의 현재 값이 레거시 0 이면 `failed-precondition` + `details{legacyZeroCount,storeIds}`. `LEGACY_MESSAGE_PREFIX` 는 `qoinAdmin.ts` 1곳으로 올려 일괄·단건이 공유 |
+| 정정 4 | 마이그레이션 `raw` 표시 | **원인이 TS 가 아니라 Dart 였다** (아래 C6) |
+
+## C2. 변경 파일 (백엔드)
+
+| 파일 | 내용 |
+|---|---|
+| `functions/src/qoinAdmin.ts` | `BULK_STATUS`, `isBulkPartial` / `isBulkTerminal`, `readPartialHistory`(트랜잭션 안 read-before-write), `supersedePartialHistory`, `completePartialHistoryNothingLeft`, `supersededPointerFields`, `LEGACY_MESSAGE_PREFIX` |
+| `functions/src/applyBrandQoinRate.ts` | 완료 시 포인터 **삭제 → `completed`**(overwrite·preserve·재개 모두), partial 마감, staleScan 가드, nothing_left, 재개는 `superseded` 이력도 거부 |
+| `functions/src/setQoinAccrualRate.ts` · `setQoinAccrualEnabled.ts` | 브랜드 scope 성공 시 `superseded` 마감. 값이 같은 noop 은 닫지 않는다. 레거시 0 가드(rate) |
+| `firestore.rules` | `config` update `enabledChangedAt == request.time` |
+| `functions/test/emulator.test.mjs` | 기존 단언 정정(포인터 삭제 → completed, "이력 1건" → **문서 수 자체**) + 신규 K1~K9, L(CF1~CF8) |
+
+## C3. 변경 파일 (Dart)
+
+| 영역 | 파일 |
+|---|---|
+| 판정 | `domain/entities/qoin_bulk_banner.dart` (신규: `resolveBulkBanner`, `resolveHistoryRow`). `QoinRateChangeEntity.isUnfinished/isRunning` **삭제**, `QoinBulkStatus.superseded` 추가(미지 코드는 여전히 null), 이력 `closedReason` / `supersededByUid` |
+| 결과 | `QoinBulkApplyResult` 에 `closed` / `staleScan`, 단건·스위치 결과에 `closed` (미지 키 관대) |
+| 이력 문서 1건 | `QoinRateRepository.fetchHistory` + datasource + `GetQoinRateHistoryDocUseCase` + `qoinBulkHistoryDocProvider` |
+| 화면 | `admin_qoin_brand_rate_edit_page.dart`(이력 스트림 → 포인터, `_UnchangedCard`, 마감 고지) · `qoin_partial_banner.dart`(`full` 은 `brandName/rate/stale/progress`) · `qoin_bulk_resume.dart`(시그니처: 이력 엔티티 → brandId/historyId/remaining) · `admin_qoin_rate_history_page.dart` · `qoin_rate_history_tile.dart`(종결 줄 2종, 포인터 일치 시에만 재개) · `qoin_rate_info_row.dart`(브랜드 정보 plate) · `qoin_accrual_switch_card.dart` · 전역/매장 편집 페이지 · `qoin_admin_ui.dart`(`QoinMessages.rateUnchanged` 등) · `admin_qoin_brand_rates_page.dart` · `qoin_admin_providers.dart` (`isBulkUnfinished` 삭제) |
+| 마커 | 8개 파일에 `TRANSITIONAL(spec §20.4.5)` + JSON `_transitional` 메타 객체 (C7) |
+
+## C4. 테스트 결과 (전부 직접 실행)
+
+| 스위트 | 결과 |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **447 / 447 PASS** (개정 2: 368) |
+| `functions` `npm run build` (tsc) | 오류 0 |
+| `functions` `npm test` (TS 단위) | **86 / 86 PASS** (개정 2: 82) |
+| `functions` `npm run test:emulator` | **97 / 97 PASS** |
+| Rules 하네스 `test_rules` `npm test` | **332 / 332 PASS** (개정 2: 261) |
+| 통합 `npm run test:flow` | **27 / 27 PASS** |
+
+신규 CF 케이스: **K1** partial 뒤 새 overwrite → 옛 이력 `superseded(supersededBy=새 id)` · 이력 문서 2건 / **K2** preserve / **K3** 브랜드 단건(noop 은 닫지 않음) / **K4** 스위치(매장 단건은 무관) / **K5** `nothing_left`(`closed:true`, 새 이력 0, 옛 이력 `completed`+`closedReason`+`closedBy`, 2회차는 평범한 noop, 남은 일이 있으면 닫지 않고 진행) / **K6** completed 뒤 신선한 스캔 → 정상 진행 / **K7** staleScan 가드(종결 포인터 + 미래 `qoinBulkAt` → `staleScan:true`, 이력 0, 매장 불변. `superseded` 도 동일. 다른 값·과거 종결 포인터는 비대상. **`partial` 은 가드하지 않음**) / **K8** 3동시 × 1500곳 → **브랜드 이력 문서 수 = 1**, 보고 clearedCount 합 1500, `changed:true` 1건 / **K9** 단건 레거시 0 가드.
+
+**mutation 검증**: 가드 비활성화 → K7 FAIL, partial 마감 제거 → K3·F5-(a) FAIL (로그 확인 후 원복).
+
+## C5. 종결 4경로 · 구버전 호환 · 읽기 비용
+
+- 종결 4경로: 새 일괄(overwrite·preserve) · 브랜드 단건 · 브랜드 스위치 · `nothing_left`. 모두 같은 트랜잭션, 이력 문서는 삭제하지 않는다(`status` 전이).
+- 구버전 앱: `QoinBulkStatus.fromCode` 가 미지 코드(`superseded`)에 null → 판정 `none`. `completed` 는 구버전 enum 에 이미 있고 구버전 판정이 중단으로 읽지 않는다. 의미 일치.
+- 추가 read: `partial` 포인터가 있을 때만 +1 (옛 이력 문서). 적립 경로(`onOrderQoinSettled`)·결제 경로는 **손대지 않았다** (`git diff` 0). CH16 실측: earn(브랜드 소속) 문서 read 5 / 왕복 4, 개인 매장 4 / 3, clawback 4 / 4 — 개정 2 와 동일.
+
+## C6. 작업표와 현실이 다른 곳
+
+1. **`describeRaw` (정정 4)**: 작업표는 `migrateQoinZeroRates.ts` 의 `describeRaw` 를 지목했으나 TS 는 이미 JSON 표기(`true` · `[1]` · `{}`)를 보낸다. 따옴표를 덧붙이는 쪽은 **Dart `_raw`** (`num.tryParse` 가 아니면 `"…"` 로 감쌈). 서버 계약을 단위 테스트로 고정하고(`describeRaw` 4종) Dart 쪽을 `AdminQoinMigrationCard.formatRaw` 로 고쳤다 (JSON 으로 해석되면 그대로, 해석 불가 문자열만 따옴표).
+2. **마커 누락 7개 + 실제 8개**: spec 의 7개에 더해 토큰 grep 이 `migratedFromRate` 로 `qoin_rate_change_entity.dart` / `qoin_rate_change_model.dart` / `qoin_history_tile_test.dart` 를 추가로 잡았다 (이력 읽기 호환 필드이므로 정리 시 필드째 삭제 대상으로 목록에 올렸다). `qoin_hub_states_test.dart` 는 토큰이 없어 목록 밖이다. `.freezed.dart` 는 생성 파일이라 스캔에서 제외(원본 `.dart` 가 마커를 가진다).
+3. **`isUnfinished(` 가드 vs 이력 행**: 이력 행도 `isUnfinished(` 를 쓰고 있었다. 가드를 지키려면 이력 행 판정도 판정 파일로 올려야 했다 → `resolveHistoryRow` (포인터 일치 조건 포함, design §19-7-1).
+
+## C7. 과도기 자산 목록 (S6, 기계가 소유)
+
+`test/presentation/qoin_architecture_guard_test.dart` 의 `allowed` 가 단일 목록이다 (30개). 정리 커밋은 토큰을 제거하며 이 목록을 **빈 집합**으로 만든다. 검증: 허용 목록에 없는 파일에 토큰을 넣으면 FAIL(초과), 허용 목록에 토큰 없는 파일을 넣으면 FAIL(누락) — 둘 다 직접 확인했다.
+
+## C8. 테스트 포인트 (tester)
+
+1. PROBE1/PROBE3 를 **재현으로**: 포인터 `partial` + 이력 읽기 실패 → 배너·`이어서 적용` 있음 / 포인터 종결 + 옛 이력 `partial` → 배너 없음, 이력 행은 `이후 변경으로 마감됐어요`.
+2. `partial` 종결 4경로를 에뮬레이터에서 (K1~K5) + 허브·목록·편집·브랜드 정보 4표면이 같이 사라지는지.
+3. `changed:false` 가 화면에 "적용/변경/마쳤어요" 로 보이지 않는지 (일괄 · 전역 · 매장 · 스위치 · 이력 재개).
+4. 구버전 앱 + 신 CF 구간(② 후 ③ 전): `superseded` 포인터 → 구 앱 허브에 배너 없음.
+5. 라이브 검증(spec §21.9-5): 레거시 0 매장 브랜드 일괄 적용 시 `details` 가 `Map` 으로 오는지 (실기기만 가능).
+
+## C9. 미구현 · 보류 · 설계 보고
+
+- **보류**: spec §20.4.5 정리 절차 6·7 문서 추가, §20.4.4 라이브 검증 1행, `tester_guide.md` R5 — 문서 작업이라 설계자 몫으로 남겼다.
+- **설계 문제로 보이는 것 (뒤집지 않고 보고)**:
+  1. **staleScan 가드의 전제가 overwrite 에만 성립한다.** "종결 포인터 = 끝까지 마쳤다 = 지울 것이 없다" 는 overwrite 완료에만 참이다. preserve 완료·브랜드 단건·스위치로 생긴 종결 포인터(`completed`/`superseded`) 뒤에 같은 값을 `덮어쓰고 적용` 하면, 스캔이 그 전이보다 앞서면 실제로 남은 개별 설정이 있어도 `staleScan` noop 이 된다(재누르면 새 스캔으로 정상 진행). 돈에는 영향 없는 방향이지만 "했는데 바뀐 게 없다" 가 거짓일 수 있다. 포인터에 "overwrite 로 끝났는가" 가 없어 구분할 수 없다.
+  2. **stale `in_progress` 는 종결되지 않는다.** 새 적용이 오래 멈춘 `in_progress` 포인터를 교체하면 그 이력 문서는 영구 `in_progress` 로 남는다(spec 은 `partial` 만 마감). 행은 "끝나지 않음" plate 를 `이어서 적용` 없이 영구히 그린다.
+  3. **`config` create 에는 `enabledChangedAt` 이 강제되지 않는다** (spec 은 update 만). `enabled` + `enabledChangedBy` 만 담은 create 는 여전히 통과한다. create 는 문서 최초 생성 1회뿐이라 영향은 작다.
+  4. **`EntityApprovalStatus.fromString` 은 `status` 부재를 `approved` 로 읽는다.** `status` 가 없는 브랜드 문서는 승인 화면에서 `approved` 로 분류되지만 매장 create Rules(D5)는 명시적 `approved` 만 허용한다.

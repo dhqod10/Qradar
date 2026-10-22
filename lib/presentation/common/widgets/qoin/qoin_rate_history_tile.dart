@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_formatters.dart';
+import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
+import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/common/providers/qoin_rate_providers.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_partial_banner.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_labels.dart';
@@ -97,8 +99,17 @@ class QoinRateHistoryTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isAdmin = viewer.isAdmin;
-    final unfinished = change.isUnfinished(now);
-    final running = change.isRunning(now);
+    // 일괄 적용 행의 상태: **그 문서의 status** 로 그리되, `이어서 적용` 은 브랜드 포인터가 이 문서를 가리키는 중단일 때만 켠다.
+    // 포인터 해석은 허브·목록·편집과 같은 `resolveBulkBanner` 한 함수다. 브랜드를 아직 읽지 못했으면(null) 버튼만 숨고 행은 그려진다.
+    QoinBulkBanner? pointer;
+    if (change.isBulk && change.scope == QoinRateScope.brand) {
+      final brand = ref.watch(brandByIdProvider(change.targetId)).asData?.value;
+      if (brand != null) pointer = resolveBulkBanner(brand, now);
+    }
+    final rowState = resolveHistoryRow(change, pointer: pointer, now: now);
+    final unfinished = rowState.isUnfinished;
+    final running = rowState.isRunning;
+    final closedLine = _closedLine(rowState, isAdmin: isAdmin);
 
     // 변경자 표기.
     final bool unknownActor = change.changedBy == null;
@@ -145,6 +156,7 @@ class QoinRateHistoryTile extends ConsumerWidget {
         spoken.write(' ${_untouchedLine(change.disabledUntouchedCount!)}.');
       }
     }
+    if (closedLine != null) spoken.write(' $closedLine.');
     if (_isMigration) spoken.write(' $_migrationLine.');
     if (_isClearByBulk) {
       spoken.write(' $_clearByBulkLine.');
@@ -467,10 +479,34 @@ class QoinRateHistoryTile extends ConsumerWidget {
                         ),
                       ),
                     ),
+                  if (closedLine != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const ExcludeSemantics(
+                          child: Icon(
+                            Icons.check_rounded,
+                            size: 12,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            closedLine,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (unfinished)
                     QoinPartialBanner.inRow(
                       change: change,
-                      onResume: isAdmin && onResume != null
+                      onResume: isAdmin && rowState.canResume && onResume != null
                           ? () => onResume!(change)
                           : null,
                     ),
@@ -481,6 +517,22 @@ class QoinRateHistoryTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// 종결된 일괄 적용의 상태 줄 (design §19-3). 마감된 기록은 partial plate 와 `이어서 적용` 을 그리지 않는다.
+  String? _closedLine(QoinHistoryRowState state, {required bool isAdmin}) {
+    switch (state.kind) {
+      case QoinHistoryRowKind.superseded:
+        final uid = change.supersededByUid;
+        final who = (isAdmin && uid != null) ? ' · 관리자 ${_uidTail(uid)}' : '';
+        return '이후 변경으로 마감됐어요$who';
+      case QoinHistoryRowKind.closedNothingLeft:
+        return '남은 개별 설정이 없어 마감됐어요';
+      case QoinHistoryRowKind.plain:
+      case QoinHistoryRowKind.running:
+      case QoinHistoryRowKind.unfinished:
+        return null;
+    }
   }
 
   static const String _migrationLine =

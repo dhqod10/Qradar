@@ -7,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
+import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/qoin_zero_migration_result.dart';
@@ -121,6 +122,22 @@ void main() {
       expect(find.text('브랜드 "Q브루어리" 외 1건'), findsOneWidget);
     });
 
+    testWidgets('S2: 포인터가 종결(completed / superseded)이면 허브 배너가 없다 — 옛 이력이 partial 이어도', (t) async {
+      big(t);
+      await t.pumpWidget(
+        app(
+          brands: Stream.value([
+            brand('b1', '종결됨', status: QoinBulkStatus.completed),
+            brand('b2', '마감됨', status: QoinBulkStatus.superseded),
+          ]),
+          history: Stream.value(const <QoinRateChangeEntity>[]),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('끝나지 않은 일괄 적용이 있어요'), findsNothing);
+      expect(find.text('일괄 적용 상태를 확인하지 못했어요'), findsNothing);
+    });
+
     testWidgets('이력 쿼리가 에러여도 포인터 배너는 그대로 보인다 (인덱스 미배포와 독립)', (t) async {
       big(t);
       await t.pumpWidget(
@@ -137,14 +154,17 @@ void main() {
       expect(find.text('끝나지 않은 일괄 적용이 있어요'), findsOneWidget);
     });
 
-    test('isBulkUnfinished: partial / 오래된 in_progress 만 미완료', () {
+    test('resolveBulkBanner: partial / 오래된 in_progress 만 미완료', () {
       final now = DateTime(2026, 10, 22, 12);
       expect(
-        isBulkUnfinished(brand('a', 'a', status: QoinBulkStatus.partial), now),
+        resolveBulkBanner(
+          brand('a', 'a', status: QoinBulkStatus.partial),
+          now,
+        ).isUnfinished,
         isTrue,
       );
       expect(
-        isBulkUnfinished(
+        resolveBulkBanner(
           brand(
             'a',
             'a',
@@ -152,11 +172,11 @@ void main() {
             at: now.subtract(const Duration(minutes: 6)),
           ),
           now,
-        ),
+        ).isUnfinished,
         isTrue,
       );
       expect(
-        isBulkUnfinished(
+        resolveBulkBanner(
           brand(
             'a',
             'a',
@@ -164,10 +184,10 @@ void main() {
             at: now.subtract(const Duration(minutes: 1)),
           ),
           now,
-        ),
+        ).isUnfinished,
         isFalse,
       );
-      expect(isBulkUnfinished(brand('a', 'a'), now), isFalse);
+      expect(resolveBulkBanner(brand('a', 'a'), now).isUnfinished, isFalse);
     });
   });
 
@@ -340,6 +360,33 @@ void main() {
       expect(find.text('이미 일부가 옮겨졌을 수 있어요. 대상을 다시 확인해 주세요'), findsOneWidget);
       expect(find.text('이전 실행'), findsNothing, reason: '재실행 버튼 없음');
       expect(find.text('대상 다시 확인하기'), findsOneWidget);
+    });
+  });
+
+  group('마이그레이션 카드 raw 표시 (describeRaw 타입 보존)', () {
+    test('서버가 보낸 JSON 표기는 따옴표를 더하지 않고 그대로 보인다', () {
+      for (final raw in [
+        '"3"', // 문자열 3
+        '0.5',
+        '-1',
+        'true',
+        'false',
+        'null',
+        '[1,2]',
+        '{"a":1}',
+        'NaN',
+        'Infinity',
+        '(absent)',
+      ]) {
+        expect(AdminQoinMigrationCard.formatRaw(raw), raw, reason: raw);
+      }
+    });
+    test('잘린(100자) 문자열·배열도 그대로, 해석 불가 문자열만 따옴표', () {
+      final long = '"${'a' * 99}';
+      expect(AdminQoinMigrationCard.formatRaw(long), long);
+      expect(AdminQoinMigrationCard.formatRaw('[1,2,3'), '[1,2,3');
+      expect(AdminQoinMigrationCard.formatRaw('hello'), '"hello"');
+      expect(AdminQoinMigrationCard.formatRaw(null), 'null');
     });
   });
 }

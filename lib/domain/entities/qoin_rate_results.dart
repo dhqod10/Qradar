@@ -21,12 +21,16 @@ class QoinRateValueInherit extends QoinRateValue {
 }
 
 /// `setQoinAccrualRate` 결과. [changed] 가 false 면 값이 이미 같아서 아무것도 쓰지 않았다.
+///
+/// **이 응답을 소비하는 모든 화면은 [changed] 를 읽는다** (spec §21.3-b, 가드 테스트). `changed == false` 인 경로에서
+/// 성공을 뜻하는 어떤 동사(변경했어요·적용했어요 …)도 쓰지 않는다.
 class QoinRateSetResult {
   const QoinRateSetResult({
     required this.before,
     required this.after,
     required this.changed,
     this.historyId,
+    this.closed = false,
   });
 
   /// null = 설정 없음(상속).
@@ -34,6 +38,9 @@ class QoinRateSetResult {
   final double? after;
   final bool changed;
   final String? historyId;
+
+  /// `changed == false` 이면서 끝나지 않았던 일괄 적용 기록이 이 호출로 닫혔다 (서버 응답 `closed`). 미지 키 관대.
+  final bool closed;
 }
 
 /// `applyBrandQoinRate` 결과. 숫자는 **서버가 센 값**이다 (클라이언트 미리보기가 아니다).
@@ -51,9 +58,18 @@ class QoinBulkApplyResult {
     this.clearedValueCount = 0,
     this.clearedInvalidCount = 0,
     this.brandDisabled = false,
+    this.closed = false,
+    this.staleScan = false,
   });
 
+  /// false 면 **적용 결과가 아니라 "바뀐 것이 없음"** 이다. 이때 나머지 카운트는 의미가 없으므로 화면이 그리지 않는다.
   final bool changed;
+
+  /// `changed == false` 이면서 끝나지 않았던 일괄 적용 기록(`partial`)이 이 호출로 닫혔다 (`nothing_left`).
+  final bool closed;
+
+  /// 서버가 오래된 스캔을 불신해 noop 으로 처리했다. 사용자에게 구분해 보이지 않는다 — `이미 같은 값이에요` 로 수렴한다.
+  final bool staleScan;
   final QoinBulkStatus status;
   final int affectedCount;
   final int clearedCount;
@@ -79,9 +95,13 @@ class QoinAccrualEnabledResult {
     required this.after,
     required this.changed,
     this.historyId,
+    this.closed = false,
   });
   final bool? before;
   final bool? after;
   final bool changed;
   final String? historyId;
+
+  /// 끝나지 않았던 일괄 적용 기록이 이 호출로 닫혔다 (서버가 보내면). 미지 키 관대.
+  final bool closed;
 }

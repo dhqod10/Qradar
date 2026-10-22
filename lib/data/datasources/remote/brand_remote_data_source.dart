@@ -1,14 +1,22 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
+import 'package:qradar/core/errors/brand_claim_exception.dart';
 import 'package:qradar/data/models/brand_model.dart';
 import 'package:qradar/data/models/store_model.dart';
 
 /// Firestore `brands/{brandId}` 원격 데이터소스.
 class BrandRemoteDataSource {
   final FirebaseFirestore _db;
+  final FirebaseFunctions? _functionsOverride;
 
-  BrandRemoteDataSource({FirebaseFirestore? db})
-      : _db = db ?? FirebaseFirestore.instance;
+  BrandRemoteDataSource({FirebaseFirestore? db, FirebaseFunctions? functions})
+      : _db = db ?? FirebaseFirestore.instance,
+        _functionsOverride = functions;
+
+  FirebaseFunctions get _functions =>
+      _functionsOverride ??
+      FirebaseFunctions.instanceFor(region: 'asia-northeast3');
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection(FirestorePaths.brands);
@@ -106,5 +114,41 @@ class BrandRemoteDataSource {
         .limit(1)
         .get();
     return snap.docs.isNotEmpty;
+  }
+
+  // ─── brand_authorization_hardening (D1) ─────────────────────────────────
+
+  /// `brands where submittedBy == uid` (단일 필드 등식 — 인덱스 불요). **실패는 예외로 전파한다** (빈 목록과 구별).
+  Future<List<BrandModel>> fetchBySubmitter(String uid) async {
+    final snap = await _col.where('submittedBy', isEqualTo: uid).get();
+    return snap.docs.map(BrandModel.fromFirestore).toList(growable: false);
+  }
+
+  /// `claimSubmittedBrand` callable. `users.brandId` 는 클라이언트가 쓸 수 없다 (Rules) — 서버가
+  /// `brands/{id}.submittedBy == uid` 를 검증하고 값과 역할 이력을 같은 트랜잭션에 쓴다. 멱등.
+  Future<void> claimSubmittedBrand(String brandId) async {
+    try {
+      await _functions
+          .httpsCallable(
+            'claimSubmittedBrand',
+            options: HttpsCallableOptions(timeout: const Duration(seconds: 30)),
+          )
+          .call<Object?>(<String, dynamic>{'brandId': brandId});
+    } on FirebaseFunctionsException catch (e) {
+      throw BrandClaimException(_classify(e.code), code: e.code);
+    } catch (_) {
+      throw const BrandClaimException(BrandClaimFailure.retryable);
+    }
+  }
+
+  static BrandClaimFailure _classify(String code) {
+    switch (code) {
+      case 'failed-precondition':
+        return BrandClaimFailure.alreadyLinked;
+      case 'permission-denied':
+        return BrandClaimFailure.notSubmitter;
+      default:
+        return BrandClaimFailure.retryable;
+    }
   }
 }

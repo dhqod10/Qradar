@@ -10,6 +10,7 @@ import {
   computeEarnAmount,
 } from '../lib/qoinRate.js';
 import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS } from '../lib/orderBuilder.js';
+import { describeRaw, BULK_STATUS } from '../lib/qoinAdmin.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const table = JSON.parse(
@@ -200,4 +201,43 @@ test('삭제 대상 식별자 잔존 0건: allowZero / explicitOffRate / cleared
     }
   }
   assert.deepEqual(hits, []);
+});
+
+test('describeRaw: 값의 JSON 표기를 그대로 — bool·배열·객체에 따옴표가 덧붙지 않는다 (마이그레이션 raw 의 존재 이유)', () => {
+  assert.equal(describeRaw(true), 'true');
+  assert.equal(describeRaw(false), 'false');
+  assert.equal(describeRaw([1, 2]), '[1,2]');
+  assert.equal(describeRaw({ a: 1 }), '{"a":1}');
+  assert.equal(describeRaw(null), 'null');
+  assert.equal(describeRaw(0.5), '0.5');
+  assert.equal(describeRaw(NaN), 'NaN');
+  assert.equal(describeRaw(undefined), '(absent)');
+  // 문자열만 따옴표 (3 과 "3" 을 구별한다)
+  assert.equal(describeRaw('3'), '"3"');
+  assert.equal(describeRaw('x'.repeat(200)).length, 100);
+});
+
+test('포인터 상태 기계: 4값 (in_progress / partial / completed / superseded) — Dart QoinBulkStatus 와 같은 코드', () => {
+  assert.deepEqual(Object.values(BULK_STATUS).sort(), ['completed', 'in_progress', 'partial', 'superseded']);
+});
+
+test('auditBrandLinks 는 쓰기 호출이 하나도 없다 (읽기 전용 · 요청 인자 없음)', () => {
+  const code = fs.readFileSync(path.join(here, '../src/auditBrandLinks.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  for (const w of ['.update(', '.delete(', '.create(', '.batch(', 'runTransaction', 'FieldValue', 'bulkWriter', 'recursiveDelete']) {
+    assert.equal(code.includes(w), false, `쓰기 호출 ${w}`);
+  }
+  // `.set(` 은 메모리 Map 에만 쓴다 (Firestore 문서 ref 에 쓰지 않는다).
+  const receivers = [...code.matchAll(/(\w+)\.set\(/g)].map((m) => m[1]);
+  for (const r of receivers) assert.ok(['out', 'allBrands', 'holders'].includes(r), `.set( 수신자 ${r} 가 메모리 Map 이 아니다`);
+  assert.equal(/request\.data/.test(code), false, '요청 인자를 읽지 않는다 (dryRun 같은 모드 인자 없음)');
+});
+
+test('claimSubmittedBrand: users 에 쓰는 필드는 brandId 와 roleHistory 1건뿐이고 기존 값을 덮지 않는다', () => {
+  const code = fs.readFileSync(path.join(here, '../src/claimSubmittedBrand.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.match(code, /t\.update\(userRef, \{ brandId \}\)/);
+  assert.equal((code.match(/t\.set\(/g) ?? []).length, 1, 'roleHistory 1건');
+  assert.match(code, /failed-precondition/);
+  assert.match(code, /submittedBy/);
 });

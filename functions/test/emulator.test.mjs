@@ -146,7 +146,7 @@ await until(async () => { try { const r = await call('setQoinAccrualRate', {}, u
 // A. 진리표 E2E (CH1~CH10 + 확장). 같은 JSON 을 Dart/TS 단위 테스트도 읽는다.
 // ═════════════════════════════════════════════════════════════════════════
 console.log('\n── A. 진리표 E2E ──');
-/** 픽스처 expect → 기대 (TRANSITIONAL: transitionalExpect 우선, 정리 커밋에서 삭제) */
+/** 픽스처 expect → 기대 (TRANSITIONAL(spec §20.4.5): transitionalExpect 우선, 정리 커밋에서 삭제) */
 const expectOf = (row) => row.transitionalExpect ?? row.expect;
 const ISSUE_OF = {
   store: ['invalid_rate', 'store'], brand: ['invalid_rate', 'brand'], global: ['invalid_rate', 'global'],
@@ -834,6 +834,8 @@ await check('Q2 소급은 만들지 않는다: 설정을 고쳐도 기록된 주
 // ═════════════════════════════════════════════════════════════════════════
 // I. 레거시 0 호환 · 마이그레이션 (경로 #20, 임시 — 정리 커밋에서 이 섹션 삭제)
 // ═════════════════════════════════════════════════════════════════════════
+// TRANSITIONAL(spec §20.4.5): 섹션 I(레거시 0 · migrateQoinZeroRates)와 K9(단건 레거시 0 가드)는 정리 커밋에서 삭제한다.
+// TRANSITIONAL(brand_authorization_hardening §4): 섹션 L 의 CF7/CF8(auditBrandLinks)도 정리 커밋에서 삭제한다.
 console.log('\n── I. 레거시 0 · migrateQoinZeroRates ──');
 await check('MG-0 과도기 호환 판독: 레거시 0 은 사용 안 함처럼 동작 — 적립 0 · 이슈 미기록 (TRANSITIONAL)', async () => {
   const { uid, storeId } = await brandWorld({ brandDoc: { qoinAccrualRate: 0.05 }, storeDoc: { qoinAccrualRate: 0 } });

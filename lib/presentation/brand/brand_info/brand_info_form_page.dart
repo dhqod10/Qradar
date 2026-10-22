@@ -7,6 +7,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/presentation/brand/providers/brand_di_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
+import 'package:qradar/presentation/brand/providers/brand_link_gate_provider.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/common/widgets/image_upload_field.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
@@ -249,9 +250,14 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
         const SnackBar(content: Text('검토 요청을 보냈어요')),
       );
       // 수정 모드: push로 진입했으므로 pop.
-      // 신규 등록 모드: BrandScaffold가 profile stream(brandId) 갱신을 감지해
-      //   자동으로 BottomNav로 전환하므로 pop 하지 않는다.
-      if (_isEditMode) Navigator.pop(context);
+      // 신규 등록 모드: 브랜드 문서가 만들어졌다. 연결(users.brandId)은 서버가 하며, 실패해도 이 폼이 남아 있으면
+      //   사용자가 다시 저장해 같은 브랜드를 중복 등록할 수 있다 — 게이트를 다시 평가시켜 폼을 내리고
+      //   (방금 만든 브랜드를 조회해 연결) 정상 화면으로 넘어가게 한다.
+      if (_isEditMode) {
+        Navigator.pop(context);
+      } else {
+        ref.invalidate(brandLinkGateProvider);
+      }
     } on ArgumentError catch (e) {
       setState(() => _imageError = e.message);
     } catch (_) {

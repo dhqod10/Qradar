@@ -42,6 +42,7 @@ class QoinRateRemoteDataSource {
       after: (data['after'] as num?)?.toDouble(),
       changed: data['changed'] == true,
       historyId: data['historyId'] as String?,
+      closed: data['closed'] == true,
     );
   }
 
@@ -83,6 +84,8 @@ class QoinRateRemoteDataSource {
       clearedValueCount: n('clearedValueCount'),
       clearedInvalidCount: n('clearedInvalidCount'),
       brandDisabled: data['brandDisabled'] == true,
+      closed: data['closed'] == true,
+      staleScan: data['staleScan'] == true,
     );
   }
 
@@ -106,7 +109,25 @@ class QoinRateRemoteDataSource {
       after: data['after'] as bool?,
       changed: data['changed'] == true,
       historyId: data['historyId'] as String?,
+      closed: data['closed'] == true,
     );
+  }
+
+  /// 이력 문서 1건 직접 읽기 (스트림 아님 — CG 인덱스에 의존하지 않고 20건 창 문제도 없다). 문서가 없거나 해석할 수 없으면 null.
+  /// 배너 본문 수치용 보조 읽기라 호출자는 실패해도 배너를 숨기지 않는다 (spec §21.1).
+  Future<QoinRateChangeEntity?> fetchHistory(
+    QoinRateScope scope,
+    String targetId,
+    String historyId,
+  ) async {
+    final base = switch (scope) {
+      QoinRateScope.global => FirestorePaths.globalQoinRateHistory,
+      QoinRateScope.brand => FirestorePaths.brandQoinRateHistory(targetId),
+      QoinRateScope.store => FirestorePaths.storeQoinRateHistory(targetId),
+    };
+    final doc = await _firestore.collection(base).doc(historyId).get();
+    if (!doc.exists) return null;
+    return QoinRateChangeModel.fromFirestore(doc);
   }
 
   Stream<List<QoinRateChangeEntity>> watchHistory(

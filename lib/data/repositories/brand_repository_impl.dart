@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -20,12 +21,21 @@ class BrandRepositoryImpl implements BrandRepository {
   final BrandRemoteDataSource _dataSource;
   final StoreRemoteDataSource _storeDataSource;
   final String Function() _currentUidGetter;
+  final String Function() _newBrandId;
 
+  /// [newBrandIdGenerator] 는 테스트용 이음새 — 기본은 Firestore 자동 ID.
   BrandRepositoryImpl(
     this._dataSource,
     this._storeDataSource, {
     required String Function() currentUidGetter,
-  }) : _currentUidGetter = currentUidGetter;
+    String Function()? newBrandIdGenerator,
+  }) : _currentUidGetter = currentUidGetter,
+       _newBrandId =
+           newBrandIdGenerator ??
+           (() => FirebaseFirestore.instance
+               .collection(FirestorePaths.brands)
+               .doc()
+               .id);
 
   @override
   Stream<List<BrandEntity>> watchAll() {
@@ -56,9 +66,7 @@ class BrandRepositoryImpl implements BrandRepository {
     final now = DateTime.now();
 
     // id 가 비어있으면 신규 등록 → Firestore 자동 ID 생성
-    final brandId = brand.id.isEmpty
-        ? FirebaseFirestore.instance.collection(FirestorePaths.brands).doc().id
-        : brand.id;
+    final brandId = brand.id.isEmpty ? _newBrandId() : brand.id;
 
     final isNew = brand.id.isEmpty;
 
@@ -74,25 +82,17 @@ class BrandRepositoryImpl implements BrandRepository {
       );
       final model = BrandModel.fromEntity(updated);
 
-      // V2-1: brand doc 생성 + users/{uid}.brandId 갱신을 batch write 로 원자적 처리.
-      // 두 동작 모두 set + merge 로 — users doc 미존재 케이스에서도 안전 (update 는
-      // doc 없으면 NOT_FOUND throw).
-      final batch = FirebaseFirestore.instance.batch();
-      batch.set(
-        FirebaseFirestore.instance
-            .collection(FirestorePaths.brands)
-            .doc(brandId),
-        model.toFirestore(),
-        SetOptions(merge: true),
-      );
-      batch.set(
-        FirebaseFirestore.instance
-            .collection(FirestorePaths.users)
-            .doc(uid),
-        <String, dynamic>{'brandId': brandId},
-        SetOptions(merge: true),
-      );
-      await batch.commit();
+      // brand_authorization_hardening D1: `users/{uid}.brandId` 는 권한 값이라 클라이언트가 쓰지 않는다.
+      // (구 방식은 브랜드 문서 + users.brandId 를 한 batch 로 썼다 — Rules 가 더 이상 허용하지 않는다.)
+      // 1) 브랜드 문서 1건만 쓴다. 2) 서버(claimSubmittedBrand)가 submittedBy == uid 를 검증하고 연결한다.
+      await _dataSource.set(brandId, model.toFirestore());
+      try {
+        await _dataSource.claimSubmittedBrand(brandId);
+      } catch (e) {
+        // 브랜드 문서는 이미 생겼다 — 여기서 실패로 되돌리면 사용자가 같은 브랜드를 다시 등록해 고아가 쌓인다.
+        // 연결은 BrandScaffold 의 게이트(BrandIdMissingView)가 `brands where submittedBy == uid` 조회로 복구한다.
+        developer.log('claimSubmittedBrand 실패 — 게이트가 복구한다', error: e);
+      }
       return brandId;
     }
 
@@ -188,4 +188,27 @@ class BrandRepositoryImpl implements BrandRepository {
           (models) => models.map((m) => m.toEntity()).toList(growable: false),
         );
   }
+
+  @override
+  Future<List<BrandEntity>> fetchMySubmittedBrands() async {
+    final uid = _currentUidGetter();
+    if (uid.isEmpty) return const [];
+    final models = await _dataSource.fetchBySubmitter(uid);
+    final list = models.map((m) => m.toEntity()).toList();
+    // 가장 이른 submittedAt 이 먼저 (제출 시각이 없는 옛 문서는 뒤로). 인덱스 없이 클라이언트에서 정렬한다.
+    list.sort((a, b) {
+      final x = a.submittedAt;
+      final y = b.submittedAt;
+      if (x == null && y == null) return a.id.compareTo(b.id);
+      if (x == null) return 1;
+      if (y == null) return -1;
+      final c = x.compareTo(y);
+      return c != 0 ? c : a.id.compareTo(b.id);
+    });
+    return list;
+  }
+
+  @override
+  Future<void> claimSubmittedBrand(String brandId) =>
+      _dataSource.claimSubmittedBrand(brandId);
 }

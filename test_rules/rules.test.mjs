@@ -1,6 +1,6 @@
 import { initializeTestEnvironment, assertFails, assertSucceeds }
   from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, increment, collection, query, where, orderBy, limit, getDocs, collectionGroup, Timestamp, serverTimestamp, deleteDoc, deleteField } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, collection, query, where, orderBy, limit, getDocs, collectionGroup, Timestamp, serverTimestamp, deleteDoc, deleteField, writeBatch } from 'firebase/firestore';
 import fs from 'fs';
 
 const CUSTOMER = 'dUFcFv71FzVA4feodWnxv3k0MKF3';
@@ -16,7 +16,7 @@ const DAY_END   = new Date('2026-10-22T00:00:00+09:00');
 
 const env = await initializeTestEnvironment({
   projectId: 'order-app-5957e',
-  firestore: { host: '127.0.0.1', port: 8137, rules: fs.readFileSync('firestore.rules', 'utf8') },
+  firestore: { host: '127.0.0.1', port: 8137, rules: fs.readFileSync(process.env.RULES_FILE || 'firestore.rules', 'utf8') },
 });
 
 // 시드: 규칙 우회로 두 사용자 doc 생성
@@ -553,6 +553,326 @@ await run('N8b owner 가 브랜드 이력 문서 단건 get', 'deny', () =>
   getDoc(doc(asOwner, 'brands', B_A, 'qoinRateHistory', 'h1')));
 await run('N8c 회귀: owner 가 자기 매장(S_BR)의 이력은 read', 'allow', () =>
   getDocs(collection(asOwner, 'stores', S_BR, 'qoinRateHistory')));
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// enabledChangedAt == request.time (spec §21.9-1) — 비상 정지의 행위자 기록은 생략할 수 없다
+// ══════════════════════════════════════════════════════════════════════════
+const seed = (fn) => env.withSecurityRulesDisabled(async (ctx) => fn(ctx.firestore()));
+const ecReset = (enabled = true) => seed((db) => setDoc(doc(db, 'config', 'qoin'), { accrualRate: 0.03, enabled }));
+await run('EC1 admin 이 enabledChangedBy 만 쓰고 enabledChangedAt 생략 (enabled 변경)', 'deny', async () => {
+  await ecReset(true);
+  return updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false, enabledChangedBy: ADMIN });
+});
+await run('EC2 admin 이 enabled 만 단독으로 update (같은 admin 이 이전에 토글한 경우 포함 — 행위자 지우기)', 'deny', async () => {
+  await ecReset(true);
+  return updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false });
+});
+await run('EC3 admin 이 enabledChangedAt 에 클라이언트 시각(Timestamp.now) — request.time 이 아님', 'deny', async () => {
+  await ecReset(true);
+  return updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: Timestamp.fromDate(new Date('2020-01-01')) });
+});
+await run('EC4 admin 이 enabledChangedAt 에 null', 'deny', async () => {
+  await ecReset(true);
+  return updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: null });
+});
+await run('EC5 admin 이 serverTimestamp 와 함께 enabled 변경 (새 앱의 정상 경로)', 'allow', async () => {
+  await ecReset(true);
+  return updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() });
+});
+await run('EC6 admin 이 다시 켜기 — 같은 형태 (비상 정지 해제도 동일)', 'allow', async () => {
+  await ecReset(false);
+  return updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() });
+});
+await run('EC7 enabled 를 건드리지 않는 update(예: 다른 설정 필드)는 enabledChangedAt 불요 — 회귀', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { note: 'x' }));
+
+// ══════════════════════════════════════════════════════════════════════════
+// RM — 역할 변조 스위트 (brand_authorization_hardening §5)
+//   불변식: "프로필을 바꿔서 얻을 수 있는 권한은 없다."
+//   작성 규칙: 케이스마다 users/{uid} 를 **그 안에서** 쓰고 보호 대상을 때린다 (고정 시드 재사용 금지).
+//   DENY 케이스는 Admin SDK(withSecurityRulesDisabled)로 변조 상태를 강제 주입한 뒤 하위 권한을 다시 때린다 —
+//   "Rules 가 막으니 그 다음은 볼 필요 없다" 는 가정이 RH20 의 사각이었다.
+// ══════════════════════════════════════════════════════════════════════════
+const rmTag = Date.now().toString(36);
+let rmN = 0;
+const rmId = (p) => `${p}_${rmTag}_${++rmN}`;
+/** 이 케이스 안에서 users/{uid} 를 쓴다 (Admin SDK). */
+async function rmUser(fields = {}) {
+  const uid = rmId('rmu');
+  await seed((db) => setDoc(doc(db, 'users', uid), { uid, role: 'customer', ...fields }));
+  return { uid, db: env.authenticatedContext(uid).firestore() };
+}
+/** 변조 상태를 강제 주입 (Rules 가 막아서 도달할 수 없는 상태를 가정해 하위 권한을 다시 때리기 위함). */
+const rmForce = (uid, fields) => seed((db) => setDoc(doc(db, 'users', uid), fields, { merge: true }));
+const rmBrand = async (status = 'approved', extra = {}) => {
+  const id = rmId('rmb');
+  await seed((db) => setDoc(doc(db, 'brands', id), { name: id, status, submittedBy: 'someone', brandKey: status === 'approved' ? 'KEY' : '', ...extra }));
+  return id;
+};
+const rmStore = async (fields = {}, id = rmId('rms')) => {
+  await seed((db) => setDoc(doc(db, 'stores', id), { ownerId: OTHER, name: id, status: 'approved', ...fields }));
+  return id;
+};
+const menuBody = { name: 'm', price: 1000 };
+
+await run('RM01 customer 가 users/{self} 에 {role:brand} (D3 — 전이 자체는 열려 있다)', 'allow', async () => {
+  const u = await rmUser();
+  return updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+});
+await run('RM01b owner 가 {role:brand}', 'allow', async () => {
+  const u = await rmUser({ role: 'owner' });
+  return updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+});
+for (const role of ['customer', 'owner', 'brand']) {
+  await run(`RM02 ${role} 가 users/{self} 에 {brandId:'bX'} (D1 — 화이트리스트에서 제거)`, 'deny', async () => {
+    const u = await rmUser({ role });
+    return updateDoc(doc(u.db, 'users', u.uid), { brandId: 'bX' });
+  });
+}
+await run('RM02b brand 계정(brandId 없음)이 {brandId:<실제 존재하는 approved 브랜드>} (존재하는 값이어도 DENY)', 'deny', async () => {
+  const u = await rmUser({ role: 'brand' }); const b = await rmBrand();
+  return updateDoc(doc(u.db, 'users', u.uid), { brandId: b });
+});
+await run('RM02c brand 계정(brandId 없음)이 {brandId:<자기가 submittedBy 인 브랜드>} 를 직접 (CF 만 쓸 수 있다)', 'deny', async () => {
+  const u = await rmUser({ role: 'brand' });
+  const b = rmId('rmb'); await seed((db) => setDoc(doc(db, 'brands', b), { name: 'mine', status: 'pending', submittedBy: u.uid, brandKey: '' }));
+  return updateDoc(doc(u.db, 'users', u.uid), { brandId: b });
+});
+await run('RM02-inj 강제 주입 후 하위 권한: users.brandId=bX 가 주입됐다면 그 브랜드 menuItems 쓰기가 열린다 — 쓰기 차단(RM02)이 유일한 방어선임을 고정 (문서화)', 'allow', async () => {
+  const b = await rmBrand();
+  const u = await rmUser({ role: 'brand' });
+  await rmForce(u.uid, { brandId: b }); // RM02 가 막는 상태를 Admin SDK 로 강제
+  return setDoc(doc(u.db, 'brands', b, 'menuItems', rmId('m')), menuBody);
+});
+for (const from of ['customer', 'owner']) {
+  await run(`RM03 ${from} 가 {role:brand, brandId:'bX'} 를 한 번에`, 'deny', async () => {
+    const u = await rmUser({ role: from });
+    return updateDoc(doc(u.db, 'users', u.uid), { role: 'brand', brandId: 'bX' });
+  });
+}
+await run('RM03-inj 강제 주입({role:brand}만) 후: 같은 계정이 brands/bX/menuItems 쓰기는 DENY', 'deny', async () => {
+  const b = await rmBrand(); const u = await rmUser({ role: 'customer' });
+  await rmForce(u.uid, { role: 'brand' });
+  return setDoc(doc(u.db, 'brands', b, 'menuItems', rmId('m')), menuBody);
+});
+await run('RM04 brandId 가 이미 있는 brand 계정이 다른 값으로 변경', 'deny', async () => {
+  const a = await rmBrand(); const b = await rmBrand(); const u = await rmUser({ role: 'brand', brandId: a });
+  return updateDoc(doc(u.db, 'users', u.uid), { brandId: b });
+});
+await run('RM04b brandId 가 이미 있는 brand 계정이 brandId 를 삭제(deleteField)', 'deny', async () => {
+  const a = await rmBrand(); const u = await rmUser({ role: 'brand', brandId: a });
+  return updateDoc(doc(u.db, 'users', u.uid), { brandId: deleteField() });
+});
+await run('RM04c 회귀: brand 계정이 brandId 와 무관한 프로필 필드(displayName)는 수정 가능', 'allow', async () => {
+  const a = await rmBrand(); const u = await rmUser({ role: 'brand', brandId: a });
+  return updateDoc(doc(u.db, 'users', u.uid), { displayName: 'x' });
+});
+await run('RM05 RM01 성공 직후(brandId 없음) brands/bX/menuItems create', 'deny', async () => {
+  const b = await rmBrand(); const u = await rmUser();
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' }); // RM01 — 실제로 전이
+  return setDoc(doc(u.db, 'brands', b, 'menuItems', rmId('m')), menuBody);
+});
+await run('RM05b RM01 직후 brands/bX 의 subCategories·optionGroups create', 'deny', async () => {
+  const b = await rmBrand(); const u = await rmUser();
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  return Promise.all([
+    setDoc(doc(u.db, 'brands', b, 'subCategories', rmId('s')), { name: 's' }),
+    setDoc(doc(u.db, 'brands', b, 'optionGroups', rmId('o')), { name: 'o' }),
+  ]);
+});
+await run('RM05c RM01 직후 brands/bX 문서 자체 update(isBrandSelfUpdate)', 'deny', async () => {
+  const b = await rmBrand(); const u = await rmUser();
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  return updateDoc(doc(u.db, 'brands', b), { description: 'hijack' });
+});
+await run('RM06 RM01 직후 brands/bX/qoinRateHistory read', 'deny', async () => {
+  const b = await rmBrand(); const u = await rmUser();
+  await seed((db) => setDoc(doc(db, 'brands', b, 'qoinRateHistory', 'h1'), { scope: 'brand', field: 'accrualRate', changedBy: ADMIN, source: 'callable' }));
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  return getDocs(collection(u.db, 'brands', b, 'qoinRateHistory'));
+});
+await run('RM07 RM01 직후(brandId 없음) **brandId 필드가 없는 매장**의 menuOverrides create — D2 의 회귀 핀 (D2 없이는 ALLOW)', 'deny', async () => {
+  const s = await rmStore({}); const u = await rmUser();
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  return setDoc(doc(u.db, 'stores', s, 'menuOverrides', rmId('mo')), { price: 1 });
+});
+for (const [label, fn] of [
+  ['menuItems create', (u, st) => setDoc(doc(u.db, 'stores', st, 'menuItems', rmId('m')), menuBody)],
+  ['subCategories create', (u, st) => setDoc(doc(u.db, 'stores', st, 'subCategories', rmId('c')), { name: 'c' })],
+  ['optionGroups create', (u, st) => setDoc(doc(u.db, 'stores', st, 'optionGroups', rmId('o')), { name: 'o' })],
+  ['qoinRateHistory read', (u, st) => getDocs(collection(u.db, 'stores', st, 'qoinRateHistory'))],
+]) {
+  await run(`RM07b brandId 필드 없는 매장 × brandId 없는 brand 계정(강제 주입) — ${label}`, 'deny', async () => {
+    const st = await rmStore({}); const u = await rmUser();
+    await rmForce(u.uid, { role: 'brand' });
+    await seed((db) => setDoc(doc(db, 'stores', st, 'qoinRateHistory', 'h1'), { scope: 'store', field: 'accrualRate', changedBy: ADMIN, source: 'callable' }));
+    return fn(u, st);
+  });
+}
+await run('RM08 같은 상태, brandId:null 매장의 menuOverrides create (D2 전에도 DENY — 양쪽 고정)', 'deny', async () => {
+  const s = await rmStore({ brandId: null }); const u = await rmUser();
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  return setDoc(doc(u.db, 'stores', s, 'menuOverrides', rmId('mo')), { price: 1 });
+});
+await run('RM09 같은 상태, brandId:\'\' 매장의 menuItems create (D2)', 'deny', async () => {
+  const s = await rmStore({ brandId: '' }); const u = await rmUser();
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  return setDoc(doc(u.db, 'stores', s, 'menuItems', rmId('m')), menuBody);
+});
+await run('RM09b brandId 가 문자열이 아닌 값(숫자 0)인 매장 — brand 계정(brandId 없음)', 'deny', async () => {
+  const s = await rmStore({ brandId: 0 }); const u = await rmUser();
+  await rmForce(u.uid, { role: 'brand' });
+  return setDoc(doc(u.db, 'stores', s, 'menuItems', rmId('m')), menuBody);
+});
+await run('RM09c brandId:\'\' 인 brand 계정(users.brandId == \'\')도 brandId \'\' 매장에 못 쓴다', 'deny', async () => {
+  const s = await rmStore({ brandId: '' }); const u = await rmUser();
+  await rmForce(u.uid, { role: 'brand', brandId: '' });
+  return setDoc(doc(u.db, 'stores', s, 'menuItems', rmId('m')), menuBody);
+});
+await run('RM10 같은 상태, 그 매장 문서 자체 update(isStoreOwnerBrandUpdate 경로)', 'deny', async () => {
+  const s = await rmStore({}); const u = await rmUser();
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  return updateDoc(doc(u.db, 'stores', s), { status: 'pending' });
+});
+await run('RM10b brandId:\'\' 매장 문서 update (brand 계정 brandId 없음)', 'deny', async () => {
+  const s = await rmStore({ brandId: '' }); const u = await rmUser();
+  await rmForce(u.uid, { role: 'brand' });
+  return updateDoc(doc(u.db, 'stores', s), { notice: 'x' });
+});
+await run('RM11 brand 계정(브랜드 A)이 브랜드 B 의 menuItems create', 'deny', async () => {
+  const a = await rmBrand(); const b = await rmBrand(); const u = await rmUser({ role: 'brand', brandId: a });
+  return setDoc(doc(u.db, 'brands', b, 'menuItems', rmId('m')), menuBody);
+});
+await run('RM12 brand 계정이 다른 브랜드 산하 매장의 menuOverrides create', 'deny', async () => {
+  const a = await rmBrand(); const b = await rmBrand(); const s = await rmStore({ brandId: b });
+  const u = await rmUser({ role: 'brand', brandId: a });
+  return setDoc(doc(u.db, 'stores', s, 'menuOverrides', rmId('mo')), { price: 1 });
+});
+await run('RM13 brand 계정이 자기 브랜드 menuItems create (정상 흐름 고정)', 'allow', async () => {
+  const a = await rmBrand(); const u = await rmUser({ role: 'brand', brandId: a });
+  return setDoc(doc(u.db, 'brands', a, 'menuItems', rmId('m')), menuBody);
+});
+await run('RM14 brand 계정이 자기 산하 매장 menuOverrides create (정상 흐름 고정)', 'allow', async () => {
+  const a = await rmBrand(); const s = await rmStore({ brandId: a });
+  const u = await rmUser({ role: 'brand', brandId: a });
+  return setDoc(doc(u.db, 'stores', s, 'menuOverrides', rmId('mo')), { price: 1 });
+});
+// D2 는 엄격화 전용 — 정상 흐름 12개 호출 지점이 전부 그대로 참이어야 한다 (하나라도 거짓이면 버그)
+const holderSites = [
+  ['brands/{b}/menuItems create', (u, a) => setDoc(doc(u.db, 'brands', a.b, 'menuItems', rmId('m')), menuBody)],
+  ['brands/{b}/subCategories create', (u, a) => setDoc(doc(u.db, 'brands', a.b, 'subCategories', rmId('c')), { name: 'c' })],
+  ['brands/{b}/optionGroups create', (u, a) => setDoc(doc(u.db, 'brands', a.b, 'optionGroups', rmId('o')), { name: 'o' })],
+  ['brands/{b}/qoinRateHistory read', (u, a) => getDocs(collection(u.db, 'brands', a.b, 'qoinRateHistory'))],
+  ['brands/{b} 운영 필드 update (isBrandSelfUpdate)', (u, a) => updateDoc(doc(u.db, 'brands', a.b), { description: 'd' })],
+  ['stores/{s} 운영 필드 update (isStoreOwnerBrandUpdate)', (u, a) => updateDoc(doc(u.db, 'stores', a.s), { notice: 'n' })],
+  ['stores/{s}/qoinRateHistory read', (u, a) => getDocs(collection(u.db, 'stores', a.s, 'qoinRateHistory'))],
+  ['stores/{s}/subCategories create', (u, a) => setDoc(doc(u.db, 'stores', a.s, 'subCategories', rmId('c')), { name: 'c' })],
+  ['stores/{s}/menuItems create', (u, a) => setDoc(doc(u.db, 'stores', a.s, 'menuItems', rmId('m')), menuBody)],
+  ['stores/{s}/menuOverrides create', (u, a) => setDoc(doc(u.db, 'stores', a.s, 'menuOverrides', rmId('mo')), { price: 1 })],
+  ['stores/{s}/optionGroups create', (u, a) => setDoc(doc(u.db, 'stores', a.s, 'optionGroups', rmId('o')), { name: 'o' })],
+];
+for (const [label, fn] of holderSites) {
+  await run(`RM-D2 정상 브랜드 보유자 × ${label} (엄격화 전용 — 참 유지)`, 'allow', async () => {
+    const b = await rmBrand('approved'); const s = await rmStore({ brandId: b });
+    await seed(async (db) => {
+      await setDoc(doc(db, 'brands', b, 'qoinRateHistory', 'h1'), { scope: 'brand', field: 'accrualRate', changedBy: ADMIN, source: 'callable' });
+      await setDoc(doc(db, 'stores', s, 'qoinRateHistory', 'h1'), { scope: 'store', field: 'accrualRate', changedBy: ADMIN, source: 'callable' });
+      await setDoc(doc(db, 'brands', b), { submittedBy: 'x' }, { merge: true });
+    });
+    const u = await rmUser({ role: 'brand', brandId: b });
+    return fn(u, { b, s });
+  });
+}
+await run('RM15 admin 이 users/{타인}.brandId 교정 (D4 의 교정 경로)', 'allow', async () => {
+  const a = await rmBrand(); const u = await rmUser({ role: 'brand', brandId: 'wrong' });
+  return updateDoc(doc(asAdmin, 'users', u.uid), { brandId: a });
+});
+await run('RM16 점주가 stores create 에 brandId:<존재하지 않는 id> (D5)', 'deny', async () => {
+  const u = await rmUser({ role: 'owner' });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending', brandId: rmId('ghost') });
+});
+await run('RM17 점주가 stores create 에 brandId:<pending 브랜드> (D5)', 'deny', async () => {
+  const b = await rmBrand('pending'); const u = await rmUser({ role: 'owner' });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending', brandId: b });
+});
+await run('RM17b 점주가 stores create 에 brandId:<rejected 브랜드> (D5)', 'deny', async () => {
+  const b = await rmBrand('rejected'); const u = await rmUser({ role: 'owner' });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending', brandId: b });
+});
+await run('RM17c 점주가 stores create 에 brandId 가 문자열이 아님(숫자)', 'deny', async () => {
+  const u = await rmUser({ role: 'owner' });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending', brandId: 7 });
+});
+await run('RM18 점주가 stores create 에 brandId:<approved 브랜드, 남의 것> — ALLOW 가 의도 (승인 게이트가 통제한다. Rules 로 가맹을 증명할 수 없다 — brandKey 가 공개)', 'allow', async () => {
+  const b = await rmBrand('approved'); const u = await rmUser({ role: 'owner' });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending', brandId: b });
+});
+await run('RM19 점주가 stores create 에 brandId:null (개인 매장)', 'allow', async () => {
+  const u = await rmUser({ role: 'owner' });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending', brandId: null });
+});
+await run('RM19b 점주가 stores create 에 brandId 필드 없음', 'allow', async () => {
+  const u = await rmUser({ role: 'owner' });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending' });
+});
+await run('RM20 brand 역할 계정이 stores create (create 는 isOwner())', 'deny', async () => {
+  const b = await rmBrand('approved'); const u = await rmUser({ role: 'brand', brandId: b });
+  return setDoc(doc(u.db, 'stores', rmId('rms')), { ownerId: u.uid, name: 'n', status: 'pending', brandId: b });
+});
+// 점주→브랜드 전환 흐름의 Rules 구간 (spec D1-2 의 1·3·5·8 단계) — CF(claim) 는 Admin SDK 라 Rules 밖
+await run('FLOW 점주→브랜드 전환 ① role 전이 → ② 브랜드 문서 create(submittedBy=uid,pending,brandKey 빈값) → ③ (CF 가 brandId 쓴 상태) 브랜드 핵심 필드 수정 → pending 회귀', 'allow', async () => {
+  const u = await rmUser({ role: 'owner' });
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });                                   // 1
+  const b = rmId('rmb');
+  await setDoc(doc(u.db, 'brands', b), { name: 'n', status: 'pending', submittedBy: u.uid, brandKey: '' }); // 3 (batch 에서 users 쓰기 제거 후)
+  await rmForce(u.uid, { brandId: b });                                                             // 4 claimSubmittedBrand 가 Admin SDK 로 쓴 결과
+  await updateDoc(doc(u.db, 'brands', b), { name: 'n2', status: 'pending' });                       // 8
+});
+await run('FLOW-2 전환 ③ 직후(CF 전) 브랜드 문서 update 는 아직 DENY — 고아가 아니라 "연결 전" 상태임을 고정', 'deny', async () => {
+  const u = await rmUser({ role: 'owner' });
+  await updateDoc(doc(u.db, 'users', u.uid), { role: 'brand' });
+  const b = rmId('rmb');
+  await setDoc(doc(u.db, 'brands', b), { name: 'n', status: 'pending', submittedBy: u.uid, brandKey: '' });
+  return updateDoc(doc(u.db, 'brands', b), { name: 'n2' });
+});
+await run('FLOW-3 batch 호환성: 브랜드 create 와 users.brandId 쓰기를 한 batch 로 보내는 구 방식은 신 Rules 에서 전체 거부 (③→④ 순서가 필수인 이유)', 'deny', async () => {
+  const u = await rmUser({ role: 'brand' });
+  const b = rmId('rmb');
+  const batch = writeBatch(u.db);
+  batch.set(doc(u.db, 'brands', b), { name: 'n', status: 'pending', submittedBy: u.uid, brandKey: '' });
+  batch.set(doc(u.db, 'users', u.uid), { brandId: b }, { merge: true });
+  return batch.commit();
+});
+// users/{uid}/roleHistory — CF 전담
+await run('RHIST1 본인이 roleHistory read', 'allow', async () => {
+  const u = await rmUser();
+  await seed((db) => setDoc(doc(db, 'users', u.uid, 'roleHistory', 'h1'), { field: 'brandId', before: null, after: 'b', changedBy: u.uid }));
+  return getDocs(collection(u.db, 'users', u.uid, 'roleHistory'));
+});
+await run('RHIST2 타인이 roleHistory read', 'deny', async () => {
+  const u = await rmUser(); const v = await rmUser();
+  await seed((db) => setDoc(doc(db, 'users', u.uid, 'roleHistory', 'h1'), { field: 'brandId', before: null, after: 'b', changedBy: u.uid }));
+  return getDocs(collection(v.db, 'users', u.uid, 'roleHistory'));
+});
+await run('RHIST3 admin 이 roleHistory read', 'allow', async () => {
+  const u = await rmUser();
+  await seed((db) => setDoc(doc(db, 'users', u.uid, 'roleHistory', 'h1'), { field: 'brandId', before: null, after: 'b', changedBy: u.uid }));
+  return getDocs(collection(asAdmin, 'users', u.uid, 'roleHistory'));
+});
+for (const [label, mk] of [
+  ['본인 create', (u) => setDoc(doc(u.db, 'users', u.uid, 'roleHistory', 'forge'), { field: 'brandId', after: 'x', changedBy: u.uid })],
+  ['본인 update', (u) => updateDoc(doc(u.db, 'users', u.uid, 'roleHistory', 'h1'), { after: 'x' })],
+  ['본인 delete', (u) => deleteDoc(doc(u.db, 'users', u.uid, 'roleHistory', 'h1'))],
+  ['admin create', (u) => setDoc(doc(asAdmin, 'users', u.uid, 'roleHistory', 'forge'), { field: 'brandId', after: 'x' })],
+  ['admin delete', (u) => deleteDoc(doc(asAdmin, 'users', u.uid, 'roleHistory', 'h1'))],
+]) {
+  await run(`RHIST4 roleHistory ${label} (CF 전담)`, 'deny', async () => {
+    const u = await rmUser();
+    await seed((db) => setDoc(doc(db, 'users', u.uid, 'roleHistory', 'h1'), { field: 'brandId', before: null, after: 'b', changedBy: u.uid }));
+    return mk(u);
+  });
+}
 
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;

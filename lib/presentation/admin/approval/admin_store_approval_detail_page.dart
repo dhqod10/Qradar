@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
+import 'package:qradar/domain/entities/store_brand_link.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/admin/brand_store_management/admin_brand_store_management_page.dart';
 import 'package:qradar/presentation/admin/providers/admin_store_approval_providers.dart';
+import 'package:qradar/presentation/admin/providers/admin_store_brand_link_providers.dart';
 import 'package:qradar/presentation/admin/widgets/approval_actions_bar.dart';
 import 'package:qradar/presentation/admin/widgets/brand_scope_badge.dart';
+import 'package:qradar/presentation/admin/widgets/store_approve_confirm_dialog.dart';
+import 'package:qradar/presentation/admin/widgets/store_brand_block.dart';
 import 'package:qradar/presentation/admin/widgets/store_scope_badge.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
@@ -28,6 +32,22 @@ class _AdminStoreApprovalDetailPageState
   bool _isLoading = false;
 
   Future<void> _approve() async {
+    // 승인 시점의 분류를 다시 읽는다 (화면이 열린 뒤 바뀌었을 수 있다). 개인 매장·approved 브랜드가 아니면 도달할 수 없다.
+    final brandId = (ref.read(watchStoreByIdForAdminProvider(widget.store.id)).asData?.value ??
+            widget.store)
+        .brandId;
+    final link = ref.read(storeBrandLinkProvider(brandId));
+    if (!link.approveEnabled) return;
+    if (link.kind == StoreBrandLinkKind.approved) {
+      // 브랜드 매장은 확인 문장을 한 번 거친다 — 무엇을 승인하는지 admin 이 다시 읽는다. 이름·적립률은 이 순간의 값을 그대로 쓴다.
+      final inherited = ref.read(inheritedRateProvider(brandId)).asData?.value;
+      final ok = await StoreApproveConfirmDialog.show(
+        context,
+        brandName: link.brand!.name,
+        inherited: inherited,
+      );
+      if (!ok || !mounted) return;
+    }
     setState(() => _isLoading = true);
     try {
       final uid = ref.read(authProvider).asData?.value?.uid ?? '';
@@ -82,6 +102,8 @@ class _AdminStoreApprovalDetailPageState
     final isPending = store.status == EntityApprovalStatus.pending;
     final firstImage =
         store.imageUrls.isNotEmpty ? store.imageUrls.first : store.imageUrl;
+    // 매장이 가리키는 브랜드의 분류: 배지 · 브랜드 블록 · 승인 버튼이 같은 결과를 쓴다.
+    final link = ref.watch(storeBrandLinkProvider(store.brandId));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -166,6 +188,8 @@ class _AdminStoreApprovalDetailPageState
                     : '반려된 매장입니다. 재제출을 기다리세요',
                 isApproved: store.status == EntityApprovalStatus.approved,
               ),
+            // 소속 브랜드 블록 — 승인 결정에 가장 중요한 정보라 매장 정보 위에 둔다 (개인 매장은 없음).
+            if (link.hasBrand) StoreBrandBlock(link: link),
             // 매장 정보 섹션
             _SectionCard(
               children: [
@@ -281,6 +305,8 @@ class _AdminStoreApprovalDetailPageState
       bottomNavigationBar: isPending
           ? ApprovalActionsBar(
               isLoading: _isLoading,
+              approveEnabled: link.approveEnabled,
+              approveDisabledReason: link.approveDisabledReason,
               onApprove: _approve,
               onReject: _reject,
             )

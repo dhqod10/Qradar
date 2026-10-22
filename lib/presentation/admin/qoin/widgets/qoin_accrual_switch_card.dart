@@ -60,6 +60,7 @@ class QoinAccrualSwitchCard extends ConsumerStatefulWidget {
     this.controller,
     this.subStoreTotal,
     this.subStoreOverridden,
+    this.bulkBannerOpen = false,
   }) : assert(scope == QoinRateScope.store || scope == QoinRateScope.brand);
 
   /// store 또는 brand.
@@ -77,6 +78,10 @@ class QoinAccrualSwitchCard extends ConsumerStatefulWidget {
   /// 브랜드 전용: 산하 매장 정보 (이 화면 기준 미리보기). 로딩 전이면 null → 끄기 다이얼로그가 숫자 괄호를 생략한다.
   final int? subStoreTotal;
   final int? subStoreOverridden;
+
+  /// 브랜드 전용: 이 화면에 중단 배너가 떠 있는가 (`resolveBulkBanner` 결과). 성공 시 "마감됐어요" 고지를 덧붙이는 데 쓴다
+  /// — 동작 **직전** 값을 쓴다 (동작 후 스트림은 이미 없음으로 바뀐다, design §19-7-5).
+  final bool bulkBannerOpen;
 
   @override
   ConsumerState<QoinAccrualSwitchCard> createState() =>
@@ -138,18 +143,30 @@ class _QoinAccrualSwitchCardState extends ConsumerState<QoinAccrualSwitchCard> {
     );
     if (reason == null || !mounted) return; // 취소
     setState(() => _busy = true);
+    final bannerWasOpen = _isBrand && widget.bulkBannerOpen;
     try {
-      await ref.read(setQoinAccrualEnabledUseCaseProvider)(
+      final r = await ref.read(setQoinAccrualEnabledUseCaseProvider)(
         scope: widget.scope,
         targetId: widget.targetId,
         enabled: turnOn,
         reason: reason.isEmpty ? null : reason,
       );
       if (mounted) {
-        qoinSnack(
-          context,
-          QoinMessages.switchChanged(widget.scope, enabled: turnOn),
-        );
+        // changed 를 성공 분기보다 먼저 본다 — 이미 같은 상태면 "시작했어요/중단했어요" 라고 말하지 않는다 (spec §21.3-b).
+        if (!r.changed) {
+          qoinSnack(
+            context,
+            QoinMessages.switchUnchanged(r, widget.scope, enabled: turnOn),
+          );
+        } else {
+          qoinSnack(
+            context,
+            QoinMessages.withClosedNote(
+              QoinMessages.switchChanged(widget.scope, enabled: turnOn),
+              closedBanner: bannerWasOpen,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

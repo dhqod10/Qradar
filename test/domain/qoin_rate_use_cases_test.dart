@@ -83,6 +83,13 @@ class _FakeRepo implements QoinRateRepository {
   }
 
   @override
+  Future<QoinRateChangeEntity?> fetchHistory(
+    QoinRateScope scope,
+    String targetId,
+    String historyId,
+  ) async => null;
+
+  @override
   Stream<List<QoinRateChangeEntity>> watchHistory(
     QoinRateScope scope,
     String targetId, {

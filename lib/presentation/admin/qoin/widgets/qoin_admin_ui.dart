@@ -56,7 +56,57 @@ class QoinMessages {
   static String legacyZeroGuard(int count) =>
       '레거시 0% 매장 $count곳이 있어요. Qoin 설정 허브에서 마이그레이션을 먼저 실행하세요';
 
-  /// 스위치 변경 성공 SnackBar. [scope] 는 store 또는 brand.
+  // ── `changed == false` ("바뀐 것이 없음", spec §21.3-b / design §19-2) ───────────────────────────────────
+  // 이 문구들은 **성공을 뜻하는 동사를 쓰지 않는다** (변경했어요 · 적용했어요 · 마쳤어요 · 시작했어요 · 중단했어요).
+  // 돈의 값을 바꿨다는 거짓 문장이 운영자를 "바뀐 줄 알고" 화면을 떠나게 하기 때문이다. 상태를 말하고 바뀐 것이 없음을 덧붙인다.
+
+  static const String alreadyTitle = '이미 같은 값이에요';
+  static const String alreadySameValue = '이미 같은 값이에요. 바뀐 것이 없어요';
+  static const String alreadyInheriting = '이미 상위 설정을 따르고 있어요. 바뀐 것이 없어요';
+
+  /// `closed: true` — 끝나지 않았던 일괄 적용 기록이 이 호출로 닫혔다.
+  static const String closedBulkLine = '끝나지 않은 일괄 적용은 처리가 끝나 있어서 닫았어요';
+
+  /// 직접 닫은 순간(성공 `changed: true`)의 고지: 동작 직전에 배너가 떠 있었다.
+  static const String closedBannerNote = '끝나지 않았던 일괄 적용 안내는 이 변경으로 마감됐어요';
+
+  /// 일괄 적용 안내 카드의 첫 줄: 값 있음 / 상위 설정 따르기.
+  static String alreadyBulkLine(QoinRateValue? value) {
+    if (value is QoinRateValueRate) {
+      return '새 적립률 ${QoinPolicy.formatTenths(value.tenths)}% 가 이미 설정돼 있어서 바뀐 것이 없어요';
+    }
+    if (value is QoinRateValueInherit) {
+      return '이미 상위 설정을 따르고 있어서 바뀐 것이 없어요';
+    }
+    return '바뀐 것이 없어요';
+  }
+
+  /// 단건 적립률 저장이 `changed == false` 일 때의 SnackBar. 호출 화면은 **성공 분기보다 먼저** `changed` 를 검사해 이 문구를 쓴다.
+  static String rateUnchanged(QoinRateSetResult r, QoinRateValue value) {
+    final base = value is QoinRateValueInherit
+        ? alreadyInheriting
+        : alreadySameValue;
+    return r.closed ? '$base. $closedBulkLine' : base;
+  }
+
+  /// 스위치 변경이 `changed == false` 일 때의 SnackBar. [scope] 는 store 또는 brand.
+  static String switchUnchanged(
+    QoinAccrualEnabledResult r,
+    QoinRateScope scope, {
+    required bool enabled,
+  }) {
+    final topic = scope == QoinRateScope.brand ? '이 브랜드는' : '이 매장은';
+    final base = enabled
+        ? '$topic 이미 적립 사용 중이에요. 바뀐 것이 없어요'
+        : '$topic 이미 적립 사용 안 함 상태예요. 바뀐 것이 없어요';
+    return r.closed ? '$base. $closedBulkLine' : base;
+  }
+
+  /// 성공(`changed == true`) 문구 뒤에 "직접 닫은 순간" 고지를 덧붙인다. [closedBanner] 는 동작 **직전**의 중단 배너 유무다.
+  static String withClosedNote(String message, {required bool closedBanner}) =>
+      closedBanner ? '$message. $closedBannerNote' : message;
+
+  /// 스위치 변경 성공 SnackBar. [scope] 는 store 또는 brand. (`changed == true` 일 때만 쓴다 — 호출 화면이 먼저 `changed` 를 검사한다.)
   static String switchChanged(QoinRateScope scope, {required bool enabled}) {
     final who = scope == QoinRateScope.brand ? '이 브랜드' : '이 매장';
     return enabled ? '$who의 적립을 다시 시작했어요' : '$who의 적립을 중단했어요';

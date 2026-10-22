@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
+import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
@@ -182,7 +183,7 @@ class _AdminQoinBrandRatesPageState
                         cfg: cfg,
                         storeCount: counts[b.id] ?? 0,
                         overrideCount: overrides[b.id] ?? 0,
-                        unfinished: isBulkUnfinished(b, now),
+                        unfinished: resolveBulkBanner(b, now).isUnfinished,
                       ),
                     );
                   },

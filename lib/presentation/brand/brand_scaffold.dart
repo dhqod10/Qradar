@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
-import 'package:qradar/presentation/brand/brand_info/brand_info_form_page.dart';
+import 'package:qradar/presentation/brand/brand_id_missing_view.dart';
 import 'package:qradar/presentation/brand/brand_info/brand_info_page.dart';
 import 'package:qradar/presentation/brand/master_menu/master_menu_list_page.dart';
 import 'package:qradar/presentation/brand/more/brand_more_page.dart';
@@ -25,7 +25,7 @@ class _BrandTabNotifier extends Notifier<int> {
 ///   2 - 매장 (BrandStoresPage)
 ///   3 - 더보기 (BrandMorePage)
 ///
-/// brandId == null 케이스: [_BrandIdMissingView] 표시 (BottomNav 숨김).
+/// brandId == null 케이스: [BrandIdMissingView] 게이트 표시 (BottomNav 숨김).
 class BrandScaffold extends ConsumerWidget {
   const BrandScaffold({super.key});
 
@@ -34,11 +34,13 @@ class BrandScaffold extends ConsumerWidget {
     final profile = ref.watch(currentUserProfileProvider).asData?.value;
     final brandId = profile?.brandId;
 
-    // sub-phase 6 (V8): 신규 brand 가입 흐름.
-    // brandId 미발급 (customer → brand 전환 직후) → 브랜드 등록 폼으로 자동 진입.
-    // upsertBrand 가 brandId + users.brandId batch write → profile stream 갱신 → 정상 BottomNav 노출.
+    // brandId 미발급 (customer → brand 전환 직후, 또는 브랜드 문서는 있는데 연결이 끝나지 않은 상태).
+    // brand_authorization_hardening D1: `users.brandId` 는 Cloud Function(claimSubmittedBrand) 만 쓴다.
+    // 게이트가 먼저 `brands where submittedBy == uid` 를 조회한다 — 0건일 때만 등록 폼, 1건 이상이면 자동 연결.
+    // 조회 중·실패 시 등록 폼을 그리지 않는다 (같은 브랜드 재등록 -> 고아 브랜드 방지).
+    // 연결이 끝나 profile stream 에 brandId 가 들어오면 정상 BottomNav 가 노출된다.
     if (brandId == null || brandId.isEmpty) {
-      return const BrandInfoFormPage(brand: null);
+      return const BrandIdMissingView();
     }
 
     final selected = ref.watch(_brandTabIndexProvider);
@@ -160,4 +162,3 @@ class _BrandNavItem extends StatelessWidget {
   }
 }
 
-// _BrandIdMissingView: sub-phase 6 (V8) 에서 폐기. brandId 없으면 BrandInfoFormPage 자동 진입.

@@ -15,7 +15,8 @@ T _$identity<T>(T value) => value;
 mixin _$UserEntity {
 
  String get uid; String? get email; String? get displayName; String? get photoUrl; String get provider;// 'google' | 'kakao' | 'naver' | 'email'
- UserRole get role; DateTime? get createdAt;/// role='brand' 일 때만 존재. Firestore 콘솔에서 수동 발급.
+ UserRole get role; DateTime? get createdAt;/// role='brand' 일 때만 존재. **Cloud Function `claimSubmittedBrand` 만 쓴다** (클라이언트·Rules 로는 쓸 수 없다 —
+/// 권한 값이라 본인이 선언하면 임의 브랜드의 보유자가 된다). 교정은 admin 전용.
  String? get brandId;/// FCM 디바이스 토큰. 권한 거부/미발급 시 null.
  String? get fcmToken;/// 마지막 FCM 토큰 갱신 시각 (운영 가시성).
  DateTime? get fcmTokenUpdatedAt;/// OS 권한 시트 소진 이력 (다이얼로그에서 `허용` 선택). 재노출 제외 가드.
@@ -248,7 +249,8 @@ class _UserEntity implements UserEntity {
 // 'google' | 'kakao' | 'naver' | 'email'
 @override@JsonKey() final  UserRole role;
 @override final  DateTime? createdAt;
-/// role='brand' 일 때만 존재. Firestore 콘솔에서 수동 발급.
+/// role='brand' 일 때만 존재. **Cloud Function `claimSubmittedBrand` 만 쓴다** (클라이언트·Rules 로는 쓸 수 없다 —
+/// 권한 값이라 본인이 선언하면 임의 브랜드의 보유자가 된다). 교정은 admin 전용.
 @override final  String? brandId;
 /// FCM 디바이스 토큰. 권한 거부/미발급 시 null.
 @override final  String? fcmToken;

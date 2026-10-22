@@ -1,6 +1,15 @@
 {
  "_doc": "Qoin 적립률 진리표 — Dart(test/domain/qoin_rate_resolution_test.dart)와 TS(functions/test/qoinRate.test.mjs)가 같은 파일을 읽는다. 셀 표기: \"absent\"=필드 부재, 숫자/불리언=그 값, \"nan\"=NaN, \"str:3\"=문자열, \"null\"=null. resolve 의 storeEnabled/brandEnabled 열 기본값은 absent. expect: {rate,source} | {invalid:'store'|'brand'|'global'|'store_enabled'|'brand_enabled'} | {disabled:'store'|'brand'}. spec §20.2.3 (개정 N4).",
- "_transitional": "transitionalExpect 가 있는 행은 과도기 호환 분기(legacyZero)가 살아 있는 동안 expect 대신 그 값을 기대한다. resolve_legacy 배열과 함께 정리 커밋(spec §20.4.5)에서 transitionalExpect 키와 배열을 삭제한다.",
+ "_transitional": {
+  "ref": "spec §20.4.5",
+  "arrays": [
+   "resolve_legacy"
+  ],
+  "keys": [
+   "transitionalExpect"
+  ],
+  "note": "transitionalExpect 가 있는 행은 과도기 호환 분기(legacyZero)가 살아 있는 동안 expect 대신 그 값을 기대한다. resolve_legacy 배열과 함께 정리 커밋(spec §20.4.5)에서 transitionalExpect 키와 배열을 삭제한다."
+ },
  "resolve": [
   {
    "id": "R01",

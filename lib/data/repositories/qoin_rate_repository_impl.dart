@@ -54,6 +54,13 @@ class QoinRateRepositoryImpl implements QoinRateRepository {
   );
 
   @override
+  Future<QoinRateChangeEntity?> fetchHistory(
+    QoinRateScope scope,
+    String targetId,
+    String historyId,
+  ) => _ds.fetchHistory(scope, targetId, historyId);
+
+  @override
   Stream<List<QoinRateChangeEntity>> watchHistory(
     QoinRateScope scope,
     String targetId, {

@@ -25,6 +25,7 @@ void main() {
     String? bulkHistoryId,
     String? reason,
     String? changedBy = 'adminuid1234',
+    // TRANSITIONAL(spec §20.4.5): migratedFromRate 는 정리 커밋에서 삭제한다.
     double? migratedFromRate,
     String? beforeRaw,
     int? disabledUntouched,

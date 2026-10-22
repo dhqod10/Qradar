@@ -24,6 +24,19 @@ final qoinRateHistoryProvider = StreamProvider.autoDispose
       );
     });
 
+/// 중단 배너 본문 수치용 이력 문서 1건 (`qoinBulkHistoryId`). **보조 읽기다** — 로딩·실패·문서 없음은 모두 "수치 없음" 으로 접고
+/// 배너와 `이어서 적용` 은 유지한다 (spec §21.1 / design §19-1). 이 provider 의 결과로 배너를 숨기는 분기를 만들지 않는다.
+typedef QoinBulkDocKey = ({String brandId, String historyId});
+
+final qoinBulkHistoryDocProvider = FutureProvider.autoDispose
+    .family<QoinRateChangeEntity?, QoinBulkDocKey>((ref, key) {
+      return ref.watch(getQoinRateHistoryDocUseCaseProvider)(
+        QoinRateScope.brand,
+        key.brandId,
+        key.historyId,
+      );
+    });
+
 /// 전체 변경 이력 (admin, collectionGroup). [limit] 을 키워 "더 보기" 를 구현한다.
 final qoinAllRateHistoryProvider = StreamProvider.autoDispose
     .family<List<QoinRateChangeEntity>, int>((ref, limit) {

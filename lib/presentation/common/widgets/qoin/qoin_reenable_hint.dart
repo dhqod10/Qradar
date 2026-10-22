@@ -55,6 +55,7 @@ class QoinReenableHint {
     if (target == QoinRateScope.global) return null;
 
     if (target == QoinRateScope.brand) {
+      // TRANSITIONAL(spec §20.4.5): 레거시 0 은 꺼진 것으로 읽는다 (아래 3곳 포함). 정리 후 isLegacyZero 분기 삭제.
       final brandOff = e.brandSwitch.isDisabled || e.brand.isLegacyZero;
       if (!brandOff) return null;
       final r = _rerun(e, enableBrand: true, brandHere: true);

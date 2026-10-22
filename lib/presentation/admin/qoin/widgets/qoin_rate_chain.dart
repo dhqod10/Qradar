@@ -117,6 +117,7 @@ class _Row {
   final QoinSwitchSetting switchSetting;
 
   /// 이 줄이 꺼져 있는가 (스위치 off, 또는 TRANSITIONAL 레거시 0).
+  // TRANSITIONAL(spec §20.4.5): 레거시 0 도 꺼진 것으로 센다. 정리 후 `|| setting.isLegacyZero` 삭제.
   bool get off => switchSetting.isDisabled || setting.isLegacyZero;
   bool get switchInvalid => switchSetting.isInvalid;
 }

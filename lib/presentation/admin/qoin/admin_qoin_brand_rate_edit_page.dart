@@ -4,6 +4,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
+import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_results.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
@@ -37,12 +38,20 @@ class AdminQoinBrandRateEditPage extends ConsumerStatefulWidget {
 }
 
 class _ResultView {
-  const _ResultView(this.result, this.value, this.mode);
+  const _ResultView(
+    this.result,
+    this.value,
+    this.mode, {
+    this.closedBanner = false,
+  });
   final QoinBulkApplyResult result;
 
   /// 재개(이어서 적용)는 값을 보내지 않으므로 null.
   final QoinRateValue? value;
   final QoinBulkMode mode;
+
+  /// 동작 **직전**에 중단 배너가 떠 있었는가 — 성공 시 "마감됐어요" 고지를 붙인다 (동작 후 스트림은 이미 없음으로 바뀐다).
+  final bool closedBanner;
 }
 
 class _AdminQoinBrandRateEditPageState
@@ -94,17 +103,23 @@ class _AdminQoinBrandRateEditPageState
   Widget _buildBody(BrandEntity brand, EffectiveQoinRate effective) {
     final statsAsync = ref.watch(qoinBrandBulkStatsProvider(widget.brandId));
     final stats = statsAsync.asData?.value;
-    final now = DateTime.now();
-    final historyAsync = ref.watch(
-      qoinRateHistoryProvider((
-        scope: QoinRateScope.brand,
-        targetId: widget.brandId,
-        limit: 20,
-      )),
-    );
-    final unfinished = historyAsync.asData?.value
-        .where((c) => c.isUnfinished(now) && !_laterIds.contains(c.id))
-        .firstOrNull;
+    // 중단 판정은 **브랜드 문서의 포인터 하나**다 (spec §21.1). 이력 스트림은 판정에 쓰지 않는다 — 이력 읽기가 실패해도
+    // 배너와 `이어서 적용` 이 사라지지 않는다 (PROBE1 회귀 핀). 브랜드 문서가 에러면 이 화면 전체가 에러 상태다.
+    final banner = resolveBulkBanner(brand, DateTime.now());
+    final laterKey = banner.historyId ?? '';
+    final showBanner = banner.isUnfinished && !_laterIds.contains(laterKey);
+    // 본문 수치만 이력 문서 1건을 직접 읽어 채운다. 로딩·실패·문서 없음은 모두 "수치 없음" — 배너를 숨기지 않는다.
+    final progress = (banner.isUnfinished && banner.historyId != null)
+        ? ref
+              .watch(
+                qoinBulkHistoryDocProvider((
+                  brandId: widget.brandId,
+                  historyId: banner.historyId!,
+                )),
+              )
+              .asData
+              ?.value
+        : null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -120,11 +135,14 @@ class _AdminQoinBrandRateEditPageState
             ),
           ),
           const SizedBox(height: 16),
-          if (unfinished != null) ...[
+          if (showBanner) ...[
             QoinPartialBanner.full(
-              change: unfinished,
-              onResume: () => _resume(unfinished),
-              onLater: () => setState(() => _laterIds.add(unfinished.id)),
+              brandName: brand.name,
+              rate: brand.qoinAccrualRate,
+              stale: banner.isStale,
+              progress: progress,
+              onResume: () => _resume(brand, banner, progress),
+              onLater: () => setState(() => _laterIds.add(laterKey)),
             ),
             const SizedBox(height: 16),
           ],
@@ -157,7 +175,7 @@ class _AdminQoinBrandRateEditPageState
             bulkStats: statsAsync,
             onRetryBulk: () => ref.invalidate(qoinAdminStoresProvider),
             onGoToSwitch: _switchFocus.go,
-            onSubmit: (s) => _apply(s, stats),
+            onSubmit: (s) => _apply(s, stats, banner.isUnfinished),
           ),
           // 저장 버튼 아래 — 적립률 폼과 시각적으로 갈라 둔다 (gap 32).
           const SizedBox(height: 32),
@@ -179,13 +197,18 @@ class _AdminQoinBrandRateEditPageState
             controller: _switchFocus,
             subStoreTotal: stats?.total,
             subStoreOverridden: stats?.overridden,
+            bulkBannerOpen: banner.isUnfinished,
           ),
         ],
       ),
     );
   }
 
-  Future<void> _apply(QoinRateSubmission s, QoinBulkStats? stats) async {
+  Future<void> _apply(
+    QoinRateSubmission s,
+    QoinBulkStats? stats,
+    bool bannerWasOpen,
+  ) async {
     final mode = s.mode ?? QoinBulkMode.preserve;
     // 즉시 끝나는 경로(보존 / 개별 설정 0곳)는 덮개 없이 저장 버튼 인디케이터만.
     final heavy =
@@ -199,7 +222,14 @@ class _AdminQoinBrandRateEditPageState
         reason: s.reason,
       );
       if (!mounted) return;
-      setState(() => _result = _ResultView(r, s.value, mode));
+      setState(
+        () => _result = _ResultView(
+          r,
+          s.value,
+          mode,
+          closedBanner: bannerWasOpen,
+        ),
+      );
     } catch (e) {
       if (mounted) qoinSnack(context, QoinMessages.failure(e, bulk: true));
       rethrow;
@@ -208,17 +238,36 @@ class _AdminQoinBrandRateEditPageState
     }
   }
 
-  Future<void> _resume(QoinRateChangeEntity change) async {
+  Future<void> _resume(
+    BrandEntity brand,
+    QoinBulkBanner banner,
+    QoinRateChangeEntity? progress,
+  ) async {
+    final historyId = banner.historyId;
+    if (historyId == null) {
+      qoinSnack(context, QoinMessages.resumeFailed);
+      return;
+    }
     final r = await runBulkResume(
       context,
       ref,
-      change,
+      brandId: brand.id,
+      brandName: brand.name,
+      historyId: historyId,
+      remaining: bulkRemaining(progress),
       onRunning: (v) {
         if (mounted) setState(() => _running = v);
       },
     );
     if (r == null || !mounted) return;
-    setState(() => _result = _ResultView(r, null, QoinBulkMode.overwrite));
+    setState(
+      () => _result = _ResultView(
+        r,
+        null,
+        QoinBulkMode.overwrite,
+        closedBanner: true,
+      ),
+    );
   }
 }
 
@@ -252,6 +301,15 @@ class _ResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final r = view.result;
+    // **changed 를 성공 분기보다 먼저 본다** (spec §21.3-b). false 는 적용 결과가 아니라 "바뀐 것이 없음" 이다 —
+    // 카운트 행·성공 틴트·`이력 보기` 를 그리지 않는다 (이력이 만들어지지 않았으므로 갈 곳이 없다).
+    if (!r.changed) {
+      return _UnchangedCard(
+        value: view.value,
+        closed: r.closed,
+        onClose: onClose,
+      );
+    }
     final done = r.status == QoinBulkStatus.completed;
     final countLine = view.mode == QoinBulkMode.overwrite
         ? '적용된 매장 ${r.affectedCount}곳 · 초기화된 개별 설정 ${r.clearedCount}곳'
@@ -356,6 +414,13 @@ class _ResultCard extends StatelessWidget {
                 ],
               ),
             ],
+            if (view.closedBanner) ...[
+              const SizedBox(height: 6),
+              const Text(
+                QoinMessages.closedBannerNote,
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ],
             const SizedBox(height: 4),
             TextButton(
               onPressed: onOpenHistory,
@@ -372,6 +437,90 @@ class _ResultCard extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// `changed == false` — "바뀐 것이 없어요" 안내 카드 (design §19-2). 성공 틴트·체크 아이콘·카운트 행이 없다.
+/// 서버가 `staleScan` 으로 되돌린 경우도 같은 안내로 수렴한다 (운영자가 알아야 할 사실이 아니다).
+class _UnchangedCard extends StatelessWidget {
+  const _UnchangedCard({
+    required this.value,
+    required this.closed,
+    required this.onClose,
+  });
+
+  final QoinRateValue? value;
+  final bool closed;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final line = QoinMessages.alreadyBulkLine(value);
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label:
+          '${QoinMessages.alreadyTitle}. 바뀐 것이 없어요.${closed ? ' ${QoinMessages.closedBulkLine}' : ''}',
+      excludeSemantics: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: AppColors.textMuted,
+                ),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    QoinMessages.alreadyTitle,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textBody,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: onClose,
+                  customBorder: const CircleBorder(),
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              line,
+              style: const TextStyle(fontSize: 13, color: AppColors.textBody),
+            ),
+            if (closed) ...[
+              const SizedBox(height: 4),
+              const Text(
+                QoinMessages.closedBulkLine,
+                style: TextStyle(fontSize: 13, color: AppColors.textBody),
+              ),
+            ],
           ],
         ),
       ),

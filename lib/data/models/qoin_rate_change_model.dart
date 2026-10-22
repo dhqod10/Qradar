@@ -63,6 +63,7 @@ class QoinRateChangeModel {
       bulkHistoryId: data['bulkHistoryId'] is String
           ? data['bulkHistoryId'] as String
           : null,
+      // TRANSITIONAL(spec §20.4.5): 마이그레이션 이력의 옛 숫자(0) 박제 필드. 정리 커밋에서 필드째 삭제한다 (읽기 호환만 잃는다).
       migratedFromRate: asDouble(data['migratedFromRate']),
       resumedAt: ts(data['resumedAt']),
       resumeCount: count(data['resumeCount']),
@@ -70,6 +71,12 @@ class QoinRateChangeModel {
       clearedValueCount: count(data['clearedValueCount']),
       clearedInvalidCount: count(data['clearedInvalidCount']),
       brandDisabled: flag(data['brandDisabled']),
+      closedReason: data['closedReason'] is String
+          ? data['closedReason'] as String
+          : null,
+      supersededByUid: data['supersededByUid'] is String
+          ? data['supersededByUid'] as String
+          : null,
     );
   }
 }

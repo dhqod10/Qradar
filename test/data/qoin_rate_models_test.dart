@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/data/models/brand_model.dart';
 import 'package:qradar/data/models/qoin_config_model.dart';
@@ -98,7 +99,11 @@ void main() {
         [e.affectedCount, e.clearedCount, e.processedCount, e.totalCount],
         [12, 3, 2, 3],
       );
-      expect(e.isUnfinished(DateTime(2026, 10, 22, 14, 36)), isTrue);
+      expect(
+        resolveHistoryRow(e, pointer: null, now: DateTime(2026, 10, 22, 14, 36))
+            .isUnfinished,
+        isTrue,
+      );
     });
 
     test('in_progress 는 5분 지나면 중단(미완료)으로 본다', () {
@@ -116,10 +121,12 @@ void main() {
         'lastProgressAt': ts,
       };
       final e = QoinRateChangeModel.fromMap('h', base)!;
-      expect(e.isUnfinished(DateTime(2026, 10, 22, 14, 39)), isFalse);
-      expect(e.isRunning(DateTime(2026, 10, 22, 14, 39)), isTrue);
-      expect(e.isUnfinished(DateTime(2026, 10, 22, 14, 41)), isTrue);
-      expect(e.isRunning(DateTime(2026, 10, 22, 14, 41)), isFalse);
+      QoinHistoryRowState at(DateTime now) =>
+          resolveHistoryRow(e, pointer: null, now: now);
+      expect(at(DateTime(2026, 10, 22, 14, 39)).isUnfinished, isFalse);
+      expect(at(DateTime(2026, 10, 22, 14, 39)).isRunning, isTrue);
+      expect(at(DateTime(2026, 10, 22, 14, 41)).isUnfinished, isTrue);
+      expect(at(DateTime(2026, 10, 22, 14, 41)).isRunning, isFalse);
     });
 
     test('completed 는 미완료가 아니다', () {
@@ -132,7 +139,7 @@ void main() {
         'status': 'completed',
         'changedAt': ts,
       })!;
-      expect(e.isUnfinished(DateTime(2030)), isFalse);
+      expect(resolveHistoryRow(e, pointer: null, now: DateTime(2030)).isUnfinished, isFalse);
     });
 
     test(
@@ -301,6 +308,7 @@ void main() {
       expect(e.beforeRate, isNull);
     });
 
+    // TRANSITIONAL(spec §20.4.5): 아래 migratedFromRate · legacyZero 케이스는 정리 커밋에서 삭제한다.
     test('migration: migratedFromRate 박제 + 무효 beforeState/beforeRaw', () {
       final e = QoinRateChangeModel.fromMap('h', {
         'scope': 'store',

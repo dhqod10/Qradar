@@ -351,7 +351,10 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
           return [
             const SizedBox(height: 12),
             _HeavyPlate(
-              title: '남은 ${b.remaining ?? 0}곳의 개별 설정이 지워져요',
+              // 수치를 모르면(보조 읽기 실패) 숫자 없이 말한다. 서버가 재개 시점에 다시 검증하고 확정 수치는 결과 카드로 돌아온다.
+              title: b.remaining == null
+                  ? '남은 매장의 개별 설정이 지워져요'
+                  : '남은 ${b.remaining}곳의 개별 설정이 지워져요',
               body: null,
             ),
           ];

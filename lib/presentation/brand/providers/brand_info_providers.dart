@@ -1,6 +1,8 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/usecases/approve_brand_use_case.dart';
+import 'package:qradar/domain/usecases/claim_submitted_brand_use_case.dart';
+import 'package:qradar/domain/usecases/fetch_my_submitted_brands_use_case.dart';
 import 'package:qradar/domain/usecases/reject_brand_use_case.dart';
 import 'package:qradar/domain/usecases/upsert_brand_use_case.dart';
 import 'package:qradar/domain/usecases/watch_brand_by_id_use_case.dart';
@@ -23,6 +25,16 @@ final approveBrandUseCaseProvider = Provider<ApproveBrandUseCase>((ref) {
 
 final rejectBrandUseCaseProvider = Provider<RejectBrandUseCase>((ref) {
   return RejectBrandUseCase(ref.watch(brandRepositoryProvider));
+});
+
+final fetchMySubmittedBrandsUseCaseProvider =
+    Provider<FetchMySubmittedBrandsUseCase>((ref) {
+  return FetchMySubmittedBrandsUseCase(ref.watch(brandRepositoryProvider));
+});
+
+final claimSubmittedBrandUseCaseProvider =
+    Provider<ClaimSubmittedBrandUseCase>((ref) {
+  return ClaimSubmittedBrandUseCase(ref.watch(brandRepositoryProvider));
 });
 
 // ── Stream Provider ────────────────────────────────────────────────────────
