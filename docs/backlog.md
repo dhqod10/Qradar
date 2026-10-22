@@ -165,8 +165,25 @@ owner_sales 설계 중 발견. **이번에는 개명하지 않았다** — 주�
 
 ## 가치 확장 기능
 
-### 매장 후기 / 평점
-1~5점 + 텍스트 리뷰. 매장 상세 화면.
+### 🔄 매장 평가 (store_reviews) — 설계 완료, 구현 예정
+
+> **2026-10-22 정정.** 기존 기술 "1~5점 + 텍스트 리뷰. 매장 상세 화면" 은 **두 군데가 틀렸다.**
+> ① 도메인은 1~5 별점이 아니라 **S/A/B/C 등급**이다 (`StoreGrade`, 내부 점수 S=4 A=3 B=2 C=1).
+> ② 고객용 **"매장 상세 화면" 은 존재하지 않는다** (가장 가까운 것은 `store_menu_page`).
+> 설계 중 실측으로 드러났다. 이번에도 backlog 가 코드보다 낡아 있었다.
+
+spec: `docs/tasks/store_reviews/spec.md` (D1~D6 / A1~A5 전건 확정)
+
+핵심 설계
+- 집계는 **CF `onReviewWritten` 전담** — `stores` update 화이트리스트에 `averageScore`/`reviewCount` 가 없어 클라이언트 집계가 **구조적으로 불가능**하다. Rules 완화는 점주의 자기 평점 조작을 허용하므로 기각.
+- `increment` 가 아니라 **`count()` + `sum('score')` 전량 재계산** → 멱등 + 시드 오염 자기 치유 + 집계 보정 로직 불필요.
+- 문서 ID `{storeId}_{userId}` → **1인 1매장 1표**. `{orderId}` 안은 소액 반복 주문으로 등급을 살 수 있어 기각.
+- 리뷰 0건은 `C급 (-)` 이 아니라 **`미평가`**.
+- `stores.grade` 는 Firestore 에서 읽히지 않는 **파생 필드**다 (`store_model.dart:186`).
+
+배포 필요: `firestore:rules,firestore:indexes` + `functions:onReviewWritten` + Console 시드 리셋(A5)
+
+2차 범위 R1~R8 은 spec 참조 (삭제 UI / 내가 쓴 평가 / 점주 답글 / 신고·금칙어 / 베이지안 정렬 보정 / 사진 리뷰 / grade 영속화 / 페이지네이션).
 
 ### 선물하기
 기프트카드 / 쿠폰 / 음료 선물.
