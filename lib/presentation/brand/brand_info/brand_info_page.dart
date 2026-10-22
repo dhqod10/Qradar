@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_tile.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_info_row.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
@@ -293,6 +294,9 @@ class _QoinRateCard extends StatelessWidget {
               scope: QoinRateScope.brand,
               targetId: brand.id,
               targetName: brand.name,
+              viewer: QoinHistoryViewer.brand,
+              brandId: brand.id,
+              brandName: brand.name,
             ),
           ),
         ),

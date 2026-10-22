@@ -29,8 +29,13 @@ void main() {
     test('0.03 (ratio typed as percent) is blocked as tooLow', () {
       expect(st('0.03'), RateInputStatus.tooLow);
       expect(st('0.05'), RateInputStatus.tooLow);
-      expect(st('0'), RateInputStatus.tooLow);
       expect(st('.03'), RateInputStatus.tooLow);
+    });
+    test('exact 0 is zero (스위치로 안내), not tooLow', () {
+      expect(st('0'), RateInputStatus.zero);
+      expect(st('0.0'), RateInputStatus.zero);
+      expect(st('00'), RateInputStatus.zero);
+      expect(st('.0'), RateInputStatus.zero);
     });
     test('boundaries', () {
       expect(st('0.1'), RateInputStatus.valid);

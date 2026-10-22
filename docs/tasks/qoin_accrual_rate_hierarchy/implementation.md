@@ -261,3 +261,83 @@ MH1~MH16 그대로. 특히:
 - 문서 갱신(`backlog.md` 완료 처리, `data_ownership.md` §2.5/2.7/§3, `audit_trail.md` §3 A1 해소, `role_flows.md`)은 하지 않았다 — architect 후속.
 - 위젯/스모크 테스트 외 실기기 검증(MH1~MH16) 미수행.
 - 임시 파일 · `--target` 빌드 없음. `dart format` 은 **신규 파일 + 전면 교체한 허브 페이지만 개별 지정**했고, 수정한 기존 파일은 포맷하지 않았다 (디렉터리 전체 실행 없음).
+
+---
+
+# 개정 2 구현 — tester FAIL 6건 + Q1(적립 스위치) + N4(브랜드 스위치 우선)
+
+기준: spec §19(F1~F5·부가 B·H-2·H-3) → §20(Q1~Q3) → §20.3.1 개정판 · §20.14(N1~N8). 위 §1~§9 와 충돌하면 **이 절이 우선**한다. 배포·commit 하지 않았다. 운영 Firestore 접촉 0.
+
+## R1. 구현 완료 항목
+
+| 항목 | 내용 |
+|---|---|
+| F1 | 브랜드 신뢰원 = `stores/{storeId}.brandId`. `CartEntity` 에 brandId **미추가**, `verifyTossPayment` 는 cart 의 brandId 를 읽지 않고 `null` 기록. 주문 구성은 순수 함수 `functions/src/orderBuilder.ts`(`buildOrderData`/`buildOrderLogData`/`CONSUMED_CART_KEYS`). 원장 `brandId` = 해석에 쓴 값. 회수는 earn 원장 상속 |
+| Q1 | `qoinAccrualEnabled`(false 만 저장, 켜면 필드 삭제). `setQoinAccrualEnabled` callable, 0 은 쓰기 측 전면 거부, 일괄 적용은 스위치를 쓰지 않음 |
+| N4 | 해석 사슬 개정판: storeSwitch disabled → brandSwitch disabled → storeSwitch invalid → brandSwitch invalid → storeRate → brandRate → globalRate. TS·Dart 분기 순서 동일, 진리표 공유 |
+| F2 | 매장별 `clearByBulk` 이력(ID `bulk_{bulkHistoryId}` 결정적), 분류 집계 `clearedValueCount`/`clearedInvalidCount`/`disabledUntouchedCount`/`brandDisabled`, CHUNK 450→225 |
+| F3 | Rules `enabledChangedBy == uid()` 강제, 앱이 `enabledChangedBy/At` 기록, 트리거가 `source: app_direct` + 행위자. 이력 field `globalEnabled` |
+| F4 | Rules 하네스 3건(+스위치 변형 2건) 고정 |
+| F5 | 브랜드 포인터 `qoinBulkHistoryId/Status/At` 를 트랜잭션 안에서 검사(추가 read 0). 재개 재검증(포인터·브랜드 현재 값 = 이력 `after`), `resumedAt/resumeCount`, 단건 변경·스위치 변경도 진행 중 거부, stale 5분 |
+| 부가 B / H-2 | `beforeState`/`beforeRaw`(적립률·스위치·config 전 경로), `qoinSettlementIssues/{orderId}`(invalid_rate/invalid_enabled/invalid_store/invalid_total, 멱등, Rules read admin·쓰기 차단). 스위치 off 는 미기록 |
+| H-3 | 허브 배너 = brands 포인터 기반 + `AsyncValue.when` 3분기, "최근 변경" 에러 행 |
+| 마이그레이션 | `migrateQoinZeroRates`(임시, dry-run/실행, 멱등, 무효 값 보고만) + 허브 카드 1파일 + 레거시 가드 + 판독 호환 분기 |
+| N8 | `clearByBulk` 행은 문장만, 브랜드 이력 링크는 admin / 해당 브랜드 `role==brand` 에게만. Rules 변경 없음 |
+
+## R2. 변경 파일 (백엔드; Dart 목록은 R7)
+
+`functions/src/`: `qoinRate.ts`(RateCell 3값+legacyZero, `classifySwitch`, resolve 5입력, `isValidCallableSwitch`) · `qoinAdmin.ts`(`describeRaw`/`rateBeforeInfo`/`switchBeforeInfo`/`isBulkInProgress`) · `setQoinAccrualEnabled.ts`(신규) · `migrateQoinZeroRates.ts`(신규·임시) · `orderBuilder.ts`(신규) · `onOrderQoinSettled.ts` · `applyBrandQoinRate.ts`(전면 개정) · `setQoinAccrualRate.ts` · `onQoinConfigWritten.ts` · `verifyTossPayment.ts` · `index.ts`
+`firestore.rules`: `touchesQoinManaged()`/`hasQoinManagedOnCreate()`/`qoinManagedFields()`(5필드 집합 1곳), `config` 의 `enabledChangedBy` 강제, `qoinSettlementIssues` 블록
+테스트: `test_fixtures/qoin_rate_truth_table.json`(resolve 32 / resolve_legacy 3 / classify 13 / classifySwitch 7 / callable 12 / callableSwitch 4), `test_fixtures/qoin_cart_contract.json`(T2), `functions/test/*.mjs`, `test_rules/rules.test.mjs`
+
+## R3. 테스트 결과 (전부 직접 실행)
+
+| 항목 | 결과 |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **368 passed** (1차 기준선 260) |
+| functions `npm run build` (tsc) | 오류 0 |
+| functions `npm test` | **82/82** |
+| Rules 하네스 `test_rules` `npm test` | **261/261** (기존 163 + 신규 98: 보호 5필드 × 경로 20 + 삭제 3 + F3 7 + issues 17 + F4 + N8) |
+| CF 에뮬레이터 `npm run test:emulator` | **80/80** (마지막에 `clearedZeroCount` 단언 문자열 1줄만 바꾼 뒤 재실행하지 않음 — 동치 변경, `npm test` 로 grep 가드는 통과) |
+
+에뮬레이터 1순위 회귀: Q1(일괄 덮어쓰기 후 `사용 안 함` 매장 미적립, 스위치 불변·60곳 600매장 규모) · N4 ①~⑥(①브랜드off+개별10% 적립0·이슈 미기록 ②환불 회수 통과 ③R23b ④R22b 기록 ⑤R21b 미기록 ⑥brandDisabled) · R25 · T3 3케이스 · F5(a)(c) · 마이그레이션 멱등 · 레거시 가드 · 진리표 32행 E2E(주문은 `buildOrderData` 로 생성, 손 시드 0).
+
+## R4. 적립 1건당 read · 라운드트립 (에뮬레이터에서 SDK 요청을 직접 센 값)
+
+| 경로 | 문서 read | batchGet 왕복 | 1차(직전) |
+|---|---|---|---|
+| earn 브랜드 소속 | 5 | **4** | 5 / 4 |
+| earn 개인 매장 | 4 | **3** | 4 / 4 |
+| clawback | 4 | 4 | 4 / 4 |
+
+증가 **0**(개인 매장은 왕복 −1). 스위치는 이미 읽는 store/brand 문서의 필드라 read 추가 없음.
+
+## R5. grep 0건 확인
+
+`explicitOffRate` / `allowZero` / `skipped_rate_zero` / `clearedZeroCount` : lib·functions/src·firestore.rules 0건 (test 쪽은 "부재를 검증하는 가드 문자열"만 존재). `after.brandId` · `cart.brandId`(금액·원장 경로, 주석 제외) 0건 — `qoinRate.test.mjs` T4 가 자동 검사. design §18-12 삭제 대상 문구는 Dart 가드 테스트가 자동 검사(0건). `asData?.value == null → SizedBox.shrink` 0건(가드 테스트가 허브 `.when` 3분기를 검사).
+
+## R6. 과도기 자산 5종 — 정리 커밋 일괄 삭제용 (`TRANSITIONAL(spec §20.4.5)` 로 grep 가능)
+
+1. **호환 분기**: TS `qoinRate.ts`(`legacyZero`, resolve 의 legacy 2줄), `onOrderQoinSettled.ts` 로그의 `legacy`; Dart `qoin_rate_resolver.dart`, `qoin_rate_labels.dart`, 허브·사슬·힌트의 legacy 처리
+2. **픽스처**: `resolve_legacy` 배열 + `transitionalExpect` 키(R16b/R16c, classify 0행) + 양쪽 테스트의 `expectOf`/legacy 그룹
+3. **레거시 가드**: `applyBrandQoinRate.ts` `legacyZeroGuard`, Dart `QoinRateException.legacyZero*`·`qoin_callable.dart` details 파싱·`QoinMessages.legacyZeroGuard`
+4. **callable**: `migrateQoinZeroRates.ts` + `index.ts` export + Dart 마이그레이션 파일 5개 + 에뮬레이터 섹션 I
+5. **카드**: `admin_qoin_migration_card.dart`(허브에는 import+마운트 1줄) + 관련 테스트
+
+## R7. Dart 변경 요약 (fork 구현 — 상세는 git diff)
+
+신규: `qoin_callable.dart`, 마이그레이션 데이터/도메인 5파일, `set_qoin_accrual_enabled_use_case.dart`, `admin_qoin_migration_card.dart`, `qoin_accrual_switch_card.dart`, `qoin_reenable_hint.dart`(문장은 resolver 재해석으로 생성, 위젯 조립 없음), 테스트 5파일. 수정: spec §20.9 의 core/domain/data/presentation 전 목록. `payment_gateway_repository_impl.cartToMap` 은 `@visibleForTesting` 공개(T2). 쓰기 맵에는 어떤 `qoin*` 필드도 없음(테스트로 고정).
+
+## R8. tester 전달 테스트 포인트
+
+Q1 수용(일괄 덮어쓰기 후 미적립) 재현 · N4 6건 · 회수 통과 · 진리표 Dart/TS 동일 파일 · 20경로 독립 열거 · 마이그레이션 멱등/이력/행위자 · 과도기 자산 5종 삭제 가능성 · T1~T4(손 시드 주문 0건) · 허브 에러/로딩/없음 3상태 · N8 링크 게이팅 · 점주에게 브랜드 이력 DENIED.
+
+## R9. 미구현 · 보류 · 설계 보고
+
+- 미구현(범위 외 확정): 부가 A(격자 밖 값 표시), D-3 전체 이력 페이지네이션, Q2 소급 도구, `stores.delete` 정책, N6 Console 감시.
+- 브랜드 편집 페이지 자체의 `이어서 적용` 배너는 해당 브랜드 이력 스트림을 읽어 이력 에러 때 아무것도 안 보인다(design §18-8 은 허브만 규정). 허브·브랜드 목록 태그·최근 변경은 포인터/3상태.
+- F5(b) 동시 호출은 에뮬레이터에서 3동시 호출 시 `changed, noop, noop` 으로 관측(거부가 아닌 no-op 으로 귀결). 불변식(이력 1건·매장 이력 1500건 중복 0·카운트 이중 보고 0)만 단언. 진행 중 거부는 포인터 시드로 결정적 검증(F5-c).
+- 설계 보고(뒤집지 않음): ① 레거시 0 가드는 브랜드 자신의 레거시 0 도 포함시켰다(spec 은 산하 매장만 언급; 브랜드 0 덮어쓰기 시 전체 적립 재개 위험 때문). ② 새 일괄 적용이 기존 `partial` 포인터를 대체하면 옛 partial 이력은 영구 `partial` 로 남는다(spec 미규정). ③ `enabledChangedAt` 은 Rules 가 강제하지 않는다(spec 은 `enabledChangedBy` 만) — 사칭은 막히나 시각 위조는 가능, 기록은 `direct` 로 안전 측. ④ 마이그레이션은 무효 값 탐지를 위해 `orderBy('qoinAccrualRate')` 로 필드 보유 문서만 스캔(전 매장 read 없음).
+- 확인 불가: 운영 인덱스 동작·실제 배포 후 화면(배포 금지). `npm run test:emulator` 는 `functions/` 에서, Rules 는 `cd /Users/Byeonguk/Developer/OrderApp/test_rules && npm test` 로 재현.
+- 임시 파일/실험용 엔트리포인트: `lib/tmp_*` 없음, 생성하지 않음. 스크래치패드 로그만 사용.

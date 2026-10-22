@@ -7,7 +7,7 @@ import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 /// 쓰기는 Firestore 직접 쓰기가 아니라 callable 이다 — 값과 이력을 같은 트랜잭션에 쓰기 위해서다.
 /// 실패는 [QoinRateException] 으로 확정 실패 / 결과 불명을 구분해 던진다.
 abstract class QoinRateRepository {
-  /// 한 범위의 적립률 설정. [rate] 비율(0 = 적립 안 함) 또는 [clear] (상위 설정 따르기) 중 정확히 하나.
+  /// 한 범위의 적립률 설정. [rate] 비율(0 은 적립률이 아니다) 또는 [clear] (상위 설정 따르기) 중 정확히 하나.
   /// [targetId] 는 global 이면 null.
   Future<QoinRateSetResult> setRate({
     required QoinRateScope scope,
@@ -25,6 +25,14 @@ abstract class QoinRateRepository {
     required QoinBulkMode mode,
     String? reason,
     String? resumeHistoryId,
+  });
+
+  /// 매장·브랜드의 `적립 사용` 스위치. [enabled] false = 사용 안 함, true = 사용(서버가 필드를 지운다).
+  Future<QoinAccrualEnabledResult> setAccrualEnabled({
+    required QoinRateScope scope,
+    required String targetId,
+    required bool enabled,
+    String? reason,
   });
 
   /// 한 대상의 이력 (최신순). 점주/브랜드/admin 공용.

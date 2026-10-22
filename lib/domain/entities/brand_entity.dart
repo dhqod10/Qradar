@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
+import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 
 part 'brand_entity.freezed.dart';
@@ -32,8 +33,16 @@ abstract class BrandEntity with _$BrandEntity {
     DateTime? createdAt,
     DateTime? updatedAt,
 
-    /// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속, 0 = 이 브랜드 적립 안 함.
+    /// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속. 0 은 적립률이 아니다.
     /// **읽기 전용** — 쓰기는 CF 전담.
     @Default(QoinRateSetting.absent) QoinRateSetting qoinAccrualRate,
+
+    /// 적립 스위치 (`qoinAccrualEnabled`). 부재/true = 사용, false = 이 브랜드 산하 전체 사용 안 함. **읽기 전용.**
+    @Default(QoinSwitchSetting.enabled) QoinSwitchSetting qoinAccrualEnabled,
+
+    /// 일괄 적용 포인터 (`qoinBulkHistoryId` / `qoinBulkStatus` / `qoinBulkAt`). 허브의 중단 판정 근거. **읽기 전용.**
+    String? qoinBulkHistoryId,
+    QoinBulkStatus? qoinBulkStatus,
+    DateTime? qoinBulkAt,
   }) = _BrandEntity;
 }

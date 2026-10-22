@@ -41,6 +41,19 @@ class QoinRateRepositoryImpl implements QoinRateRepository {
   );
 
   @override
+  Future<QoinAccrualEnabledResult> setAccrualEnabled({
+    required QoinRateScope scope,
+    required String targetId,
+    required bool enabled,
+    String? reason,
+  }) => _ds.setAccrualEnabled(
+    scope: scope,
+    targetId: targetId,
+    enabled: enabled,
+    reason: reason,
+  );
+
+  @override
   Stream<List<QoinRateChangeEntity>> watchHistory(
     QoinRateScope scope,
     String targetId, {

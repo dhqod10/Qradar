@@ -3,6 +3,7 @@ import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
+import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 
 /// Firestore `brands/{brandId}` 문서 매퍼.
 class BrandModel {
@@ -29,6 +30,14 @@ class BrandModel {
   /// Qoin 적립률 브랜드 설정 — **읽기 전용 필드.** `toFirestore()` 에 넣지 않는다 (쓰기는 CF 전담).
   final QoinRateSetting qoinAccrualRate;
 
+  /// Qoin 적립 스위치 — **읽기 전용 필드.** `toFirestore()` 에 넣지 않는다.
+  final QoinSwitchSetting qoinAccrualEnabled;
+
+  /// 일괄 적용 포인터 3필드 — **읽기 전용.** CF 가 유지하고 허브의 중단 판정이 읽는다.
+  final String? qoinBulkHistoryId;
+  final QoinBulkStatus? qoinBulkStatus;
+  final DateTime? qoinBulkAt;
+
   const BrandModel({
     required this.id,
     required this.name,
@@ -50,6 +59,10 @@ class BrandModel {
     this.createdAt,
     this.updatedAt,
     this.qoinAccrualRate = QoinRateSetting.absent,
+    this.qoinAccrualEnabled = QoinSwitchSetting.enabled,
+    this.qoinBulkHistoryId,
+    this.qoinBulkStatus,
+    this.qoinBulkAt,
   });
 
   factory BrandModel.fromFirestore(
@@ -81,6 +94,15 @@ class BrandModel {
         data[FirestorePaths.qoinAccrualRateField],
         present: data.containsKey(FirestorePaths.qoinAccrualRateField),
       ),
+      qoinAccrualEnabled: QoinSwitchSetting.fromRaw(
+        data[FirestorePaths.qoinAccrualEnabledField],
+        present: data.containsKey(FirestorePaths.qoinAccrualEnabledField),
+      ),
+      qoinBulkHistoryId: data[FirestorePaths.qoinBulkHistoryIdField] as String?,
+      qoinBulkStatus: QoinBulkStatus.fromCode(
+        data[FirestorePaths.qoinBulkStatusField],
+      ),
+      qoinBulkAt: _toDate(data[FirestorePaths.qoinBulkAtField]),
     );
   }
 
@@ -106,6 +128,10 @@ class BrandModel {
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       qoinAccrualRate: entity.qoinAccrualRate,
+      qoinAccrualEnabled: entity.qoinAccrualEnabled,
+      qoinBulkHistoryId: entity.qoinBulkHistoryId,
+      qoinBulkStatus: entity.qoinBulkStatus,
+      qoinBulkAt: entity.qoinBulkAt,
     );
   }
 
@@ -131,6 +157,10 @@ class BrandModel {
       createdAt: createdAt,
       updatedAt: updatedAt,
       qoinAccrualRate: qoinAccrualRate,
+      qoinAccrualEnabled: qoinAccrualEnabled,
+      qoinBulkHistoryId: qoinBulkHistoryId,
+      qoinBulkStatus: qoinBulkStatus,
+      qoinBulkAt: qoinBulkAt,
     );
   }
 

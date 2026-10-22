@@ -1,56 +1,536 @@
 {
-  "_doc": "Qoin 적립률 진리표 — Dart(test/domain/qoin_rate_resolution_test.dart)와 TS(functions/test/qoinRate.test.mjs)가 같은 파일을 읽는다. 셀 표기: \"absent\"=필드 부재, 숫자=number, \"nan\"=NaN, \"str:3\"=문자열, \"null\"=null. spec §6 의 10행이 resolve R01~R10.",
-  "resolve": [
-    { "id": "R01", "store": "absent", "brand": "absent", "global": 0.03, "expect": { "rate": 0.03, "source": "global" } },
-    { "id": "R02", "store": "absent", "brand": 0.05, "global": 0.03, "expect": { "rate": 0.05, "source": "brand" } },
-    { "id": "R03", "store": 0.1, "brand": 0.05, "global": 0.03, "expect": { "rate": 0.1, "source": "store" } },
-    { "id": "R04", "store": 0, "brand": 0.05, "global": 0.03, "expect": { "rate": 0, "source": "store" } },
-    { "id": "R05", "store": "absent", "brand": 0, "global": 0.03, "expect": { "rate": 0, "source": "brand" } },
-    { "id": "R06", "store": 0.1, "brand": 0, "global": 0.03, "expect": { "rate": 0.1, "source": "store" } },
-    { "id": "R07", "store": "absent", "brand": "absent", "global": "absent", "expect": { "invalid": "global" } },
-    { "id": "R08", "store": 0.5, "brand": 0.05, "global": 0.03, "expect": { "invalid": "store" } },
-    { "id": "R09", "store": "absent", "brand": 0.5, "global": 0.03, "expect": { "invalid": "brand" } },
-    { "id": "R10", "store": "absent", "brand": "absent", "global": 0.5, "expect": { "invalid": "global" } },
-    { "id": "R11", "store": "nan", "brand": 0.05, "global": 0.03, "expect": { "invalid": "store" } },
-    { "id": "R12", "store": "str:3", "brand": 0.05, "global": 0.03, "expect": { "invalid": "store" } },
-    { "id": "R13", "store": "null", "brand": 0.05, "global": 0.03, "expect": { "invalid": "store" } },
-    { "id": "R14", "store": -0.01, "brand": 0.05, "global": 0.03, "expect": { "invalid": "store" } },
-    { "id": "R15", "store": 0.0005, "brand": "absent", "global": 0.03, "expect": { "invalid": "store" } },
-    { "id": "R16", "store": "absent", "brand": "absent", "global": 0, "expect": { "invalid": "global" } },
-    { "id": "R17", "store": 0.001, "brand": "absent", "global": 0.03, "expect": { "rate": 0.001, "source": "store" } },
-    { "id": "R18", "store": 0.2, "brand": "absent", "global": 0.03, "expect": { "rate": 0.2, "source": "store" } },
-    { "id": "R19", "store": 0.2001, "brand": "absent", "global": 0.03, "expect": { "invalid": "store" } },
-    { "id": "R20", "store": "absent", "brand": "absent", "global": 0.03, "note": "브랜드 미소속 개인 매장 (brand 단계 생략)", "expect": { "rate": 0.03, "source": "global" } }
-  ],
-  "classify": [
-    { "raw": "absent", "allowZero": true, "expect": "absent" },
-    { "raw": 0.001, "allowZero": true, "expect": "valid" },
-    { "raw": 0.0009, "allowZero": true, "expect": "invalid" },
-    { "raw": 0.2, "allowZero": true, "expect": "valid" },
-    { "raw": 0.2001, "allowZero": true, "expect": "invalid" },
-    { "raw": 0.03, "allowZero": true, "expect": "valid" },
-    { "raw": 0, "allowZero": true, "expect": "zero" },
-    { "raw": 0, "allowZero": false, "expect": "invalid" },
-    { "raw": -1, "allowZero": true, "expect": "invalid" },
-    { "raw": 1, "allowZero": true, "expect": "invalid" },
-    { "raw": 0.5, "allowZero": true, "expect": "invalid" },
-    { "raw": "nan", "allowZero": true, "expect": "invalid" },
-    { "raw": "str:3", "allowZero": true, "expect": "invalid" },
-    { "raw": "null", "allowZero": true, "expect": "invalid" }
-  ],
-  "callable": [
-    { "raw": 0.03, "allowZero": true, "expect": true },
-    { "raw": 0.001, "allowZero": true, "expect": true },
-    { "raw": 0.2, "allowZero": true, "expect": true },
-    { "raw": 0.025, "allowZero": true, "expect": true },
-    { "raw": 0.0305, "allowZero": true, "expect": false },
-    { "raw": 0, "allowZero": true, "expect": true },
-    { "raw": 0, "allowZero": false, "expect": false },
-    { "raw": 0.5, "allowZero": true, "expect": false },
-    { "raw": 0.0005, "allowZero": true, "expect": false },
-    { "raw": -1, "allowZero": true, "expect": false },
-    { "raw": "str:3", "allowZero": true, "expect": false },
-    { "raw": "nan", "allowZero": true, "expect": false },
-    { "raw": "null", "allowZero": true, "expect": false }
-  ]
+ "_doc": "Qoin 적립률 진리표 — Dart(test/domain/qoin_rate_resolution_test.dart)와 TS(functions/test/qoinRate.test.mjs)가 같은 파일을 읽는다. 셀 표기: \"absent\"=필드 부재, 숫자/불리언=그 값, \"nan\"=NaN, \"str:3\"=문자열, \"null\"=null. resolve 의 storeEnabled/brandEnabled 열 기본값은 absent. expect: {rate,source} | {invalid:'store'|'brand'|'global'|'store_enabled'|'brand_enabled'} | {disabled:'store'|'brand'}. spec §20.2.3 (개정 N4).",
+ "_transitional": "transitionalExpect 가 있는 행은 과도기 호환 분기(legacyZero)가 살아 있는 동안 expect 대신 그 값을 기대한다. resolve_legacy 배열과 함께 정리 커밋(spec §20.4.5)에서 transitionalExpect 키와 배열을 삭제한다.",
+ "resolve": [
+  {
+   "id": "R01",
+   "store": "absent",
+   "brand": "absent",
+   "global": 0.03,
+   "expect": {
+    "rate": 0.03,
+    "source": "global"
+   }
+  },
+  {
+   "id": "R02",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "rate": 0.05,
+    "source": "brand"
+   }
+  },
+  {
+   "id": "R03",
+   "store": 0.1,
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "rate": 0.1,
+    "source": "store"
+   }
+  },
+  {
+   "id": "R04",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "storeEnabled": false,
+   "note": "Q1: 매장 스위치 off, 숫자 없음",
+   "expect": {
+    "disabled": "store"
+   }
+  },
+  {
+   "id": "R04b",
+   "store": 0.1,
+   "brand": 0.05,
+   "global": 0.03,
+   "storeEnabled": false,
+   "note": "Q1 핵심: 숫자가 있어도 스위치가 이긴다",
+   "expect": {
+    "disabled": "store"
+   }
+  },
+  {
+   "id": "R05",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "brandEnabled": false,
+   "note": "브랜드 스위치 off",
+   "expect": {
+    "disabled": "brand"
+   }
+  },
+  {
+   "id": "R06",
+   "store": 0.1,
+   "brand": 0.05,
+   "global": 0.03,
+   "brandEnabled": false,
+   "note": "N4 핵심: 상위 스위치가 하위 개별 숫자를 이긴다",
+   "expect": {
+    "disabled": "brand"
+   }
+  },
+  {
+   "id": "R07",
+   "store": "absent",
+   "brand": "absent",
+   "global": "absent",
+   "expect": {
+    "invalid": "global"
+   }
+  },
+  {
+   "id": "R08",
+   "store": 0.5,
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "invalid": "store"
+   }
+  },
+  {
+   "id": "R09",
+   "store": "absent",
+   "brand": 0.5,
+   "global": 0.03,
+   "expect": {
+    "invalid": "brand"
+   }
+  },
+  {
+   "id": "R10",
+   "store": "absent",
+   "brand": "absent",
+   "global": 0.5,
+   "expect": {
+    "invalid": "global"
+   }
+  },
+  {
+   "id": "R11",
+   "store": "nan",
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "invalid": "store"
+   }
+  },
+  {
+   "id": "R12",
+   "store": "str:3",
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "invalid": "store"
+   }
+  },
+  {
+   "id": "R13",
+   "store": "null",
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "invalid": "store"
+   }
+  },
+  {
+   "id": "R14",
+   "store": -0.01,
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "invalid": "store"
+   }
+  },
+  {
+   "id": "R15",
+   "store": 0.0005,
+   "brand": "absent",
+   "global": 0.03,
+   "expect": {
+    "invalid": "store"
+   }
+  },
+  {
+   "id": "R16",
+   "store": "absent",
+   "brand": "absent",
+   "global": 0,
+   "note": "0 은 어느 범위에서도 적립률이 아니다",
+   "expect": {
+    "invalid": "global"
+   }
+  },
+  {
+   "id": "R16b",
+   "store": 0,
+   "brand": 0.05,
+   "global": 0.03,
+   "note": "정리 커밋 후 활성. 과도기에는 transitionalExpect (resolve_legacy L01 과 같은 동작)",
+   "expect": {
+    "invalid": "store"
+   },
+   "transitionalExpect": {
+    "disabled": "store",
+    "legacy": true
+   }
+  },
+  {
+   "id": "R16c",
+   "store": "absent",
+   "brand": 0,
+   "global": 0.03,
+   "note": "정리 커밋 후 활성. 과도기에는 transitionalExpect (L02)",
+   "expect": {
+    "invalid": "brand"
+   },
+   "transitionalExpect": {
+    "disabled": "brand",
+    "legacy": true
+   }
+  },
+  {
+   "id": "R17",
+   "store": 0.001,
+   "brand": "absent",
+   "global": 0.03,
+   "expect": {
+    "rate": 0.001,
+    "source": "store"
+   }
+  },
+  {
+   "id": "R18",
+   "store": 0.2,
+   "brand": "absent",
+   "global": 0.03,
+   "expect": {
+    "rate": 0.2,
+    "source": "store"
+   }
+  },
+  {
+   "id": "R19",
+   "store": 0.2001,
+   "brand": "absent",
+   "global": 0.03,
+   "expect": {
+    "invalid": "store"
+   }
+  },
+  {
+   "id": "R20",
+   "store": "absent",
+   "brand": "absent",
+   "global": 0.03,
+   "note": "브랜드 미소속 개인 매장 (brand 단계 생략)",
+   "expect": {
+    "rate": 0.03,
+    "source": "global"
+   }
+  },
+  {
+   "id": "R21",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "storeEnabled": "str:false",
+   "expect": {
+    "invalid": "store_enabled"
+   }
+  },
+  {
+   "id": "R21b",
+   "store": "absent",
+   "brand": "absent",
+   "global": 0.03,
+   "storeEnabled": "str:false",
+   "brandEnabled": false,
+   "note": "N4: disabled 가 invalid 보다 앞 — 누락 사건으로 기록하지 않는다",
+   "expect": {
+    "disabled": "brand"
+   }
+  },
+  {
+   "id": "R22",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "brandEnabled": 1,
+   "expect": {
+    "invalid": "brand_enabled"
+   }
+  },
+  {
+   "id": "R22b",
+   "store": 0.1,
+   "brand": 0.05,
+   "global": 0.03,
+   "brandEnabled": 1,
+   "note": "N4: 상위 스위치 무효일 때도 하위 개별 숫자가 이기지 못한다",
+   "expect": {
+    "invalid": "brand_enabled"
+   }
+  },
+  {
+   "id": "R23",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "storeEnabled": true,
+   "note": "명시적 true = 부재",
+   "expect": {
+    "rate": 0.05,
+    "source": "brand"
+   }
+  },
+  {
+   "id": "R23b",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "storeEnabled": true,
+   "brandEnabled": false,
+   "note": "N4: 명시적 true 는 브랜드 off 의 예외가 아니다",
+   "expect": {
+    "disabled": "brand"
+   }
+  },
+  {
+   "id": "R24",
+   "store": "absent",
+   "brand": 0.05,
+   "global": 0.03,
+   "storeEnabled": false,
+   "brandEnabled": false,
+   "note": "매장 스위치가 먼저",
+   "expect": {
+    "disabled": "store"
+   }
+  },
+  {
+   "id": "R25",
+   "store": "absent",
+   "brand": "absent",
+   "global": "absent",
+   "storeEnabled": false,
+   "note": "스위치가 전역 검사 앞에서 단락 — invalid_global 이 아니다",
+   "expect": {
+    "disabled": "store"
+   }
+  },
+  {
+   "id": "R26",
+   "store": "absent",
+   "brand": "absent",
+   "global": "absent",
+   "brandEnabled": false,
+   "expect": {
+    "disabled": "brand"
+   }
+  }
+ ],
+ "resolve_legacy": [
+  {
+   "id": "L01",
+   "store": 0,
+   "brand": 0.05,
+   "global": 0.03,
+   "expect": {
+    "disabled": "store",
+    "legacy": true
+   }
+  },
+  {
+   "id": "L02",
+   "store": "absent",
+   "brand": 0,
+   "global": 0.03,
+   "expect": {
+    "disabled": "brand",
+    "legacy": true
+   }
+  },
+  {
+   "id": "L03",
+   "store": 0,
+   "brand": 0.05,
+   "global": 0.03,
+   "storeEnabled": false,
+   "note": "중복이어도 결과 동일, legacy 아님",
+   "expect": {
+    "disabled": "store"
+   }
+  }
+ ],
+ "classify": [
+  {
+   "raw": "absent",
+   "expect": "absent"
+  },
+  {
+   "raw": 0.001,
+   "expect": "valid"
+  },
+  {
+   "raw": 0.0009,
+   "expect": "invalid"
+  },
+  {
+   "raw": 0.2,
+   "expect": "valid"
+  },
+  {
+   "raw": 0.2001,
+   "expect": "invalid"
+  },
+  {
+   "raw": 0.03,
+   "expect": "valid"
+  },
+  {
+   "raw": 0,
+   "expect": "invalid",
+   "transitionalExpect": "legacyZero"
+  },
+  {
+   "raw": -1,
+   "expect": "invalid"
+  },
+  {
+   "raw": 1,
+   "expect": "invalid"
+  },
+  {
+   "raw": 0.5,
+   "expect": "invalid"
+  },
+  {
+   "raw": "nan",
+   "expect": "invalid"
+  },
+  {
+   "raw": "str:3",
+   "expect": "invalid"
+  },
+  {
+   "raw": "null",
+   "expect": "invalid"
+  }
+ ],
+ "classifySwitch": [
+  {
+   "id": "S01",
+   "raw": "absent",
+   "expect": "enabled"
+  },
+  {
+   "id": "S02",
+   "raw": true,
+   "expect": "enabled"
+  },
+  {
+   "id": "S03",
+   "raw": false,
+   "expect": "disabled"
+  },
+  {
+   "id": "S04",
+   "raw": "str:false",
+   "expect": "invalid"
+  },
+  {
+   "id": "S05",
+   "raw": 0,
+   "expect": "invalid"
+  },
+  {
+   "id": "S06",
+   "raw": 1,
+   "expect": "invalid"
+  },
+  {
+   "id": "S07",
+   "raw": "null",
+   "expect": "invalid"
+  }
+ ],
+ "callable": [
+  {
+   "raw": 0.03,
+   "expect": true
+  },
+  {
+   "raw": 0.001,
+   "expect": true
+  },
+  {
+   "raw": 0.2,
+   "expect": true
+  },
+  {
+   "raw": 0.025,
+   "expect": true
+  },
+  {
+   "raw": 0.0305,
+   "expect": false
+  },
+  {
+   "raw": 0,
+   "expect": false
+  },
+  {
+   "raw": 0.5,
+   "expect": false
+  },
+  {
+   "raw": 0.0005,
+   "expect": false
+  },
+  {
+   "raw": -1,
+   "expect": false
+  },
+  {
+   "raw": "str:3",
+   "expect": false
+  },
+  {
+   "raw": "nan",
+   "expect": false
+  },
+  {
+   "raw": "null",
+   "expect": false
+  }
+ ],
+ "callableSwitch": [
+  {
+   "id": "C01",
+   "enabled": true,
+   "expect": "accept"
+  },
+  {
+   "id": "C02",
+   "enabled": false,
+   "expect": "accept"
+  },
+  {
+   "id": "C03",
+   "enabled": "str:false",
+   "expect": "reject"
+  },
+  {
+   "id": "C04",
+   "enabled": 0,
+   "expect": "reject"
+  }
+ ]
 }

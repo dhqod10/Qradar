@@ -6,7 +6,6 @@ import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
-import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_brand_rate_edit_page.dart';
 import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_admin_ui.dart';
@@ -100,7 +99,8 @@ class _AdminQoinBrandRatesPageState
       counts[id] = (counts[id] ?? 0) + 1;
       if (!s.qoinAccrualRate.isAbsent) overrides[id] = (overrides[id] ?? 0) + 1;
     }
-    final unfinished = _unfinishedBrandIds();
+    // 중단 판정은 브랜드 문서의 포인터로 한다 (이력 쿼리·인덱스 의존 없음 — 허브 배너와 같은 근거).
+    final now = DateTime.now();
 
     final q = _searchCtrl.text.trim().toLowerCase();
     final sorted = [...brands]..sort((a, b) => a.name.compareTo(b.name));
@@ -182,7 +182,7 @@ class _AdminQoinBrandRatesPageState
                         cfg: cfg,
                         storeCount: counts[b.id] ?? 0,
                         overrideCount: overrides[b.id] ?? 0,
-                        unfinished: unfinished.contains(b.id),
+                        unfinished: isBulkUnfinished(b, now),
                       ),
                     );
                   },
@@ -190,20 +190,6 @@ class _AdminQoinBrandRatesPageState
         ),
       ],
     );
-  }
-
-  /// 미완료 일괄 적용이 있는 브랜드 (최근 이력 페이지 안에서 판정 — 허브와 같은 축소 동작).
-  Set<String> _unfinishedBrandIds() {
-    final list = ref
-        .watch(qoinAllRateHistoryProvider(QoinPolicy.historyPageSize))
-        .asData
-        ?.value;
-    if (list == null) return const {};
-    final now = DateTime.now();
-    return {
-      for (final c in list)
-        if (c.scope == QoinRateScope.brand && c.isUnfinished(now)) c.targetId,
-    };
   }
 }
 
@@ -233,7 +219,7 @@ class _BrandRow extends StatelessWidget {
     return Semantics(
       button: true,
       label:
-          '${brand.name}, $sub, 적립률 ${QoinRateValueLabel.spokenEffective(e)}, ${kind.label}. 탭하면 적립률 설정',
+          '${brand.name}, $sub, ${e.isDisabled ? '' : '적립률 '}${QoinRateValueLabel.spokenEffective(e)}, ${kind.label}. 탭하면 적립률 설정',
       excludeSemantics: true,
       child: Material(
         color: AppColors.surfaceElevated,

@@ -18,36 +18,12 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { v4 as uuidv4 } from "uuid";
 import { confirmPayment, cancelPayment } from "./tossClient";
+import { buildOrderData, buildOrderLogData, CartSnapshot } from "./orderBuilder";
 
 const tossSecretKey = defineSecret("TOSS_SECRET_KEY");
 
 // ── 입력 타입 ─────────────────────────────────────────────────────────────────
-
-interface OrderItem {
-  menuItemId: string;
-  menuItemName: string;
-  imageUrl: string;
-  quantity: number;
-  selectedOptions: Array<{
-    optionGroupId: string;
-    optionGroupName: string;
-    optionId: string;
-    optionName: string;
-    priceDelta: number;
-  }>;
-  unitPriceWithOptions: number;
-  lineTotal: number;
-}
-
-interface CartSnapshot {
-  storeId: string;
-  storeName: string;
-  brandId?: string | null;
-  items: OrderItem[];
-  subtotal: number;
-  discount?: number | null;
-  totalPrice: number;
-}
+// OrderItem / CartSnapshot 은 orderBuilder.ts (주문 문서 구성의 단일 출처, T1).
 
 interface VerifyPaymentInput {
   paymentKey: string;
@@ -218,25 +194,7 @@ export const verifyTossPayment = onCall(
 
     // orders/{orderId} 문서 (멱등성 가드 통과 후 신규 write)
     const orderDoc = idempotencyDocRef; // 이미 step 3-pre 에서 참조 확보
-    const orderData = {
-      userId: uid,
-      storeId: data.cart.storeId,
-      storeName: data.cart.storeName,
-      brandId: data.cart.brandId ?? null,
-      items: data.cart.items,
-      subtotal: data.cart.subtotal,
-      discount: data.cart.discount ?? null,
-      totalPrice: data.cart.totalPrice,
-      status: "paid",
-      paymentInfo,
-      refundRequest: null,
-      refundInfo: null,
-      createdAt: approvedAt,
-      updatedAt: now,
-      acceptedAt: null,
-      cancelledAt: null,
-      refundedAt: null,
-    };
+    const orderData = buildOrderData(data.cart, uid, paymentInfo, { approvedAt, now });
 
     // users/{uid}/orderLogs/{logId} 문서 (Phase 2 OrderLogEntity 스키마 준수)
     const logDoc = db
@@ -244,20 +202,11 @@ export const verifyTossPayment = onCall(
       .doc(uid)
       .collection("orderLogs")
       .doc(logId);
-    const logData = {
-      logId,
-      orderId,
-      storeId: data.cart.storeId,
-      storeName: data.cart.storeName,
-      brandId: data.cart.brandId ?? null,
-      items: data.cart.items,
-      totalPrice: data.cart.totalPrice,
-      status: "paid",
-      paymentMethod: resolvedPaymentMethod,
-      paymentChannel: "toss",
-      createdAt: approvedAt,
-      updatedAt: now,
-    };
+    const logData = buildOrderLogData(
+      data.cart,
+      { logId, orderId, paymentMethod: resolvedPaymentMethod },
+      { approvedAt, now }
+    );
 
     const batch = db.batch();
     batch.set(orderDoc, orderData);

@@ -23,5 +23,8 @@ export { onOrderStatusChanged } from "./onOrderStatusChanged";
 export { onReviewWritten } from "./onReviewWritten";
 export { onOrderQoinSettled } from "./onOrderQoinSettled";
 export { setQoinAccrualRate } from "./setQoinAccrualRate";
+export { setQoinAccrualEnabled } from "./setQoinAccrualEnabled";
 export { applyBrandQoinRate } from "./applyBrandQoinRate";
 export { onQoinConfigWritten } from "./onQoinConfigWritten";
+// TRANSITIONAL(spec §20.4.5): 마이그레이션 0건 확인 후 정리 커밋에서 삭제
+export { migrateQoinZeroRates } from "./migrateQoinZeroRates";

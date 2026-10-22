@@ -31,6 +31,8 @@ class QoinRateInfoCopy {
   static const String contactAdmin = '변경이 필요하면 관리자에게 문의해 주세요';
   static const String brandPriorityNote =
       '매장이 따로 설정한 적립률이 있으면 그 값이 우선해요. 가맹점별 적립률은 가맹점 목록에서 확인할 수 있어요';
+  static const String brandPriorityNoteDisabled =
+      '가맹점별 적립률은 가맹점 목록에서 확인할 수 있어요';
   static const String allStopped = '현재 전체 적립이 중단되어 있어요';
   static const String historyLink = '적립률 변경 이력 보기';
   static const String historyLinkShort = '이력';
@@ -48,8 +50,11 @@ class QoinRateInfoCopy {
             : '브랜드 "$brandName" 의 설정을 따르고 있어요';
       case QoinRateBadgeKind.globalInherit:
         return '기본 적립률을 따르고 있어요';
-      case QoinRateBadgeKind.stopped:
+      case QoinRateBadgeKind.storeStopped:
         return '이 매장은 Qoin 을 적립하지 않아요';
+      // 원인이 브랜드 스위치일 때 (N4: 개별 적립률이 있어도 마찬가지다).
+      case QoinRateBadgeKind.brandStopped:
+        return '브랜드 설정에 따라 이 매장은 Qoin 을 적립하지 않아요';
       case QoinRateBadgeKind.invalid:
         return '적립률 설정에 문제가 있어 적립이 되지 않을 수 있어요';
       case QoinRateBadgeKind.brandSet:
@@ -58,17 +63,14 @@ class QoinRateInfoCopy {
     }
   }
 
-  /// 매장이 `적립 안 함` 인데 원인이 브랜드일 때.
-  static const String storeStoppedByBrand =
-      '브랜드 설정에 따라 이 매장은 Qoin 을 적립하지 않아요';
-
   /// 브랜드 출처 문장.
   static String brandSource(QoinRateBadgeKind kind) {
     switch (kind) {
       case QoinRateBadgeKind.brandSet:
         return '브랜드에 직접 설정된 값이에요';
-      case QoinRateBadgeKind.stopped:
-        return '이 브랜드는 기본으로 Qoin 을 적립하지 않아요';
+      case QoinRateBadgeKind.brandStopped:
+        return '이 브랜드는 Qoin 을 적립하지 않아요. 산하 매장 전체가 적립되지 않아요';
+      case QoinRateBadgeKind.storeStopped:
       case QoinRateBadgeKind.invalid:
         return '적립률 설정에 문제가 있어 적립이 되지 않을 수 있어요';
       case QoinRateBadgeKind.globalInherit:
@@ -131,17 +133,14 @@ class QoinRateInfoRow extends StatelessWidget {
   String sourceSentence(EffectiveQoinRate e) {
     final kind = kindOf(e);
     if (target == QoinRateScope.brand) return QoinRateInfoCopy.brandSource(kind);
-    if (kind == QoinRateBadgeKind.stopped && e.source == QoinRateSource.brand) {
-      return QoinRateInfoCopy.storeStoppedByBrand;
-    }
     return QoinRateInfoCopy.storeSource(kind, brandName: brandName);
   }
 
-  /// 0% 의 원인 범위를 스크린리더에만 덧붙인다.
-  String stoppedOrigin(EffectiveQoinRate e) {
-    if (!e.isStopped) return '';
-    return e.source == QoinRateSource.brand ? ', 브랜드에서 설정' : ', 매장에서 설정';
-  }
+  /// 브랜드 요약에서 우선순위 안내 첫 문장(`매장이 따로 설정한 적립률이…`)을 보일 수 있는가.
+  /// 브랜드가 꺼져 있으면 개별 적립률은 효력이 없으므로 그 문장은 거짓이다 (N4) → 숨긴다.
+  String brandNote(EffectiveQoinRate e) => e.isDisabled
+      ? QoinRateInfoCopy.brandPriorityNoteDisabled
+      : QoinRateInfoCopy.brandPriorityNote;
 }
 
 // ── 이력 링크 ──────────────────────────────────────────────────────────────────
@@ -340,8 +339,7 @@ class _Block extends StatelessWidget {
                     // 값 영역은 버튼이 아니다 (button:false) — 편집 가능한 곳으로 인식되지 않게.
                     button: false,
                     label:
-                        '${QoinRateInfoCopy.label} ${QoinRateValueLabel.spokenEffective(e)}'
-                        '${e.isStopped ? '' : ', ${kind.label}'}${row.stoppedOrigin(e)}. '
+                        '${QoinRateInfoCopy.label} ${QoinRateValueLabel.spokenEffective(e, sentence: true)}, ${kind.label}. '
                         '$sentence. ${QoinRateInfoCopy.contactAdmin}',
                     excludeSemantics: true,
                     child: Column(
@@ -364,6 +362,7 @@ class _Block extends StatelessWidget {
                               effective: e,
                               kind: kind,
                               fontSize: 20,
+                              disabledSentence: true,
                             ),
                             QoinRateSourceBadge(kind: kind),
                           ],
@@ -451,9 +450,8 @@ class _Summary extends StatelessWidget {
             Semantics(
               button: false,
               label:
-                  '${QoinRateInfoCopy.label} ${QoinRateValueLabel.spokenEffective(e)}'
-                  '${e.isStopped ? '' : ', ${kind.label}'}. '
-                  '$sentence. ${QoinRateInfoCopy.brandPriorityNote}',
+                  '${QoinRateInfoCopy.label} ${QoinRateValueLabel.spokenEffective(e, sentence: true)}, ${kind.label}. '
+                  '$sentence. ${row.brandNote(e)}',
               excludeSemantics: true,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -478,6 +476,7 @@ class _Summary extends StatelessWidget {
                               effective: e,
                               kind: kind,
                               fontSize: 18,
+                              disabledSentence: true,
                             ),
                             const SizedBox(height: 4),
                             QoinRateSourceBadge(kind: kind),
@@ -496,9 +495,9 @@ class _Summary extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
-                    QoinRateInfoCopy.brandPriorityNote,
-                    style: TextStyle(
+                  Text(
+                    row.brandNote(e),
+                    style: const TextStyle(
                       fontSize: 12,
                       height: 1.4,
                       color: AppColors.textMuted,
@@ -554,8 +553,7 @@ class _Tile extends StatelessWidget {
               return Semantics(
                 button: false,
                 label:
-                    'Qoin 적립률 ${QoinRateValueLabel.spokenEffective(e)}'
-                    '${e.isStopped ? '' : ', ${kind.label}'}${row.stoppedOrigin(e)}',
+                    'Qoin 적립률 ${QoinRateValueLabel.spokenEffective(e)}, ${kind.label}',
                 excludeSemantics: true,
                 child: Row(
                   children: [
@@ -597,7 +595,11 @@ class QoinStoreRateInfo extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final key = (store: store.qoinAccrualRate, brandId: store.brandId);
+    final key = (
+      store: store.qoinAccrualRate,
+      storeSwitch: store.qoinAccrualEnabled,
+      brandId: store.brandId,
+    );
     final effective = ref.watch(effectiveStoreQoinRateProvider(key));
     final cfg = ref.watch(qoinConfigProvider);
     final brandId = store.brandId;

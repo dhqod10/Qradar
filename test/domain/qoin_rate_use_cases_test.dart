@@ -4,6 +4,7 @@ import 'package:qradar/domain/entities/qoin_rate_results.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/domain/repositories/qoin_rate_repository.dart';
 import 'package:qradar/domain/usecases/apply_brand_qoin_rate_use_case.dart';
+import 'package:qradar/domain/usecases/set_qoin_accrual_enabled_use_case.dart';
 import 'package:qradar/domain/usecases/set_qoin_accrual_rate_use_case.dart';
 
 class _Call {
@@ -29,6 +30,28 @@ class _FakeRepo implements QoinRateRepository {
   }) async {
     sets.add(_Call(scope, targetId, rate, clear, reason));
     return const QoinRateSetResult(before: null, after: null, changed: true);
+  }
+
+  final List<Map<String, Object?>> switches = [];
+
+  @override
+  Future<QoinAccrualEnabledResult> setAccrualEnabled({
+    required QoinRateScope scope,
+    required String targetId,
+    required bool enabled,
+    String? reason,
+  }) async {
+    switches.add({
+      'scope': scope,
+      'targetId': targetId,
+      'enabled': enabled,
+      'reason': reason,
+    });
+    return QoinAccrualEnabledResult(
+      before: null,
+      after: enabled ? null : false,
+      changed: true,
+    );
   }
 
   @override
@@ -119,28 +142,28 @@ void main() {
       expect(repo.sets.map((c) => c.rate), [0.001, 0.2]);
     });
 
-    test('stop -> rate 0, inherit -> clear', () async {
-      await uc(
-        scope: QoinRateScope.store,
-        targetId: 's1',
-        value: const QoinRateValue.stop(),
-      );
+    test('inherit -> clear (0 을 보내는 값 종류는 없다)', () async {
       await uc(
         scope: QoinRateScope.store,
         targetId: 's1',
         value: const QoinRateValue.inherit(),
       );
-      expect(repo.sets[0].rate, 0);
-      expect(repo.sets[1].clear, isTrue);
-      expect(repo.sets[1].rate, isNull);
+      expect(repo.sets[0].clear, isTrue);
+      expect(repo.sets[0].rate, isNull);
     });
 
-    test('전역은 stop / inherit 불가 (항상 유효한 숫자)', () {
+    test('tenths 0 은 범위 밖 -> ArgumentError (0 은 적립률이 아니다)', () {
       expect(
-        () =>
-            uc(scope: QoinRateScope.global, value: const QoinRateValue.stop()),
+        () => uc(
+          scope: QoinRateScope.store,
+          targetId: 's1',
+          value: const QoinRateValue.rate(0),
+        ),
         throwsArgumentError,
       );
+    });
+
+    test('전역은 inherit 불가 (항상 유효한 숫자)', () {
       expect(
         () => uc(
           scope: QoinRateScope.global,
@@ -209,7 +232,7 @@ void main() {
       uc = ApplyBrandQoinRateUseCase(repo);
     });
 
-    test('rate / stop / inherit 변환', () async {
+    test('rate / inherit 변환', () async {
       await uc(
         brandId: 'b',
         value: const QoinRateValue.rate(50),
@@ -217,17 +240,11 @@ void main() {
       );
       await uc(
         brandId: 'b',
-        value: const QoinRateValue.stop(),
-        mode: QoinBulkMode.overwrite,
-      );
-      await uc(
-        brandId: 'b',
         value: const QoinRateValue.inherit(),
         mode: QoinBulkMode.overwrite,
       );
       expect(repo.applies[0]['rate'], 0.05);
-      expect(repo.applies[1]['rate'], 0);
-      expect(repo.applies[2]['clear'], isTrue);
+      expect(repo.applies[1]['clear'], isTrue);
     });
 
     test('범위 밖 -> ArgumentError', () {
@@ -271,6 +288,54 @@ void main() {
         ),
         throwsArgumentError,
       );
+    });
+  });
+
+  group('SetQoinAccrualEnabledUseCase', () {
+    late _FakeRepo repo;
+    late SetQoinAccrualEnabledUseCase uc;
+    setUp(() {
+      repo = _FakeRepo();
+      uc = SetQoinAccrualEnabledUseCase(repo);
+    });
+
+    test('매장·브랜드는 enabled 와 trim 된 사유를 그대로 전달한다', () async {
+      await uc(
+        scope: QoinRateScope.store,
+        targetId: 's1',
+        enabled: false,
+        reason: '  점검  ',
+      );
+      await uc(scope: QoinRateScope.brand, targetId: 'b1', enabled: true);
+      expect(repo.switches[0], {
+        'scope': QoinRateScope.store,
+        'targetId': 's1',
+        'enabled': false,
+        'reason': '점검',
+      });
+      expect(repo.switches[1]['enabled'], isTrue);
+      expect(repo.switches[1]['reason'], isNull);
+    });
+
+    test('전역 scope / 빈 targetId / 긴 사유는 ArgumentError (서버 호출 전 차단)', () {
+      expect(
+        () => uc(scope: QoinRateScope.global, targetId: 'x', enabled: false),
+        throwsArgumentError,
+      );
+      expect(
+        () => uc(scope: QoinRateScope.store, targetId: '', enabled: false),
+        throwsArgumentError,
+      );
+      expect(
+        () => uc(
+          scope: QoinRateScope.store,
+          targetId: 's',
+          enabled: false,
+          reason: 'x' * 201,
+        ),
+        throwsArgumentError,
+      );
+      expect(repo.switches, isEmpty);
     });
   });
 }

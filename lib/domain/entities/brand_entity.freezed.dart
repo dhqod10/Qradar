@@ -22,9 +22,11 @@ mixin _$BrandEntity {
  String? get headOfficeAddress;// 본사 주소 (선택)
  String? get representativeName;// 대표자 이름 (선택)
 /// 브랜드 키 (V1). admin 승인 시점에 자동 발급. pending/rejected 상태에서는 빈 문자열.
- String get brandKey; EntityApprovalStatus get status; String? get submittedBy; DateTime? get submittedAt; String? get approvedBy; DateTime? get approvedAt; String? get rejectedReason; DateTime? get createdAt; DateTime? get updatedAt;/// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속, 0 = 이 브랜드 적립 안 함.
+ String get brandKey; EntityApprovalStatus get status; String? get submittedBy; DateTime? get submittedAt; String? get approvedBy; DateTime? get approvedAt; String? get rejectedReason; DateTime? get createdAt; DateTime? get updatedAt;/// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속. 0 은 적립률이 아니다.
 /// **읽기 전용** — 쓰기는 CF 전담.
- QoinRateSetting get qoinAccrualRate;
+ QoinRateSetting get qoinAccrualRate;/// 적립 스위치 (`qoinAccrualEnabled`). 부재/true = 사용, false = 이 브랜드 산하 전체 사용 안 함. **읽기 전용.**
+ QoinSwitchSetting get qoinAccrualEnabled;/// 일괄 적용 포인터 (`qoinBulkHistoryId` / `qoinBulkStatus` / `qoinBulkAt`). 허브의 중단 판정 근거. **읽기 전용.**
+ String? get qoinBulkHistoryId; QoinBulkStatus? get qoinBulkStatus; DateTime? get qoinBulkAt;
 /// Create a copy of BrandEntity
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -35,16 +37,16 @@ $BrandEntityCopyWith<BrandEntity> get copyWith => _$BrandEntityCopyWithImpl<Bran
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.businessRegistrationNumber, businessRegistrationNumber) || other.businessRegistrationNumber == businessRegistrationNumber)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.headOfficeAddress, headOfficeAddress) || other.headOfficeAddress == headOfficeAddress)&&(identical(other.representativeName, representativeName) || other.representativeName == representativeName)&&(identical(other.brandKey, brandKey) || other.brandKey == brandKey)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.businessRegistrationNumber, businessRegistrationNumber) || other.businessRegistrationNumber == businessRegistrationNumber)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.headOfficeAddress, headOfficeAddress) || other.headOfficeAddress == headOfficeAddress)&&(identical(other.representativeName, representativeName) || other.representativeName == representativeName)&&(identical(other.brandKey, brandKey) || other.brandKey == brandKey)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate)&&(identical(other.qoinAccrualEnabled, qoinAccrualEnabled) || other.qoinAccrualEnabled == qoinAccrualEnabled)&&(identical(other.qoinBulkHistoryId, qoinBulkHistoryId) || other.qoinBulkHistoryId == qoinBulkHistoryId)&&(identical(other.qoinBulkStatus, qoinBulkStatus) || other.qoinBulkStatus == qoinBulkStatus)&&(identical(other.qoinBulkAt, qoinBulkAt) || other.qoinBulkAt == qoinBulkAt));
 }
 
 
 @override
-int get hashCode => Object.hashAll([runtimeType,id,name,logoUrl,description,companyName,businessRegistrationNumber,contactName,contactPhone,headOfficeAddress,representativeName,brandKey,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate]);
+int get hashCode => Object.hashAll([runtimeType,id,name,logoUrl,description,companyName,businessRegistrationNumber,contactName,contactPhone,headOfficeAddress,representativeName,brandKey,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate,qoinAccrualEnabled,qoinBulkHistoryId,qoinBulkStatus,qoinBulkAt]);
 
 @override
 String toString() {
-  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, businessRegistrationNumber: $businessRegistrationNumber, contactName: $contactName, contactPhone: $contactPhone, headOfficeAddress: $headOfficeAddress, representativeName: $representativeName, brandKey: $brandKey, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate)';
+  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, businessRegistrationNumber: $businessRegistrationNumber, contactName: $contactName, contactPhone: $contactPhone, headOfficeAddress: $headOfficeAddress, representativeName: $representativeName, brandKey: $brandKey, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate, qoinAccrualEnabled: $qoinAccrualEnabled, qoinBulkHistoryId: $qoinBulkHistoryId, qoinBulkStatus: $qoinBulkStatus, qoinBulkAt: $qoinBulkAt)';
 }
 
 
@@ -55,7 +57,7 @@ abstract mixin class $BrandEntityCopyWith<$Res>  {
   factory $BrandEntityCopyWith(BrandEntity value, $Res Function(BrandEntity) _then) = _$BrandEntityCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String logoUrl, String? description, String companyName, String businessRegistrationNumber, String contactName, String contactPhone, String? headOfficeAddress, String? representativeName, String brandKey, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate
+ String id, String name, String logoUrl, String? description, String companyName, String businessRegistrationNumber, String contactName, String contactPhone, String? headOfficeAddress, String? representativeName, String brandKey, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate, QoinSwitchSetting qoinAccrualEnabled, String? qoinBulkHistoryId, QoinBulkStatus? qoinBulkStatus, DateTime? qoinBulkAt
 });
 
 
@@ -72,7 +74,7 @@ class _$BrandEntityCopyWithImpl<$Res>
 
 /// Create a copy of BrandEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? businessRegistrationNumber = null,Object? contactName = null,Object? contactPhone = null,Object? headOfficeAddress = freezed,Object? representativeName = freezed,Object? brandKey = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? businessRegistrationNumber = null,Object? contactName = null,Object? contactPhone = null,Object? headOfficeAddress = freezed,Object? representativeName = freezed,Object? brandKey = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,Object? qoinAccrualEnabled = null,Object? qoinBulkHistoryId = freezed,Object? qoinBulkStatus = freezed,Object? qoinBulkAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -94,7 +96,11 @@ as DateTime?,rejectedReason: freezed == rejectedReason ? _self.rejectedReason : 
 as String?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,updatedAt: freezed == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,qoinAccrualRate: null == qoinAccrualRate ? _self.qoinAccrualRate : qoinAccrualRate // ignore: cast_nullable_to_non_nullable
-as QoinRateSetting,
+as QoinRateSetting,qoinAccrualEnabled: null == qoinAccrualEnabled ? _self.qoinAccrualEnabled : qoinAccrualEnabled // ignore: cast_nullable_to_non_nullable
+as QoinSwitchSetting,qoinBulkHistoryId: freezed == qoinBulkHistoryId ? _self.qoinBulkHistoryId : qoinBulkHistoryId // ignore: cast_nullable_to_non_nullable
+as String?,qoinBulkStatus: freezed == qoinBulkStatus ? _self.qoinBulkStatus : qoinBulkStatus // ignore: cast_nullable_to_non_nullable
+as QoinBulkStatus?,qoinBulkAt: freezed == qoinBulkAt ? _self.qoinBulkAt : qoinBulkAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
   ));
 }
 
@@ -179,10 +185,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BrandEntity() when $default != null:
-return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate);case _:
+return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
   return orElse();
 
 }
@@ -200,10 +206,10 @@ return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.compan
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)  $default,) {final _that = this;
 switch (_that) {
 case _BrandEntity():
-return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate);case _:
+return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -220,10 +226,10 @@ return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.compan
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)?  $default,) {final _that = this;
 switch (_that) {
 case _BrandEntity() when $default != null:
-return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate);case _:
+return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
   return null;
 
 }
@@ -235,7 +241,7 @@ return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.compan
 
 
 class _BrandEntity implements BrandEntity {
-  const _BrandEntity({required this.id, required this.name, this.logoUrl = '', this.description, this.companyName = '', this.businessRegistrationNumber = '', this.contactName = '', this.contactPhone = '', this.headOfficeAddress, this.representativeName, this.brandKey = '', this.status = EntityApprovalStatus.pending, this.submittedBy, this.submittedAt, this.approvedBy, this.approvedAt, this.rejectedReason, this.createdAt, this.updatedAt, this.qoinAccrualRate = QoinRateSetting.absent});
+  const _BrandEntity({required this.id, required this.name, this.logoUrl = '', this.description, this.companyName = '', this.businessRegistrationNumber = '', this.contactName = '', this.contactPhone = '', this.headOfficeAddress, this.representativeName, this.brandKey = '', this.status = EntityApprovalStatus.pending, this.submittedBy, this.submittedAt, this.approvedBy, this.approvedAt, this.rejectedReason, this.createdAt, this.updatedAt, this.qoinAccrualRate = QoinRateSetting.absent, this.qoinAccrualEnabled = QoinSwitchSetting.enabled, this.qoinBulkHistoryId, this.qoinBulkStatus, this.qoinBulkAt});
   
 
 @override final  String id;
@@ -265,9 +271,15 @@ class _BrandEntity implements BrandEntity {
 @override final  String? rejectedReason;
 @override final  DateTime? createdAt;
 @override final  DateTime? updatedAt;
-/// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속, 0 = 이 브랜드 적립 안 함.
+/// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속. 0 은 적립률이 아니다.
 /// **읽기 전용** — 쓰기는 CF 전담.
 @override@JsonKey() final  QoinRateSetting qoinAccrualRate;
+/// 적립 스위치 (`qoinAccrualEnabled`). 부재/true = 사용, false = 이 브랜드 산하 전체 사용 안 함. **읽기 전용.**
+@override@JsonKey() final  QoinSwitchSetting qoinAccrualEnabled;
+/// 일괄 적용 포인터 (`qoinBulkHistoryId` / `qoinBulkStatus` / `qoinBulkAt`). 허브의 중단 판정 근거. **읽기 전용.**
+@override final  String? qoinBulkHistoryId;
+@override final  QoinBulkStatus? qoinBulkStatus;
+@override final  DateTime? qoinBulkAt;
 
 /// Create a copy of BrandEntity
 /// with the given fields replaced by the non-null parameter values.
@@ -279,16 +291,16 @@ _$BrandEntityCopyWith<_BrandEntity> get copyWith => __$BrandEntityCopyWithImpl<_
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.businessRegistrationNumber, businessRegistrationNumber) || other.businessRegistrationNumber == businessRegistrationNumber)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.headOfficeAddress, headOfficeAddress) || other.headOfficeAddress == headOfficeAddress)&&(identical(other.representativeName, representativeName) || other.representativeName == representativeName)&&(identical(other.brandKey, brandKey) || other.brandKey == brandKey)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.businessRegistrationNumber, businessRegistrationNumber) || other.businessRegistrationNumber == businessRegistrationNumber)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.headOfficeAddress, headOfficeAddress) || other.headOfficeAddress == headOfficeAddress)&&(identical(other.representativeName, representativeName) || other.representativeName == representativeName)&&(identical(other.brandKey, brandKey) || other.brandKey == brandKey)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate)&&(identical(other.qoinAccrualEnabled, qoinAccrualEnabled) || other.qoinAccrualEnabled == qoinAccrualEnabled)&&(identical(other.qoinBulkHistoryId, qoinBulkHistoryId) || other.qoinBulkHistoryId == qoinBulkHistoryId)&&(identical(other.qoinBulkStatus, qoinBulkStatus) || other.qoinBulkStatus == qoinBulkStatus)&&(identical(other.qoinBulkAt, qoinBulkAt) || other.qoinBulkAt == qoinBulkAt));
 }
 
 
 @override
-int get hashCode => Object.hashAll([runtimeType,id,name,logoUrl,description,companyName,businessRegistrationNumber,contactName,contactPhone,headOfficeAddress,representativeName,brandKey,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate]);
+int get hashCode => Object.hashAll([runtimeType,id,name,logoUrl,description,companyName,businessRegistrationNumber,contactName,contactPhone,headOfficeAddress,representativeName,brandKey,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate,qoinAccrualEnabled,qoinBulkHistoryId,qoinBulkStatus,qoinBulkAt]);
 
 @override
 String toString() {
-  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, businessRegistrationNumber: $businessRegistrationNumber, contactName: $contactName, contactPhone: $contactPhone, headOfficeAddress: $headOfficeAddress, representativeName: $representativeName, brandKey: $brandKey, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate)';
+  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, businessRegistrationNumber: $businessRegistrationNumber, contactName: $contactName, contactPhone: $contactPhone, headOfficeAddress: $headOfficeAddress, representativeName: $representativeName, brandKey: $brandKey, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate, qoinAccrualEnabled: $qoinAccrualEnabled, qoinBulkHistoryId: $qoinBulkHistoryId, qoinBulkStatus: $qoinBulkStatus, qoinBulkAt: $qoinBulkAt)';
 }
 
 
@@ -299,7 +311,7 @@ abstract mixin class _$BrandEntityCopyWith<$Res> implements $BrandEntityCopyWith
   factory _$BrandEntityCopyWith(_BrandEntity value, $Res Function(_BrandEntity) _then) = __$BrandEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String logoUrl, String? description, String companyName, String businessRegistrationNumber, String contactName, String contactPhone, String? headOfficeAddress, String? representativeName, String brandKey, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate
+ String id, String name, String logoUrl, String? description, String companyName, String businessRegistrationNumber, String contactName, String contactPhone, String? headOfficeAddress, String? representativeName, String brandKey, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate, QoinSwitchSetting qoinAccrualEnabled, String? qoinBulkHistoryId, QoinBulkStatus? qoinBulkStatus, DateTime? qoinBulkAt
 });
 
 
@@ -316,7 +328,7 @@ class __$BrandEntityCopyWithImpl<$Res>
 
 /// Create a copy of BrandEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? businessRegistrationNumber = null,Object? contactName = null,Object? contactPhone = null,Object? headOfficeAddress = freezed,Object? representativeName = freezed,Object? brandKey = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? businessRegistrationNumber = null,Object? contactName = null,Object? contactPhone = null,Object? headOfficeAddress = freezed,Object? representativeName = freezed,Object? brandKey = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,Object? qoinAccrualEnabled = null,Object? qoinBulkHistoryId = freezed,Object? qoinBulkStatus = freezed,Object? qoinBulkAt = freezed,}) {
   return _then(_BrandEntity(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -338,7 +350,11 @@ as DateTime?,rejectedReason: freezed == rejectedReason ? _self.rejectedReason : 
 as String?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,updatedAt: freezed == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,qoinAccrualRate: null == qoinAccrualRate ? _self.qoinAccrualRate : qoinAccrualRate // ignore: cast_nullable_to_non_nullable
-as QoinRateSetting,
+as QoinRateSetting,qoinAccrualEnabled: null == qoinAccrualEnabled ? _self.qoinAccrualEnabled : qoinAccrualEnabled // ignore: cast_nullable_to_non_nullable
+as QoinSwitchSetting,qoinBulkHistoryId: freezed == qoinBulkHistoryId ? _self.qoinBulkHistoryId : qoinBulkHistoryId // ignore: cast_nullable_to_non_nullable
+as String?,qoinBulkStatus: freezed == qoinBulkStatus ? _self.qoinBulkStatus : qoinBulkStatus // ignore: cast_nullable_to_non_nullable
+as QoinBulkStatus?,qoinBulkAt: freezed == qoinBulkAt ? _self.qoinBulkAt : qoinBulkAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
   ));
 }
 

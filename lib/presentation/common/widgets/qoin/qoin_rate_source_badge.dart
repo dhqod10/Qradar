@@ -4,9 +4,9 @@ import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_labels.dart';
 
-/// 적립률 출처 배지 (`매장 설정 / 브랜드 설정 / 브랜드 상속 / 전역 상속 / 적립 안 함 / 설정 확인 필요`).
+/// 적립률 출처 배지 (`매장 설정 / 브랜드 설정 / 브랜드 상속 / 전역 상속 / 매장에서 중단 / 브랜드에서 중단 / 설정 확인 필요`).
 ///
-/// 의미를 **글자 + 아이콘**이 지고 색은 보조다 (색 없이도 6종이 구분된다). 글자는 전부 `textBody`.
+/// 의미를 **글자 + 아이콘**이 지고 색은 보조다 (색 없이도 7종이 구분된다). 글자는 전부 `textBody`.
 /// 기존 `StoreScopeBadge`(알약 radius 999)와 한 타일에 있어도 구분되도록 **radius 6 태그** 모양이다.
 /// owner / brand / admin 이 모두 쓰므로 `common` 에 둔다 (역할 간 import 방지).
 class QoinRateSourceBadge extends StatelessWidget {
@@ -79,7 +79,8 @@ class QoinRateSourceBadge extends StatelessWidget {
           AppColors.textMuted.withValues(alpha: 0.12),
           AppColors.textMuted,
         );
-      case QoinRateBadgeKind.stopped:
+      case QoinRateBadgeKind.storeStopped:
+      case QoinRateBadgeKind.brandStopped:
         return _BadgeSpec(
           Icons.pause_circle_outline_rounded,
           AppColors.warning.withValues(alpha: 0.18),
@@ -117,16 +118,48 @@ class QoinRateValueText extends StatelessWidget {
     required this.effective,
     required this.kind,
     this.fontSize = 17,
+    this.disabledSentence = false,
   });
 
   final EffectiveQoinRate effective;
   final QoinRateBadgeKind kind;
   final double fontSize;
 
+  /// 사용 안 함일 때 문장형 `적립 사용 안 함` (점주·브랜드 읽기 행) / false 면 값 라벨 `사용 안 함`.
+  final bool disabledSentence;
+
   @override
   Widget build(BuildContext context) {
     final explicit = kind.isExplicit;
     final invalid = effective.isInvalid;
+    if (effective.isDisabled) {
+      // 스위치가 꺼진 값 칸: pause 아이콘 + `사용 안 함`. 숫자를 보이지 않는다 (`5%` 로 읽히면 안 된다).
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.pause_circle_outline_rounded,
+              size: fontSize * 0.8,
+              color: AppColors.warning,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              disabledSentence
+                  ? QoinRateLabels.switchOffSentence
+                  : QoinRateLabels.switchOff,
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textHeading,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerRight,

@@ -70,8 +70,11 @@ abstract class StoreEntity with _$StoreEntity {
     /// 최종 수정 시점.
     DateTime? updatedAt,
 
-    /// Qoin 적립률 개별 설정 (`qoinAccrualRate`). 부재 = 상위 상속, 0 = 적립 안 함.
+    /// Qoin 적립률 개별 설정 (`qoinAccrualRate`). 부재 = 상위 상속. 0 은 적립률이 아니다.
     /// **읽기 전용** — 쓰기는 CF(setQoinAccrualRate / applyBrandQoinRate) 전담.
     @Default(QoinRateSetting.absent) QoinRateSetting qoinAccrualRate,
+
+    /// 적립 스위치 (`qoinAccrualEnabled`). 부재/true = 사용, false = 사용 안 함. **읽기 전용.**
+    @Default(QoinSwitchSetting.enabled) QoinSwitchSetting qoinAccrualEnabled,
   }) = _StoreEntity;
 }

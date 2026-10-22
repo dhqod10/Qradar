@@ -46,13 +46,6 @@ class ApplyBrandQoinRateUseCase {
           mode: mode,
           reason: r,
         );
-      case QoinRateValueStop():
-        return _repo.applyBrandRate(
-          brandId: brandId,
-          rate: QoinPolicy.explicitOffRate,
-          mode: mode,
-          reason: r,
-        );
       case QoinRateValueInherit():
         return _repo.applyBrandRate(
           brandId: brandId,

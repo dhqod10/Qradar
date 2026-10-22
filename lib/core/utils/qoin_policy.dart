@@ -33,17 +33,24 @@ class QoinPolicy {
   static bool isValidRate(double rate) =>
       rate.isFinite && rate >= rateFromTenths(minTenths) && rate <= rateFromTenths(maxTenths);
 
-  /// callable 입력 검증 (서버 `isValidCallableRate` 와 같은 진리표): 유효 범위 + 0.1% 격자, `allowZero` 면 0 허용.
-  static bool isValidCallableRate(double rate, {required bool allowZero}) {
+  /// callable 입력 검증 (서버 `isValidCallableRate` 와 같은 진리표): 유효 범위 + 0.1% 격자. **0 은 항상 무효.**
+  static bool isValidCallableRate(double rate) {
     if (!rate.isFinite) return false;
-    if (rate == 0) return allowZero;
     if (!isValidRate(rate)) return false;
     final tenths = rate * 1000;
     return (tenths - tenths.roundToDouble()).abs() < 1e-9;
   }
 
-  /// 명시적 0% (적립 안 함) 센티넬 값. 입력란으로는 만들 수 없다 ([validateRateInput] 은 0 을 [RateInputStatus.tooLow] 로 거부).
-  static const double explicitOffRate = 0;
+  /// 스위치 값 분류 (서버 `classifySwitch` 와 같은 진리표). 부재 / `true` = 사용, `false` = 사용 안 함, 그 외 비bool = 무효.
+  /// [present] 는 문서에 필드 키가 있는가 (Dart `map[key]` 는 부재와 null 을 구분하지 못한다).
+  static QoinSwitchKind classifySwitch(Object? raw, {required bool present}) {
+    if (!present) return QoinSwitchKind.enabled;
+    if (raw is! bool) return QoinSwitchKind.invalid;
+    return raw ? QoinSwitchKind.enabled : QoinSwitchKind.disabled;
+  }
+
+  /// `setQoinAccrualEnabled` 입력 경계 (서버 `callableSwitch` 와 같은 진리표): 불리언만 받는다.
+  static bool isValidCallableSwitch(Object? enabled) => enabled is bool;
 
   /// 일괄 적용 `in_progress` 가 이 시간 넘게 갱신이 없으면 중단된 것으로 본다 (design D8: 5분, 단일 상수).
   /// 서버 쪽 `BULK_STALE_MS` 와 같은 값이어야 한다.
@@ -93,6 +100,10 @@ class QoinPolicy {
     final value = double.parse(
       '${whole.isEmpty ? '0' : whole}.${frac.isEmpty ? '0' : frac}',
     );
+    // 숫자로 파싱한 값이 정확히 0 → 적립률이 아니라 스위치로 안내한다 (design §18-2.4). `0.03` 은 여전히 tooLow.
+    if (value == 0) {
+      return const RateInputResult(RateInputStatus.zero);
+    }
     if (value < minTenths / 10) {
       return const RateInputResult(RateInputStatus.tooLow);
     }
@@ -122,7 +133,11 @@ class QoinPolicy {
   }
 }
 
-enum RateInputStatus { empty, malformed, tooLow, tooHigh, tooPrecise, valid }
+/// [zero] 는 입력이 숫자로 정확히 0 (`0`, `0.0`, `00`) — 적립을 멈추려면 스위치를 쓰라고 안내한다.
+enum RateInputStatus { empty, malformed, zero, tooLow, tooHigh, tooPrecise, valid }
+
+/// 스위치(`qoinAccrualEnabled`) 값의 분류. 부재와 `true` 는 같다 (둘 다 [enabled]).
+enum QoinSwitchKind { enabled, disabled, invalid }
 
 class RateInputResult {
   const RateInputResult(this.status, [this.tenths]);

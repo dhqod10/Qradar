@@ -9,6 +9,7 @@ import 'package:qradar/domain/entities/qoin_rate_results.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_rate_history_page.dart';
 import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
+import 'package:qradar/presentation/admin/qoin/widgets/qoin_accrual_switch_card.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_admin_ui.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_bulk_resume.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_current_rate_card.dart';
@@ -22,10 +23,10 @@ import 'package:qradar/presentation/common/widgets/qoin/qoin_partial_banner.dart
 
 /// 브랜드 적립률 편집 + **하위 매장 일괄 적용** (H4/H5).
 ///
-/// 일괄 적용 3단: ① `개별 설정이 있는 매장 처리` 선택(폼) → ② 확인 다이얼로그(영향 매장 수, 덮어쓰기는 체크박스) →
-/// ③ 실행·결과·partial. 실행 중에는 `PopScope(canPop: false)` 로 화면을 떠나지 못하게 한다
+/// 일괄 적용 3단: ① `개별 설정이 있는 매장 처리` 선택(폼) → ② 확인 다이얼로그(영향 매장 수, 체크박스 없음) →
+/// ③ 실행·결과·partial. `적립 사용` 스위치는 폼 아래 독립 카드이며 일괄 적용은 스위치를 읽지도 쓰지도 않는다. 실행 중에는 `PopScope(canPop: false)` 로 화면을 떠나지 못하게 한다
 /// (서버는 브랜드 값을 먼저 쓰고 개별 설정을 청크로 지운다 — 중간에 떠나도 안전하지만 결과를 못 본다).
-/// 숫자(N, M, Z)는 클라이언트 미리보기이고, 결과 카드·이력의 숫자는 서버 응답을 쓴다.
+/// 숫자(N, M, K)는 클라이언트 미리보기이고, 결과 카드·이력의 숫자는 서버 응답을 쓴다.
 class AdminQoinBrandRateEditPage extends ConsumerStatefulWidget {
   const AdminQoinBrandRateEditPage({super.key, required this.brandId});
   final String brandId;
@@ -49,6 +50,13 @@ class _AdminQoinBrandRateEditPageState
   bool _running = false;
   _ResultView? _result;
   final Set<String> _laterIds = {};
+  final QoinSwitchFocusController _switchFocus = QoinSwitchFocusController();
+
+  @override
+  void dispose() {
+    _switchFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +132,7 @@ class _AdminQoinBrandRateEditPageState
             _ResultCard(
               view: _result!,
               onClose: () => setState(() => _result = null),
+              onGoToSwitch: _switchFocus.go,
               onOpenHistory: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const AdminQoinRateHistoryPage(),
@@ -147,7 +156,29 @@ class _AdminQoinBrandRateEditPageState
             saveLabel: '브랜드 설정 저장',
             bulkStats: statsAsync,
             onRetryBulk: () => ref.invalidate(qoinAdminStoresProvider),
+            onGoToSwitch: _switchFocus.go,
             onSubmit: (s) => _apply(s, stats),
+          ),
+          // 저장 버튼 아래 — 적립률 폼과 시각적으로 갈라 둔다 (gap 32).
+          const SizedBox(height: 32),
+          const Text(
+            '적립 사용',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          QoinAccrualSwitchCard(
+            scope: QoinRateScope.brand,
+            targetId: brand.id,
+            targetName: brand.name,
+            switchSetting: brand.qoinAccrualEnabled,
+            effective: effective,
+            controller: _switchFocus,
+            subStoreTotal: stats?.total,
+            subStoreOverridden: stats?.overridden,
           ),
         ],
       ),
@@ -197,11 +228,15 @@ class _ResultCard extends StatelessWidget {
     required this.view,
     required this.onClose,
     required this.onOpenHistory,
+    required this.onGoToSwitch,
   });
 
   final _ResultView view;
   final VoidCallback onClose;
   final VoidCallback onOpenHistory;
+
+  /// `적립 사용 켜러 가기` — 스위치 카드로 스크롤. 스위치를 대신 누르지 않는다.
+  final VoidCallback onGoToSwitch;
 
   String get _valueLine {
     final v = view.value;
@@ -209,8 +244,6 @@ class _ResultCard extends StatelessWidget {
     switch (v) {
       case QoinRateValueRate(:final tenths):
         return '새 적립률 ${QoinPolicy.formatTenths(tenths)}%';
-      case QoinRateValueStop():
-        return '새 설정 적립 안 함 (0%)';
       case QoinRateValueInherit():
         return '새 설정 상위 설정 따르기';
     }
@@ -224,11 +257,17 @@ class _ResultCard extends StatelessWidget {
         ? '적용된 매장 ${r.affectedCount}곳 · 초기화된 개별 설정 ${r.clearedCount}곳'
         : '적용된 매장 ${r.affectedCount}곳 · 개별 설정 ${r.preservedCount}곳은 그대로예요';
     final title = done ? '적용을 마쳤어요' : '일부만 적용됐어요';
+    // `brandDisabled` 는 서버가 트랜잭션에서 읽은 그 시점의 확정 기록이다. K 보다 우선하며, 있으면 K 줄은 그리지 않는다.
+    final brandOff = r.brandDisabled;
+    final k = r.disabledUntouchedCount;
 
     return Semantics(
       container: true,
       liveRegion: true,
-      label: '$title. ${_valueLine.isEmpty ? '' : '$_valueLine. '}$countLine',
+      label:
+          '$title. ${brandOff ? '브랜드가 사용 안 함이라 산하 매장 전체가 적립되지 않아요. ' : ''}'
+          '${_valueLine.isEmpty ? '' : '$_valueLine. '}$countLine'
+          '${!brandOff && k > 0 ? '. 적립 사용 안 함 $k곳은 적립이 시작되지 않았어요' : ''}',
       excludeSemantics: true,
       child: Container(
         width: double.infinity,
@@ -275,6 +314,10 @@ class _ResultCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (brandOff) ...[
+              const SizedBox(height: 8),
+              _BrandOffPlate(onGoToSwitch: onGoToSwitch),
+            ],
             if (_valueLine.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
@@ -287,6 +330,32 @@ class _ResultCard extends StatelessWidget {
               countLine,
               style: const TextStyle(fontSize: 13, color: AppColors.textBody),
             ),
+            if (!brandOff && k > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 1),
+                    child: Icon(
+                      Icons.info_outline_rounded,
+                      size: 16,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '적립 사용 안 함 $k곳은 적립이 시작되지 않았어요',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textBody,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 4),
             TextButton(
               onPressed: onOpenHistory,
@@ -305,6 +374,70 @@ class _ResultCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 일괄 적용 결과의 `brandDisabled` 고지 (N4). 모든 수치보다 먼저 그린다.
+class _BrandOffPlate extends StatelessWidget {
+  const _BrandOffPlate({required this.onGoToSwitch});
+  final VoidCallback onGoToSwitch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.pause_circle_outline_rounded,
+                size: 18,
+                color: AppColors.warning,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '브랜드가 ‘사용 안 함’ 이라 산하 매장 전체가 적립되지 않아요',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textBody,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '새 적립률은 저장됐어요. 브랜드의 ‘적립 사용’ 을 켜면 적용돼요',
+            style: TextStyle(fontSize: 12, color: AppColors.textBody),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: onGoToSwitch,
+              style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+              child: const Text(
+                '적립 사용 켜러 가기',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
+import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_admin_ui.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_bulk_resume.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_filter_chip.dart';
@@ -68,6 +69,32 @@ class _AdminQoinRateHistoryPageState
       case _HistoryFilter.unfinished:
         return c.isUnfinished(now);
     }
+  }
+
+  /// 매장 이력의 `clearByBulk` → 그 매장의 브랜드 이력 (admin 은 항상 가능). 브랜드를 찾지 못하면 SnackBar.
+  void _openBrandHistory(QoinRateChangeEntity c) {
+    final stores = ref.read(qoinAdminStoresProvider).asData?.value;
+    final brandId = stores
+        ?.where((s) => s.id == c.targetId)
+        .firstOrNull
+        ?.brandId;
+    if (brandId == null || brandId.isEmpty) {
+      qoinSnack(context, '해당 일괄 적용 기록을 찾지 못했어요');
+      return;
+    }
+    final brandName =
+        ref.read(qoinAdminBrandByIdProvider(brandId)).asData?.value?.name ?? '';
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => QoinRateHistoryPage(
+          scope: QoinRateScope.brand,
+          targetId: brandId,
+          targetName: brandName,
+          viewer: QoinHistoryViewer.admin,
+          highlightHistoryId: c.bulkHistoryId,
+        ),
+      ),
+    );
   }
 
   Future<void> _resume(QoinRateChangeEntity c) async {
@@ -203,6 +230,7 @@ class _AdminQoinRateHistoryPageState
               viewer: QoinHistoryViewer.admin,
               now: now,
               onResume: _resume,
+              onOpenBrandHistory: _openBrandHistory,
             ),
           // 필터 결과가 0 이어도 더 불러올 수 있으면 그대로 노출 (더 불러오면 있을 수 있음).
           QoinHistoryFooter(

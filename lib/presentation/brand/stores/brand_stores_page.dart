@@ -11,6 +11,7 @@ import 'package:qradar/presentation/brand/providers/brand_store_management_provi
 import 'package:qradar/presentation/common/providers/qoin_config_providers.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
+import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_tile.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_info_row.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 
@@ -46,7 +47,10 @@ class BrandStoresPage extends ConsumerWidget {
       return AsyncValue.data(
         resolveEffectiveQoinRate(
           store: s.qoinAccrualRate,
+          storeSwitch: s.qoinAccrualEnabled,
           brand: brandAsync.value?.qoinAccrualRate ?? QoinRateSetting.absent,
+          brandSwitch:
+              brandAsync.value?.qoinAccrualEnabled ?? QoinSwitchSetting.enabled,
           global: cfgAsync.value?.accrualRateSetting ?? QoinRateSetting.absent,
         ),
       );
@@ -201,6 +205,9 @@ class _BrandStoreCard extends StatelessWidget {
                       scope: QoinRateScope.store,
                       targetId: store.id,
                       targetName: store.name,
+                      viewer: QoinHistoryViewer.brand,
+                      brandId: store.brandId,
+                      brandName: brandName,
                     ),
                   ),
                 ),

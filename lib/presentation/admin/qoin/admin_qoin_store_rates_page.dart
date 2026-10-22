@@ -26,11 +26,18 @@ enum _SourceFilter {
   storeSet(QoinRateLabels.storeSet, QoinRateBadgeKind.storeSet),
   brandInherit(QoinRateLabels.brandInherit, QoinRateBadgeKind.brandInherit),
   globalInherit(QoinRateLabels.globalInherit, QoinRateBadgeKind.globalInherit),
-  stopped(QoinRateLabels.stopped, QoinRateBadgeKind.stopped);
+  // `사용 안 함` 한 칩이 매장에서 중단 / 브랜드에서 중단 둘 다 묶는다 (source 무관 "disabled").
+  disabled(QoinRateLabels.switchOff, null);
 
   const _SourceFilter(this.label, this.kind);
   final String label;
   final QoinRateBadgeKind? kind;
+
+  bool matches(QoinRateBadgeKind k) {
+    if (this == all) return true;
+    if (this == disabled) return k.isStopped;
+    return k == kind;
+  }
 }
 
 /// 매장 목록 브랜드 필터: 전체 / 개인 매장 / 특정 브랜드.
@@ -195,7 +202,7 @@ class _AdminQoinStoreRatesPageState
         return false;
       }
       if (bf.brandId != null && s.brandId != bf.brandId) return false;
-      if (_source.kind != null && it.kind != _source.kind) return false;
+      if (!_source.matches(it.kind)) return false;
       return true;
     }).toList();
 
@@ -389,15 +396,12 @@ class _StoreRow extends StatelessWidget {
     final belongs = (brandName == null || brandName!.isEmpty)
         ? '개인 매장'
         : brandName!;
-    final origin = e.isStopped
-        ? (e.source == QoinRateSource.brand ? ', 브랜드에서 설정' : ', 매장에서 설정')
-        : '';
     return Semantics(
       button: true,
       label:
           '${s.name}, $belongs 소속, '
-          '${e.isStopped ? '' : '적립률 '}${QoinRateValueLabel.spokenEffective(e)}'
-          '${e.isStopped ? '' : ', ${item.kind.label}'}$origin. 탭하면 적립률 설정',
+          '${e.isDisabled ? '' : '적립률 '}${QoinRateValueLabel.spokenEffective(e)}'
+          ', ${item.kind.label}. 탭하면 적립률 설정',
       excludeSemantics: true,
       child: Material(
         color: AppColors.surfaceElevated,

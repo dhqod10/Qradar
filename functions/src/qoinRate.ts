@@ -19,62 +19,103 @@ export const BULK_STALE_MS = 5 * 60 * 1000;
 
 export type RateSource = "store" | "brand" | "global";
 
-/** 저장된 값 1칸의 분류. 부재 / 유효 / 명시적 0 / 무효 4값을 뭉개지 않는다. */
+/**
+ * 저장된 적립률 1칸의 분류. **3값** (부재 / 유효 / 무효) + 과도기 `legacyZero`.
+ * 0 은 어느 범위에서도 적립률이 아니다 (Q1: "적립 안 함" 은 스위치로 분리됐다).
+ */
 export type RateCell =
   | { kind: "absent" }
   | { kind: "valid"; rate: number }
-  | { kind: "zero" }
-  | { kind: "invalid"; raw: unknown };
+  | { kind: "invalid"; raw: unknown }
+  // TRANSITIONAL(spec §20.4.5): 마이그레이션 전 운영에 남은 `qoinAccrualRate: 0`. 판독 전용.
+  | { kind: "legacyZero" };
 
 /**
  * 저장된 필드 값을 분류한다.
- * - `undefined` (필드 부재) → absent. `null` 은 무효 (spec §4-③: null 상태를 만들지 않는다).
- * - `allowZero=false` (전역) 이면 0 은 무효.
+ * - `undefined` (필드 부재) → absent. `null` 은 무효 (null 상태를 만들지 않는다).
+ * - 0 은 무효다. 단 과도기에는 `legacyZero` 로 읽는다 (TRANSITIONAL — 쓰기 측 예외는 없다).
  */
-export function classifyRate(raw: unknown, allowZero = true): RateCell {
+export function classifyRate(raw: unknown): RateCell {
   if (raw === undefined) return { kind: "absent" };
   if (typeof raw !== "number" || !Number.isFinite(raw)) return { kind: "invalid", raw };
-  if (raw === 0) return allowZero ? { kind: "zero" } : { kind: "invalid", raw };
+  if (raw === 0) return { kind: "legacyZero" }; // TRANSITIONAL(spec §20.4.5): 정리 후 { kind: "invalid", raw }
   if (raw < MIN_RATE || raw > MAX_RATE) return { kind: "invalid", raw };
   return { kind: "valid", rate: raw };
 }
 
+/** 적립 스위치 1칸의 분류. 부재·`true` = 사용, `false` = 사용 안 함, 그 외(비bool) = 무효 (fail-closed). */
+export type SwitchCell = { kind: "enabled" } | { kind: "disabled" } | { kind: "invalid"; raw: unknown };
+
+export function classifySwitch(raw: unknown): SwitchCell {
+  if (raw === undefined || raw === true) return { kind: "enabled" };
+  if (raw === false) return { kind: "disabled" };
+  return { kind: "invalid", raw };
+}
+
+export type InvalidReason =
+  | "invalid_store"
+  | "invalid_brand"
+  | "invalid_global"
+  | "invalid_store_enabled"
+  | "invalid_brand_enabled";
+
 export type Resolved =
-  | { ok: true; rate: number; source: RateSource } // rate === 0 이면 적립 안 함
-  | { ok: false; reason: "invalid_store" | "invalid_brand" | "invalid_global" };
+  | { ok: true; disabled: false; rate: number; source: RateSource }
+  // 스위치가 꺼져 적립하지 않는다. `legacy` 는 과도기 `qoinAccrualRate: 0` 호환 (TRANSITIONAL).
+  | { ok: true; disabled: true; source: "store" | "brand"; legacy: boolean }
+  | { ok: false; reason: InvalidReason };
 
 /**
- * 계층 해석 (매장 → 브랜드 → 전역). **무효 값은 상위로 폴백하지 않는다** (fail-closed).
- * `brand` 는 브랜드 미소속이면 absent 로 넘긴다.
+ * 계층 해석 (spec §20.3.1 **개정판, N4**). 스위치 단계가 숫자 단계를 통째로 앞서고,
+ * 스위치 단계 안에서 `disabled` 가 `invalid` 보다 앞선다. **무효 값은 상위로 폴백하지 않는다** (fail-closed).
+ *
+ *   1) storeSwitch disabled -> DISABLED(store)      4) brandSwitch invalid -> INVALID(invalid_brand_enabled)
+ *   2) brandSwitch disabled -> DISABLED(brand)      5) storeRate -> brandRate -> globalRate (무효는 즉시 멈춤)
+ *   3) storeSwitch invalid  -> INVALID(invalid_store_enabled)
+ *
+ * ⚠️ 순서를 바꾸지 말 것 — "매장요율 → 브랜드스위치" 로 쓰면 R06(N4) 이 깨진다. Dart 쪽
+ * `resolveEffectiveQoinRate` 와 분기 순서가 같아야 한다 (진리표 공유).
+ * `brand*` 는 브랜드 미소속이면 absent / enabled 로 넘긴다.
  */
 export function resolveEffectiveRate(
-  store: RateCell,
-  brand: RateCell,
-  global: RateCell
+  storeSwitch: SwitchCell,
+  storeRate: RateCell,
+  brandSwitch: SwitchCell,
+  brandRate: RateCell,
+  globalRate: RateCell
 ): Resolved {
-  if (store.kind === "zero") return { ok: true, rate: 0, source: "store" };
-  if (store.kind === "valid") return { ok: true, rate: store.rate, source: "store" };
-  if (store.kind === "invalid") return { ok: false, reason: "invalid_store" };
+  // ── 1단계: 스위치 (숫자보다 먼저. 매장 → 브랜드, disabled → invalid) ──────
+  if (storeSwitch.kind === "disabled") return { ok: true, disabled: true, source: "store", legacy: false };
+  // TRANSITIONAL(spec §20.4.5): 레거시 0 은 같은 단계의 disabled 와 동일 취급 (이슈 기록 없음)
+  if (storeRate.kind === "legacyZero") return { ok: true, disabled: true, source: "store", legacy: true };
+  if (brandSwitch.kind === "disabled") return { ok: true, disabled: true, source: "brand", legacy: false };
+  if (brandRate.kind === "legacyZero") return { ok: true, disabled: true, source: "brand", legacy: true };
+  if (storeSwitch.kind === "invalid") return { ok: false, reason: "invalid_store_enabled" };
+  if (brandSwitch.kind === "invalid") return { ok: false, reason: "invalid_brand_enabled" };
 
-  if (brand.kind === "zero") return { ok: true, rate: 0, source: "brand" };
-  if (brand.kind === "valid") return { ok: true, rate: brand.rate, source: "brand" };
-  if (brand.kind === "invalid") return { ok: false, reason: "invalid_brand" };
-
-  if (global.kind === "valid") return { ok: true, rate: global.rate, source: "global" };
+  // ── 2단계: 숫자 (상속) ───────────────────────────────────────────────
+  if (storeRate.kind === "invalid") return { ok: false, reason: "invalid_store" };
+  if (storeRate.kind === "valid") return { ok: true, disabled: false, rate: storeRate.rate, source: "store" };
+  if (brandRate.kind === "invalid") return { ok: false, reason: "invalid_brand" };
+  if (brandRate.kind === "valid") return { ok: true, disabled: false, rate: brandRate.rate, source: "brand" };
+  if (globalRate.kind === "valid") return { ok: true, disabled: false, rate: globalRate.rate, source: "global" };
   return { ok: false, reason: "invalid_global" };
 }
 
 /**
  * callable 입력 검증 (서버 경계). 저장값 분류보다 엄격하다:
- * 0.1% 단위(tenths) 정수 배수여야 한다 — 화면이 보내는 값과 같은 격자.
- * 0 은 `allowZero` 일 때만 (전역은 불가).
+ * 0.1% 단위(tenths) 정수 배수여야 한다 — 화면이 보내는 값과 같은 격자. **0 은 항상 거부** (쓰기 측 예외 0).
  */
-export function isValidCallableRate(raw: unknown, allowZero: boolean): raw is number {
-  const cell = classifyRate(raw, allowZero);
-  if (cell.kind === "zero") return true;
+export function isValidCallableRate(raw: unknown): raw is number {
+  const cell = classifyRate(raw);
   if (cell.kind !== "valid") return false;
   const tenths = cell.rate * 1000;
   return Math.abs(tenths - Math.round(tenths)) < 1e-9;
+}
+
+/** `setQoinAccrualEnabled` 입력 경계: 정확히 bool 만. */
+export function isValidCallableSwitch(raw: unknown): raw is boolean {
+  return typeof raw === "boolean";
 }
 
 /** floor(total * rate). 부동소수 오차(4500*0.03 등) 를 피하려고 ppm 정수로 환산해 계산한다. */

@@ -52,6 +52,9 @@ class StoreModel {
   /// (넣으면 점주의 매장 수정이 적립률을 덮어쓴다. 쓰기는 CF 전담).
   final QoinRateSetting qoinAccrualRate;
 
+  /// Qoin 적립 스위치 — **읽기 전용 필드.** 어떤 `toFirestore*` 맵에도 넣지 않는다 (쓰기는 CF 전담).
+  final QoinSwitchSetting qoinAccrualEnabled;
+
   const StoreModel({
     required this.id,
     required this.name,
@@ -82,6 +85,7 @@ class StoreModel {
     this.notice,
     this.updatedAt,
     this.qoinAccrualRate = QoinRateSetting.absent,
+    this.qoinAccrualEnabled = QoinSwitchSetting.enabled,
   });
 
   factory StoreModel.fromFirestore(
@@ -150,6 +154,10 @@ class StoreModel {
         data[FirestorePaths.qoinAccrualRateField],
         present: data.containsKey(FirestorePaths.qoinAccrualRateField),
       ),
+      qoinAccrualEnabled: QoinSwitchSetting.fromRaw(
+        data[FirestorePaths.qoinAccrualEnabledField],
+        present: data.containsKey(FirestorePaths.qoinAccrualEnabledField),
+      ),
     );
   }
 
@@ -186,6 +194,7 @@ class StoreModel {
       notice: entity.notice,
       updatedAt: entity.updatedAt,
       qoinAccrualRate: entity.qoinAccrualRate,
+      qoinAccrualEnabled: entity.qoinAccrualEnabled,
     );
   }
 
@@ -221,6 +230,7 @@ class StoreModel {
       notice: notice,
       updatedAt: updatedAt,
       qoinAccrualRate: qoinAccrualRate,
+      qoinAccrualEnabled: qoinAccrualEnabled,
     );
   }
 

@@ -133,14 +133,14 @@ class QoinCurrentRateCard extends StatelessWidget {
 
   Widget _buildTarget(EffectiveQoinRate e, QoinRateScope target) {
     final kind = QoinRateBadgeKind.of(e, target: target);
-    final tenths = e.isInvalid ? null : QoinPolicy.tenthsFromRate(e.rate!);
+    final tenths = e.isActive ? QoinPolicy.tenthsFromRate(e.rate!) : null;
     final preview = tenths == null ? null : QoinPolicy.previewAmount(tenths);
     final pay = PriceFormatter.formatKrw(QoinPolicy.previewPaymentKrw);
 
     return Semantics(
       label:
           '현재 적용 중. ${QoinRateValueLabel.spokenEffective(e)}, ${kind.label}'
-          '${preview == null ? '' : '. 결제 $pay이면 ${QoinFormatters.number(preview)} Q 적립'}',
+          '${preview == null ? (e.isDisabled ? '. 결제 $pay이면 적립 없음' : '') : '. 결제 $pay이면 ${QoinFormatters.number(preview)} Q 적립'}',
       excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.all(20),
@@ -169,11 +169,14 @@ class QoinCurrentRateCard extends StatelessWidget {
               child: QoinRateValueText(effective: e, kind: kind, fontSize: 28),
             ),
             const SizedBox(height: 8),
-            if (preview != null)
+            if (e.isDisabled)
               Text(
-                e.isStopped
-                    ? '결제 $pay → 적립 없음'
-                    : '결제 $pay → ${QoinFormatters.number(preview)} Q 적립',
+                '결제 $pay → 적립 없음',
+                style: const TextStyle(fontSize: 13, color: AppColors.textBody),
+              )
+            else if (preview != null)
+              Text(
+                '결제 $pay → ${QoinFormatters.number(preview)} Q 적립',
                 style: const TextStyle(fontSize: 13, color: AppColors.textBody),
               )
             else

@@ -3,12 +3,16 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_formatters.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
+import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
+import 'package:qradar/domain/entities/store_entity.dart';
+import 'package:qradar/presentation/admin/qoin/admin_qoin_brand_rate_edit_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_brand_rates_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_global_rate_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_rate_history_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_store_rates_page.dart';
 import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
+import 'package:qradar/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_admin_ui.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_current_rate_card.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_kill_switch_card.dart';
@@ -83,10 +87,9 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _PartialSection(
-              onOpen: () =>
-                  _push(const AdminQoinRateHistoryPage(unfinishedOnly: true)),
-            ),
+            // TRANSITIONAL(spec §20.4.5): 임시 마이그레이션 카드. 정리 커밋에서 이 한 줄과 import 를 삭제한다.
+            const AdminQoinMigrationCard(),
+            const _PartialSection(),
             // 전역 카드 + 비상 정지: config 상태에만 묶인다.
             cfgAsync.when(
               loading: () => const _GlobalSkeleton(),
@@ -176,10 +179,7 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
                     onTap: () => _push(const AdminQoinStoreRatesPage()),
                   ),
                   const Divider(height: 1, indent: 16, color: AppColors.border),
-                  _ScopeTile(
-                    icon: Icons.history_rounded,
-                    title: '변경 이력',
-                    subtitle: _historySubtitle(ref),
+                  _HistoryTile(
                     onTap: () => _push(const AdminQoinRateHistoryPage()),
                   ),
                 ],
@@ -191,67 +191,156 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
     );
   }
 
-  /// 부제는 **사실 하나만**. 로딩·실패면 생략 (부가 정보라 에러를 노출하지 않는다).
+  /// 부제는 **사실 하나만**. 로딩·실패면 생략한다 — 이 두 부제는 개수 안내(편의 정보)이고, 값이 없다고 해서
+  /// 중단·장애를 숨기지 않기 때문이다 (생략했을 때 사용자가 안전하다고 오해할 수 있는 항목은 아래 배너·최근 변경이다).
   String? _brandSubtitle(WidgetRef ref) {
     final brands = ref.watch(qoinAdminBrandsProvider).asData?.value;
     if (brands == null) return null;
+    // 꺼진 브랜드가 있으면 돈이 멈춘 쪽이 우선이다 (개별 설정 수를 대체).
+    final off = brands.where(_brandOff).length;
+    if (off > 0) return '브랜드 ${brands.length}곳 · 사용 안 함 $off곳';
     final m = brands.where((b) => !b.qoinAccrualRate.isAbsent).length;
     return m > 0
         ? '브랜드 ${brands.length}곳 · 개별 설정 $m곳'
         : '브랜드 ${brands.length}곳';
   }
 
+  // TRANSITIONAL(spec §20.4.5): 레거시 0 도 꺼진 것으로 센다.
+  static bool _brandOff(BrandEntity b) =>
+      b.qoinAccrualEnabled.isDisabled || b.qoinAccrualRate.isLegacyZero;
+  static bool _storeOff(StoreEntity s) =>
+      s.qoinAccrualEnabled.isDisabled || s.qoinAccrualRate.isLegacyZero;
+
+  /// 매장 자신의 스위치가 꺼진 수 — 해석이 필요 없는 사실이라 매장 스트림만으로 센다.
   String? _storeSubtitle(WidgetRef ref) {
     final stores = ref.watch(qoinAdminStoresProvider).asData?.value;
     if (stores == null) return null;
-    final brands = ref.watch(qoinAdminBrandsProvider).asData?.value;
-    final cfgAsync = ref.watch(qoinConfigProvider);
-    // `적립 안 함` 수는 해석이 필요하다 — 3소스가 모두 준비됐을 때만 센다 (틀린 숫자 금지).
-    if (brands == null || !cfgAsync.hasValue) return '매장 ${stores.length}곳';
-    final byId = {for (final b in brands) b.id: b};
-    final z = stores
-        .where((s) => resolveStoreQoinRate(s, byId, cfgAsync.value).isStopped)
-        .length;
-    return z > 0 ? '매장 ${stores.length}곳 · 적립 안 함 $z곳' : '매장 ${stores.length}곳';
-  }
-
-  String? _historySubtitle(WidgetRef ref) {
-    final async = ref.watch(
-      qoinAllRateHistoryProvider(QoinPolicy.historyPageSize),
-    );
-    final list = async.asData?.value;
-    if (list == null) return null;
-    final first = list.firstOrNull;
-    final at = first?.changedAt;
-    if (first == null || at == null) return '변경 이력이 없어요';
-    return '최근 변경 ${QoinFormatters.dateTime(at, now: DateTime.now()).replaceAll(RegExp(r' \(.\)'), '')}';
+    final z = stores.where(_storeOff).length;
+    return z > 0 ? '매장 ${stores.length}곳 · 사용 안 함 $z곳' : '매장 ${stores.length}곳';
   }
 }
 
-/// 허브 partial 배너. **최근 이력 페이지(50건) 안에서만 판정한다** (축소 동작) —
-/// collectionGroup `status` 필터 쿼리는 복합 인덱스가 필요하고 배포 없이는 검증할 수 없어서 쓰지 않는다
-/// (design D10: 실측 불가 시 축소). 실패·로딩이면 조용히 생략한다.
-class _PartialSection extends ConsumerWidget {
-  const _PartialSection({required this.onOpen});
-  final VoidCallback onOpen;
+/// `변경 이력` 타일 부제 — 로딩 / 에러 / 없음 / 데이터를 서로 다르게 그린다 (조용히 생략 금지).
+class _HistoryTile extends ConsumerWidget {
+  const _HistoryTile({required this.onTap});
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final list = ref
-        .watch(qoinAllRateHistoryProvider(QoinPolicy.historyPageSize))
-        .asData
-        ?.value;
-    if (list == null) return const SizedBox.shrink();
-    final now = DateTime.now();
-    final open = list.where((c) => c.isUnfinished(now)).toList();
-    if (open.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: QoinPartialBanner.hub(
-        change: open.first,
-        moreCount: open.length - 1,
-        onTap: onOpen,
+    final provider = qoinAllRateHistoryProvider(QoinPolicy.historyPageSize);
+    final async = ref.watch(provider);
+    return async.when(
+      loading: () => _ScopeTile(
+        icon: Icons.history_rounded,
+        title: '변경 이력',
+        subtitleWidget: Container(
+          width: 120,
+          height: 12,
+          decoration: BoxDecoration(
+            color: AppColors.border,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        ),
+        subtitle: '불러오는 중',
+        onTap: onTap,
       ),
+      error: (_, _) => _ScopeTile(
+        icon: Icons.history_rounded,
+        title: '변경 이력',
+        subtitle: '이력을 불러오지 못했어요',
+        subtitleWidget: const Row(
+          children: [
+            Icon(Icons.error_outline_rounded, size: 12, color: AppColors.error),
+            SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                '이력을 불러오지 못했어요',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.error,
+                ),
+              ),
+            ),
+          ],
+        ),
+        trailing: InkWell(
+          // 행 탭(내비게이션)과 별도 터치 영역 — 눌러도 이력 화면이 열리지 않는다.
+          onTap: () => ref.invalidate(provider),
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            child: const Center(
+              child: Text(
+                '다시 시도',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+        onTap: onTap,
+      ),
+      data: (list) {
+        final first = list.firstOrNull;
+        final at = first?.changedAt;
+        final sub = (first == null || at == null)
+            ? '변경 이력이 없어요'
+            : '최근 변경 ${QoinFormatters.dateTime(at, now: DateTime.now()).replaceAll(RegExp(r' \(.\)'), '')}';
+        return _ScopeTile(
+          icon: Icons.history_rounded,
+          title: '변경 이력',
+          subtitle: sub,
+          onTap: onTap,
+        );
+      },
+    );
+  }
+}
+
+/// 허브 partial 배너 — 데이터 출처는 **브랜드 문서의 포인터**(`qoinBulkStatus`)다 (spec §19.5 D-1).
+/// 이력 쿼리(인덱스·50건 윈도우)에 의존하지 않는다. 세 상태를 서로 다르게 그린다:
+/// 로딩 = skeleton("아직 모름") / 에러 = 에러 배너("알 수 없음") / 없음 = 아무것도 안 그림("확인된 없음").
+/// 에러 때 사라지면 "중단 없음" 과 "알 수 없음" 이 구별되지 않는다 — 이 위젯에 `조용히 생략` 분기는 없다.
+class _PartialSection extends ConsumerWidget {
+  const _PartialSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(qoinUnfinishedBulkBrandsProvider);
+    return async.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.only(bottom: 20),
+        child: QoinHubBannerSkeleton(),
+      ),
+      error: (_, _) => Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: QoinHubBannerError(
+          onRetry: () => ref.invalidate(qoinAdminBrandsProvider),
+        ),
+      ),
+      data: (open) {
+        if (open.isEmpty) return const SizedBox.shrink(); // 확인된 없음
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: QoinHubPartialBanner(
+            brandName: open.first.name,
+            moreCount: open.length - 1,
+            onTap: () {
+              // 1건: 그 브랜드 편집 (이어서 적용이 있는 곳). 2건 이상: 브랜드 목록 (`적용 중단됨` 태그로 찾는다).
+              final page = open.length == 1
+                  ? AdminQoinBrandRateEditPage(brandId: open.first.id)
+                  : const AdminQoinBrandRatesPage();
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute<void>(builder: (_) => page));
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -260,13 +349,23 @@ class _ScopeTile extends StatelessWidget {
   const _ScopeTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
+    this.subtitleWidget,
+    this.trailing,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
+
+  /// 스크린리더용 부제 문장(및 기본 표시).
   final String? subtitle;
+
+  /// 있으면 [subtitle] 대신 이 위젯을 그린다 (skeleton / 에러 줄).
+  final Widget? subtitleWidget;
+
+  /// chevron 자리 대체 (에러 부제의 `다시 시도`).
+  final Widget? trailing;
   final VoidCallback onTap;
 
   @override
@@ -296,7 +395,10 @@ class _ScopeTile extends StatelessWidget {
                         color: AppColors.textHeading,
                       ),
                     ),
-                    if (subtitle != null) ...[
+                    if (subtitleWidget != null) ...[
+                      const SizedBox(height: 2),
+                      subtitleWidget!,
+                    ] else if (subtitle != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         subtitle!,
@@ -309,11 +411,12 @@ class _ScopeTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 18,
-                color: AppColors.textMuted,
-              ),
+              trailing ??
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppColors.textMuted,
+                  ),
             ],
           ),
         ),

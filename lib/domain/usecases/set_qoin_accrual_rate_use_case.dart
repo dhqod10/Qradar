@@ -7,7 +7,7 @@ import 'package:qradar/domain/repositories/qoin_rate_repository.dart';
 ///
 /// 화면 검증을 우회해도 100배 오입력이 저장되지 않도록 한 번 더 막는다 ([ArgumentError]):
 /// - 비율은 0.1% 단위 정수 [QoinRateValue.rate] 로만 받는다 (범위는 `QoinPolicy`).
-/// - 전역은 `stop` / `inherit` 불가 — 전역은 항상 유효한 숫자여야 한다.
+/// - 전역은 `inherit` 불가 — 전역은 항상 유효한 숫자여야 한다.
 /// - 사유는 최대 [QoinPolicy.reasonMaxLength] 자.
 /// 서버(`setQoinAccrualRate`)는 같은 경계를 다시 검증한다.
 class SetQoinAccrualRateUseCase {
@@ -34,14 +34,6 @@ class SetQoinAccrualRateUseCase {
           scope: scope,
           targetId: targetId,
           rate: QoinPolicy.rateFromTenths(tenths),
-          reason: _normalize(reason),
-        );
-      case QoinRateValueStop():
-        _requireNotGlobal(scope);
-        return _repo.setRate(
-          scope: scope,
-          targetId: targetId,
-          rate: QoinPolicy.explicitOffRate,
           reason: _normalize(reason),
         );
       case QoinRateValueInherit():

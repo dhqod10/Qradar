@@ -7,6 +7,7 @@ import 'package:qradar/domain/repositories/qoin_config_admin_repository.dart';
 import 'package:qradar/domain/repositories/qoin_rate_repository.dart';
 import 'package:qradar/domain/repositories/qoin_repository.dart';
 import 'package:qradar/domain/usecases/apply_brand_qoin_rate_use_case.dart';
+import 'package:qradar/domain/usecases/set_qoin_accrual_enabled_use_case.dart';
 import 'package:qradar/domain/usecases/set_qoin_accrual_rate_use_case.dart';
 import 'package:qradar/domain/usecases/set_qoin_enabled_use_case.dart';
 import 'package:qradar/domain/usecases/watch_all_qoin_rate_history_use_case.dart';
@@ -63,6 +64,13 @@ final setQoinAccrualRateUseCaseProvider = Provider<SetQoinAccrualRateUseCase>((
 ) {
   return SetQoinAccrualRateUseCase(ref.watch(qoinRateRepositoryProvider));
 });
+
+final setQoinAccrualEnabledUseCaseProvider =
+    Provider<SetQoinAccrualEnabledUseCase>((ref) {
+      return SetQoinAccrualEnabledUseCase(
+        ref.watch(qoinRateRepositoryProvider),
+      );
+    });
 
 final applyBrandQoinRateUseCaseProvider = Provider<ApplyBrandQoinRateUseCase>((
   ref,

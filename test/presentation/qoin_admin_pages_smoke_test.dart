@@ -30,6 +30,7 @@ StoreEntity store(
   String name, {
   String? brandId,
   QoinRateSetting rate = QoinRateSetting.absent,
+  QoinSwitchSetting enabled = QoinSwitchSetting.enabled,
   EntityApprovalStatus status = EntityApprovalStatus.approved,
 }) => StoreEntity(
   id: id,
@@ -44,6 +45,7 @@ StoreEntity store(
   address: '서울 강남구 $name',
   brandId: brandId,
   qoinAccrualRate: rate,
+  qoinAccrualEnabled: enabled,
   status: status,
 );
 
@@ -55,6 +57,10 @@ void main() {
     name: 'Q브루어리',
     status: EntityApprovalStatus.approved,
     qoinAccrualRate: QoinRateSetting.valid(0.05),
+    // 중단된 일괄 적용 포인터 — 허브 배너·브랜드 목록 태그의 근거 (이력 쿼리가 아니다).
+    qoinBulkHistoryId: 'h1',
+    qoinBulkStatus: QoinBulkStatus.partial,
+    qoinBulkAt: DateTime(2026, 10, 22),
   );
   const brandB = BrandEntity(
     id: 'bB',
@@ -66,7 +72,7 @@ void main() {
     store('s2', '역삼점', brandId: 'bA', rate: QoinRateSetting.valid(0.1)),
     store('s3', '개인카페'),
     store('s4', '카페온 본점', brandId: 'bB', status: EntityApprovalStatus.pending),
-    store('s5', '멈춘점', brandId: 'bA', rate: QoinRateSetting.zero),
+    store('s5', '멈춘점', brandId: 'bA', enabled: QoinSwitchSetting.disabled),
   ];
   final now = DateTime.now();
   final history = <QoinRateChangeEntity>[
@@ -96,7 +102,7 @@ void main() {
       scope: QoinRateScope.global,
       targetId: 'qoin',
       targetName: '전역 기본값',
-      field: QoinRateField.enabled,
+      field: QoinRateField.globalEnabled,
       beforeEnabled: true,
       afterEnabled: false,
       source: QoinRateChangeSource.direct,
@@ -165,7 +171,7 @@ void main() {
     expect(find.text('끝나지 않은 일괄 적용이 있어요'), findsOneWidget);
     expect(find.text('브랜드별 적립률'), findsOneWidget);
     expect(find.text('브랜드 2곳 · 개별 설정 1곳'), findsOneWidget);
-    expect(find.text('매장 5곳 · 적립 안 함 1곳'), findsOneWidget);
+    expect(find.text('매장 5곳 · 사용 안 함 1곳'), findsOneWidget);
     expect(find.textContaining('최근 변경'), findsOneWidget);
     // 허브에는 적립률 입력란이 없다 (전역 입력은 별도 페이지).
     expect(find.byType(TextField), findsNothing);
@@ -178,7 +184,7 @@ void main() {
     expect(find.text('적용 범위'), findsOneWidget);
     expect(find.text('전역 기본값'), findsWidgets);
     expect(find.text('상위 설정 따르기'), findsNothing);
-    expect(find.text('적립 안 함 (0%)'), findsNothing);
+    expect(find.textContaining('적립 안 함'), findsNothing);
     expect(find.text('전역 기본값 저장'), findsOneWidget);
   });
 
@@ -191,7 +197,7 @@ void main() {
     expect(find.text('브랜드 설정'), findsOneWidget);
     expect(find.text('전역 상속'), findsOneWidget);
     expect(find.text('적용 중단됨'), findsOneWidget);
-    expect(find.text('산하 매장 3곳 · 개별 설정 2곳'), findsOneWidget);
+    expect(find.text('산하 매장 3곳 · 개별 설정 1곳'), findsOneWidget);
     // 검색
     await t.enterText(find.byType(TextField), '카페');
     await t.pump();
@@ -203,12 +209,18 @@ void main() {
     await t.pumpWidget(app(const AdminQoinBrandRateEditPage(brandId: 'bA')));
     await t.pumpAndSettle();
     expect(find.text('브랜드 "Q브루어리" 전체'), findsOneWidget);
-    expect(find.text('산하 매장 3곳 · 개별 설정 2곳'), findsOneWidget);
+    expect(find.text('산하 매장 3곳 · 개별 설정 1곳'), findsOneWidget);
     expect(find.text('일부 매장에는 아직 적용되지 않았어요'), findsOneWidget);
     expect(find.text('이어서 적용'), findsOneWidget);
     expect(find.text('지금 적용되는 값'), findsOneWidget);
     expect(find.text('설정 방식'), findsOneWidget);
     expect(find.text('브랜드 설정 저장'), findsOneWidget);
+    // 스위치 카드는 저장 버튼 아래 독립 섹션.
+    expect(find.text('이 브랜드 적립 사용'), findsOneWidget);
+    final saveY = t.getTopLeft(find.text('브랜드 설정 저장')).dy;
+    final switchY = t.getTopLeft(find.text('이 브랜드 적립 사용')).dy;
+    expect(switchY, greaterThan(saveY));
+    expect(find.byType(Switch), findsOneWidget);
   });
 
   testWidgets('매장 목록: 필터 칩 라벨 = 배지 라벨, 매장 수, 적립 안 함 칩으로 점검', (t) async {
@@ -216,14 +228,14 @@ void main() {
     await t.pumpWidget(app(const AdminQoinStoreRatesPage()));
     await t.pumpAndSettle();
     expect(find.text('매장 5곳'), findsOneWidget);
-    for (final label in ['전체', '매장 설정', '브랜드 상속', '전역 상속', '적립 안 함']) {
+    for (final label in ['전체', '매장 설정', '브랜드 상속', '전역 상속', '사용 안 함']) {
       expect(find.text(label), findsWidgets, reason: label);
     }
-    await t.tap(find.widgetWithText(InkWell, '적립 안 함').first);
+    await t.tap(find.widgetWithText(InkWell, '사용 안 함').first);
     await t.pumpAndSettle();
     expect(find.text('매장 1곳'), findsOneWidget);
     expect(find.text('멈춘점'), findsOneWidget);
-    expect(find.text('0%'), findsOneWidget);
+    expect(find.text('매장에서 중단'), findsOneWidget, reason: '배지는 출처를 진다');
   });
 
   testWidgets('매장 편집: 소속 밴드 + 3줄 사슬 + 상속 설명(따르게 될 실제 값)', (t) async {
@@ -234,6 +246,20 @@ void main() {
     expect(find.text('Q브루어리 소속 매장'), findsOneWidget);
     expect(find.text('브랜드 "Q브루어리" 의 5% 를 따라요'), findsOneWidget);
     expect(find.text('매장 설정 저장'), findsOneWidget);
+    expect(find.text('이 매장 적립 사용'), findsOneWidget);
+    // 켜져 있으면 "다시 켜면" 고지가 없다.
+    expect(find.textContaining('다시 켜'), findsNothing);
+  });
+
+  testWidgets('매장 편집: 스위치 off 매장 — 사슬이 사용 안 함 + 다시 켜면 고지, 카드는 꺼짐', (t) async {
+    big(t);
+    await t.pumpWidget(app(const AdminQoinStoreRateEditPage(storeId: 's5')));
+    await t.pumpAndSettle();
+    expect(find.text('사용 안 함'), findsWidgets);
+    expect(find.text('다시 켜면 브랜드 5% 가 적용돼요'), findsOneWidget);
+    expect(find.text('끄기 전 값이 아니라 지금의 요율이에요'), findsOneWidget);
+    expect(find.text('지금은 적립 사용 안 함 상태예요.'), findsOneWidget);
+    expect(t.widget<Switch>(find.byType(Switch)).value, isFalse);
   });
 
   testWidgets('매장 편집: 없는 매장 -> 찾을 수 없어요', (t) async {
@@ -301,7 +327,8 @@ void main() {
     big(t);
     await t.pumpWidget(loadingApp(const AdminQoinSettingsPage()));
     await t.pump();
-    expect(find.textContaining('%'), findsNothing);
+    // 임시 마이그레이션 카드 설명의 `0%` 는 적립률이 아니다 — 1 이상으로 시작하는 % 값(적립률)만 본다.
+    expect(find.textContaining(RegExp(r'[1-9]\d*(\.\d)?%')), findsNothing);
     expect(find.text('전역 기본값 변경'), findsNothing);
     expect(find.byType(Switch), findsNothing);
     expect(find.text('브랜드별 적립률'), findsOneWidget);

@@ -2,24 +2,32 @@
  * onQoinConfigWritten — out-of-band 감시 (onDocumentWritten `config/qoin`).
  *
  * Firebase Console / Admin SDK 쓰기는 Rules 를 우회한다. 전역 적립률이 콘솔에서 바뀌어도,
- * `enabled` 비상 정지 토글(클라이언트 직접 쓰기 — 단순성 유지, spec §4-⑩)이어도 이력이 남게 한다.
+ * `enabled` 비상 정지 토글(클라이언트 직접 쓰기 — 단순성 유지)이어도 이력이 남게 한다.
  *
  *   - `accrualRate` / `enabled` 가 바뀐 필드마다 1건, 그 외 변경은 early return.
+ *     `enabled` 의 이력 `field` 는 `'globalEnabled'` (매장·브랜드 스위치 `'accrualEnabled'` 와 구별).
  *   - callable 이 방금 남긴 이력(source: 'callable', after 일치, 이벤트 시각 ±2분)이 있으면 중복 기록하지 않는다.
- *   - 직접 수정은 `source: 'direct'` / `changedBy: null` — 행위자는 알 수 없고 before / after / 시각은 확실히 남는다.
- *   - 이력 문서 ID 를 `direct_{eventId}_{field}` 로 고정해 이벤트 재전달에도 중복되지 않는다 (create 충돌 무시).
+ *   - **F3**: 앱 토글은 `enabledChangedBy`(=auth uid, Rules 가 강제) + `enabledChangedAt` 을 같이 쓴다.
+ *     `enabledChangedAt` 이 이번 쓰기로 바뀌었으면 `source: 'app_direct'` + 행위자 uid 를 남긴다.
+ *     바뀌지 않았으면(= 필드를 안 쓰는 Console 편집) `source: 'direct'` / `changedBy: null` — 행위자는 알 수 없고
+ *     before / after / 시각만 확실히 남는다.
+ *   - `beforeState` / `beforeRaw` 로 이전 값이 "없음" 인지 "무효" 인지 구별한다 (부가 B).
+ *   - 이력 문서 ID 를 `{source}_{eventId}_{field}` 로 고정해 이벤트 재전달에도 중복되지 않는다 (create 충돌 무시).
  *
  * `stores` / `brands` 의 Console 직접 편집은 감시하지 않는다 (N6, 2차).
  */
 
 import * as admin from "firebase-admin";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { REGION } from "./qoinAdmin";
+import { describeRaw, REGION } from "./qoinAdmin";
+import { classifyRate } from "./qoinRate";
 
 const LOG = "[onQoinConfigWritten]";
 const CALLABLE_WINDOW_MS = 2 * 60 * 1000;
 const FIELDS = ["accrualRate", "enabled"] as const;
+/** config 필드명 → 이력 `field` 값. */
+const HISTORY_FIELD = { accrualRate: "accrualRate", enabled: "globalEnabled" } as const;
 
 function pick(snap: admin.firestore.DocumentSnapshot | undefined, field: string): unknown {
   if (!snap || !snap.exists) return undefined;
@@ -33,6 +41,20 @@ function same(a: unknown, b: unknown): boolean {
 /** 이력에 넣을 값: number | boolean | null (그 외·부재는 null). */
 function recordable(v: unknown): number | boolean | null {
   return typeof v === "number" || typeof v === "boolean" ? v : null;
+}
+
+/** 이전 값 → beforeState / beforeRaw. 전역 적립률은 유효 범위 number, enabled 는 boolean 만 'value'. */
+function beforeInfo(field: (typeof FIELDS)[number], raw: unknown) {
+  if (raw === undefined) return { beforeState: "absent", beforeRaw: null as string | null };
+  const isValue =
+    field === "accrualRate" ? classifyRate(raw).kind === "valid" : typeof raw === "boolean";
+  return isValue
+    ? { beforeState: "value", beforeRaw: null as string | null }
+    : { beforeState: "invalid", beforeRaw: describeRaw(raw) };
+}
+
+function millisOf(v: unknown): number | null {
+  return v instanceof Timestamp ? v.toMillis() : null;
 }
 
 export const onQoinConfigWritten = onDocumentWritten(
@@ -58,7 +80,7 @@ export const onQoinConfigWritten = onDocumentWritten(
         recent = (await histCol.orderBy("changedAt", "desc").limit(10).get()).docs;
       }
       const matchedCallable = recent.some((d) => {
-        if (d.get("field") !== field || d.get("source") !== "callable") return false;
+        if (d.get("field") !== HISTORY_FIELD[field] || d.get("source") !== "callable") return false;
         if (!same(d.get("after"), recordable(a))) return false;
         const ts = d.get("changedAt") as admin.firestore.Timestamp | null;
         return ts !== null && Math.abs(ts.toMillis() - eventMs) <= CALLABLE_WINDOW_MS;
@@ -68,19 +90,29 @@ export const onQoinConfigWritten = onDocumentWritten(
         continue;
       }
 
+      // F3: 앱이 이번 쓰기로 enabledChangedAt 을 갱신했으면 행위자가 있다 (Rules 가 uid 일치를 강제).
+      let actor: string | null = null;
+      if (field === "enabled") {
+        const by = pick(afterSnap, "enabledChangedBy");
+        const atBefore = millisOf(pick(beforeSnap, "enabledChangedAt"));
+        const atAfter = millisOf(pick(afterSnap, "enabledChangedAt"));
+        if (typeof by === "string" && by.length > 0 && atAfter !== null && atAfter !== atBefore) actor = by;
+      }
+      const source = actor ? "app_direct" : "direct";
       try {
-        await histCol.doc(`direct_${event.id}_${field}`).create({
+        await histCol.doc(`${source}_${event.id}_${field}`).create({
           scope: "global",
           targetId: "qoin",
           targetName: "전역 기본값",
-          field,
+          field: HISTORY_FIELD[field],
           before: recordable(b),
+          ...beforeInfo(field, b),
           after: recordable(a),
-          changedBy: null,
-          changedByRole: null,
+          changedBy: actor,
+          changedByRole: actor ? "admin" : null,
           changedAt: FieldValue.serverTimestamp(),
           reason: null,
-          source: "direct",
+          source,
           op: recordable(a) === null ? "clear" : "set",
         });
         console.info(`${LOG} recorded_direct.`, { field, before: b, after: a });

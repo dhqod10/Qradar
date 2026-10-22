@@ -25,23 +25,26 @@ class QoinBulkStats {
   const QoinBulkStats({
     required this.total,
     required this.overridden,
-    required this.overriddenStopped,
+    this.disabled = 0,
   });
   final int total;
   final int overridden;
-  final int overriddenStopped;
+
+  /// 스위치가 꺼진 산하 매장 수 K (미리보기). 일괄 적용은 스위치를 건드리지 않는다.
+  final int disabled;
 }
 
 /// 설정 방식 (브랜드·매장).
-enum QoinSetMode { inherit, direct, stop }
+enum QoinSetMode { inherit, direct }
 
 /// **3범위 공통 편집 폼.** 설정 방식 라디오(브랜드·매장) + 입력 + 미리보기 + 사유 + 저장 버튼 + 확인 다이얼로그 호출.
 /// 입력·검증·확인·표기는 전부 여기와 [QoinRateInputField] / [QoinRateConfirmDialog] 가 소유하고,
 /// 페이지는 "어느 대상을 어떤 UseCase 로 저장하나" 만 안다 (검증 카피가 페이지에 0줄 — 드리프트 방지).
 ///
 /// 규칙:
-/// - 명시적 0% 는 `적립 안 함` 라디오 카드로만 만든다. 입력란의 `0` 은 1차대로 `tooLow`.
-/// - 초기 선택 = 서버의 현재 상태 (부재 → 상위 설정 따르기, 유효 → 직접 설정(값 채움), 0 → 적립 안 함).
+/// - 0 은 적립률이 아니다. 입력란의 `0` 은 `zero` 로 거부하고 `적립 사용` 스위치로 안내한다 (스위치는 이 폼 밖, 저장 버튼 아래 독립 카드).
+/// - 스위치가 꺼져 있어도 입력란은 비활성화하지 않는다 — 숫자와 스위치는 독립인 두 축이다 (design §18-2.3).
+/// - 초기 선택 = 서버의 현재 상태 (부재 → 상위 설정 따르기, 그 외 → 직접 설정(유효면 값 채움)).
 /// - 초안은 서버 값이 바뀌어도 덮어쓰지 않는다. 확인 다이얼로그의 `현재` 는 탭 시점의 서버 값.
 /// - 상위 설정 따르기를 고르면 입력란을 그리지 않는다 (비활성 입력란 금지 — "비어 있는 칸" 방지).
 class QoinRateEditForm extends ConsumerStatefulWidget {
@@ -57,7 +60,11 @@ class QoinRateEditForm extends ConsumerStatefulWidget {
     this.bulkStats,
     this.onRetryBulk,
     this.followingStores,
+    this.onGoToSwitch,
   });
+
+  /// 매장·브랜드: `적립 사용 끄러 가기` — 스위치 카드로 스크롤. 전역은 null (링크 없음).
+  final VoidCallback? onGoToSwitch;
 
   final QoinRateScope scope;
   final String? targetName;
@@ -104,8 +111,6 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
       _mode = QoinSetMode.direct;
     } else if (c.isAbsent) {
       _mode = QoinSetMode.inherit;
-    } else if (c.isZero) {
-      _mode = QoinSetMode.stop;
     } else {
       _mode = QoinSetMode.direct;
     }
@@ -140,12 +145,10 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
     switch (_mode) {
       case QoinSetMode.inherit:
         return widget.current.isAbsent ? null : const QoinRateValue.inherit();
-      case QoinSetMode.stop:
-        return widget.current.isZero ? null : const QoinRateValue.stop();
       case QoinSetMode.direct:
         final r = _input;
         if (r.status != RateInputStatus.valid || r.tenths == null) return null;
-        // 서버가 이미 이 값이면 변경 아님. 서버가 0/부재/무효였다가 직접 설정으로 바꿔 같은 숫자를 넣으면 "변경".
+        // 서버가 이미 이 값이면 변경 아님. 서버가 부재/무효였다가 직접 설정으로 바꿔 같은 숫자를 넣으면 "변경".
         if (widget.current.isValid && r.tenths == _currentTenths) return null;
         return QoinRateValue.rate(r.tenths!);
     }
@@ -161,7 +164,8 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
 
   /// 상위 설정(이 대상이 상속하게 될 값). 매장은 브랜드→전역, 브랜드는 전역.
   EffectiveQoinRate get _upstream {
-    final e = widget.effective;
+    // 스위치와 무관하게 "상속하게 될 숫자" 를 본다 (스위치 상태는 사슬이 말한다).
+    final e = widget.effective.asIfEnabled();
     final isStore = widget.scope == QoinRateScope.store;
     return resolveEffectiveQoinRate(
       store: QoinRateSetting.absent,
@@ -177,9 +181,7 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
     final pct = QoinPolicy.formatRatePercent(up.rate!);
     if (up.source == QoinRateSource.brand) {
       final n = widget.brandName ?? '';
-      return up.isStopped
-          ? '브랜드 "$n" 의 설정(적립 안 함)을 따라요'
-          : '브랜드 "$n" 의 $pct 를 따라요';
+      return '브랜드 "$n" 의 $pct 를 따라요';
     }
     return '전역 기본값 $pct 를 따라요';
   }
@@ -198,16 +200,14 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
     final reason = reasonText.isEmpty ? null : reasonText;
 
     // ── 확인 다이얼로그 입력 (현재는 탭 시점의 서버 값) ────────────────────
-    final e = widget.effective;
+    // 비교는 스위치와 무관하게 "켜져 있다면 적용될 값" 끼리 한다 (design §18-2.3).
+    final e = widget.effective.asIfEnabled();
     final QoinRateSetting nextSetting;
     final QoinConfirmAction action;
     switch (value) {
       case QoinRateValueRate(:final tenths):
         nextSetting = QoinRateSetting.valid(QoinPolicy.rateFromTenths(tenths));
         action = QoinConfirmAction.set;
-      case QoinRateValueStop():
-        nextSetting = QoinRateSetting.zero;
-        action = QoinConfirmAction.stop;
       case QoinRateValueInherit():
         nextSetting = QoinRateSetting.absent;
         action = QoinConfirmAction.inherit;
@@ -249,7 +249,8 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
         ? QoinBulkConfirm(
             total: stats.total,
             overridden: stats.overridden,
-            overriddenStopped: stats.overriddenStopped,
+            disabledUntouched: stats.disabled,
+            brandDisabled: widget.effective.brandSwitch.isDisabled,
             mode: _effectiveBulkMode,
           )
         : null;
@@ -264,6 +265,7 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
       reason: reason,
       followingStores: widget.followingStores,
       bulk: bulk,
+      savedWhileDisabled: widget.effective.isDisabled,
     );
     if (!ok || !mounted) return;
 
@@ -296,13 +298,21 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const _SectionLabel('적립률'),
+        const SizedBox(height: 6),
         if (_isGlobal) ...[
-          const _SectionLabel('적립률'),
-          const SizedBox(height: 6),
           QoinRateInputField(controller: _rateCtrl),
           const SizedBox(height: 12),
           QoinRatePreview(tenths: directTenths),
         ] else ...[
+          if (widget.effective.isDisabled) ...[
+            _DisabledNotice(
+              byBrand:
+                  widget.effective.disabledSource == QoinRateSource.brand &&
+                  widget.scope == QoinRateScope.store,
+            ),
+            const SizedBox(height: 12),
+          ],
           const _SectionLabel('설정 방식'),
           const SizedBox(height: 6),
           _buildModeCards(directTenths),
@@ -375,24 +385,15 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    QoinRateInputField(controller: _rateCtrl),
+                    QoinRateInputField(
+                      controller: _rateCtrl,
+                      onGoToSwitch: widget.onGoToSwitch,
+                    ),
                     const SizedBox(height: 12),
                     QoinRatePreview(tenths: directTenths),
                   ],
                 )
               : null,
-        ),
-        const SizedBox(height: 8),
-        _ModeCard(
-          index: 3,
-          selected: _mode == QoinSetMode.stop,
-          enabled: !_saving,
-          warning: true,
-          title: '적립 안 함 (0%)',
-          description: isBrand
-              ? '이 브랜드는 기본으로 Qoin 을 적립하지 않아요\n환불로 인한 회수는 계속돼요 (전체 중단과 달라요)'
-              : '이 매장은 Qoin 을 적립하지 않아요\n환불로 인한 회수는 계속돼요 (전체 중단과 달라요)',
-          onTap: () => setState(() => _mode = QoinSetMode.stop),
         ),
       ],
     );
@@ -467,10 +468,35 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
             title: '개별 설정 덮어쓰기',
             description:
                 '따로 정해 둔 $m곳의 설정을 지우고, $n곳 모두 새 값을 따르게 해요\n'
-                '되돌리려면 매장마다 다시 설정해야 해요'
-                '${s.overriddenStopped > 0 ? '\n그중 적립 안 함 ${s.overriddenStopped}곳도 다시 적립하게 돼요' : ''}',
+                '되돌리려면 매장마다 다시 설정해야 해요',
             onTap: () => setState(() => _bulkMode = QoinBulkMode.overwrite),
           ),
+          if (s.disabled > 0 && !widget.effective.brandSwitch.isDisabled) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 1),
+                  child: Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '적립 사용 안 함 ${s.disabled}곳은 어느 쪽을 골라도 적립이 시작되지 않아요',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textBody,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           const Text(
             '영향 매장 수는 이 화면 기준이에요. 실제 적용 결과는 완료 후 이력에서 확인할 수 있어요',
@@ -478,6 +504,72 @@ class _QoinRateEditFormState extends ConsumerState<QoinRateEditForm> {
           ),
         ];
       },
+    );
+  }
+}
+
+/// 꺼져 있을 때 `적립률` 섹션 맨 위의 사실 고지 plate. 위험 경고가 아니므로 `warning` 색을 쓰지 않는다.
+/// 브랜드 때문에 멈춘 매장에서도 "개별 적립률로 우회할 수 있다" 는 암시를 하지 않는다 (N4).
+class _DisabledNotice extends StatelessWidget {
+  const _DisabledNotice({required this.byBrand});
+  final bool byBrand;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.info_outline_rounded,
+              size: 16,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: byBrand
+                ? const Text(
+                    '브랜드가 적립 사용 안 함이라, 이 매장은 적립률과 관계없이 적립되지 않아요',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                      color: AppColors.textBody,
+                    ),
+                  )
+                : const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '지금은 적립 사용 안 함 상태예요.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textBody,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        '적립률을 바꿔도 다시 켜기 전에는 적립되지 않아요.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -510,7 +602,7 @@ class _ModeCard extends StatelessWidget {
     this.expanded,
     this.warning = false,
     this.warnIcon = Icons.pause_circle_outline_rounded,
-    this.groupSize = 3,
+    this.groupSize = 2,
   });
 
   final int index;

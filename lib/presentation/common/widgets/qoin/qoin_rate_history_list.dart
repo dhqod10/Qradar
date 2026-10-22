@@ -11,12 +11,20 @@ class QoinRateHistoryList extends StatelessWidget {
     required this.viewer,
     required this.now,
     this.onResume,
+    this.onOpenBrandHistory,
+    this.highlightId,
+    this.highlightKey,
   });
 
   final List<QoinRateChangeEntity> items;
   final QoinHistoryViewer viewer;
   final DateTime now;
   final void Function(QoinRateChangeEntity change)? onResume;
+  final void Function(QoinRateChangeEntity change)? onOpenBrandHistory;
+
+  /// 연결 링크로 들어왔을 때 강조할 이력 ID (배경 `primaryBright` alpha 0.15). [highlightKey] 로 스크롤 대상을 알린다.
+  final String? highlightId;
+  final GlobalKey? highlightKey;
 
   @override
   Widget build(BuildContext context) {
@@ -31,13 +39,28 @@ class QoinRateHistoryList extends StatelessWidget {
           for (var i = 0; i < items.length; i++) ...[
             if (i > 0)
               const Divider(height: 1, indent: 16, color: AppColors.border),
-            QoinRateHistoryTile(
-              key: ValueKey(items[i].id + items[i].targetId),
-              change: items[i],
-              viewer: viewer,
-              now: now,
-              onResume: onResume,
-            ),
+            if (highlightId != null && items[i].id == highlightId)
+              Container(
+                key: highlightKey,
+                color: AppColors.primaryBright.withValues(alpha: 0.15),
+                child: QoinRateHistoryTile(
+                  key: ValueKey(items[i].id + items[i].targetId),
+                  change: items[i],
+                  viewer: viewer,
+                  now: now,
+                  onResume: onResume,
+                  onOpenBrandHistory: onOpenBrandHistory,
+                ),
+              )
+            else
+              QoinRateHistoryTile(
+                key: ValueKey(items[i].id + items[i].targetId),
+                change: items[i],
+                viewer: viewer,
+                now: now,
+                onResume: onResume,
+                onOpenBrandHistory: onOpenBrandHistory,
+              ),
           ],
         ],
       ),

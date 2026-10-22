@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/errors/permission_denied_exception.dart';
@@ -88,11 +90,25 @@ class QoinRateHistoryPage extends ConsumerStatefulWidget {
     required this.scope,
     required this.targetId,
     required this.targetName,
+    this.viewer = QoinHistoryViewer.owner,
+    this.brandId,
+    this.brandName,
+    this.highlightHistoryId,
   });
 
   final QoinRateScope scope;
   final String targetId;
   final String targetName;
+
+  /// 뷰어 역할 — `clearByBulk` 행의 브랜드 이력 링크 노출을 정한다 (N8). 기본은 가맹점주(링크 없음).
+  final QoinHistoryViewer viewer;
+
+  /// 브랜드 보유자(viewer == brand)가 매장 이력을 볼 때 링크가 가리킬 자기 브랜드. owner 에게는 쓰이지 않는다.
+  final String? brandId;
+  final String? brandName;
+
+  /// `브랜드 이력에서 보기` 로 들어왔을 때 스크롤·강조할 일괄 적용 이력 ID.
+  final String? highlightHistoryId;
 
   @override
   ConsumerState<QoinRateHistoryPage> createState() =>
@@ -101,6 +117,44 @@ class QoinRateHistoryPage extends ConsumerStatefulWidget {
 
 class _QoinRateHistoryPageState extends ConsumerState<QoinRateHistoryPage> {
   int _limit = QoinPolicy.historyPageSize;
+  final GlobalKey _highlightKey = GlobalKey();
+  String? _highlightId;
+  bool _highlightHandled = false;
+  Timer? _highlightTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _highlightId = widget.highlightHistoryId;
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    super.dispose();
+  }
+
+  /// 데이터가 처음 도착했을 때 한 번: 있으면 스크롤 + 2초 강조, 없으면 SnackBar (페이지네이션이 없어 대부분 바로 찾는다).
+  void _handleHighlight(List<QoinRateChangeEntity> list) {
+    if (_highlightHandled || _highlightId == null) return;
+    _highlightHandled = true;
+    final found = list.any((c) => c.id == _highlightId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!found) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('해당 일괄 적용 기록을 찾지 못했어요')),
+        );
+        setState(() => _highlightId = null);
+        return;
+      }
+      final ctx = _highlightKey.currentContext;
+      if (ctx != null) Scrollable.ensureVisible(ctx, alignment: 0.3);
+      _highlightTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _highlightId = null);
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +223,26 @@ class _QoinRateHistoryPageState extends ConsumerState<QoinRateHistoryPage> {
     );
   }
 
+  void _openBrandHistory(QoinRateChangeEntity change) {
+    final id = widget.brandId;
+    if (id == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => QoinRateHistoryPage(
+          scope: QoinRateScope.brand,
+          targetId: id,
+          targetName: widget.brandName ?? '',
+          viewer: QoinHistoryViewer.brand,
+          brandId: id,
+          brandName: widget.brandName,
+          highlightHistoryId: change.bulkHistoryId,
+        ),
+      ),
+    );
+  }
+
   Widget _content(List<QoinRateChangeEntity> list) {
+    _handleHighlight(list);
     if (list.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),
@@ -200,8 +273,15 @@ class _QoinRateHistoryPageState extends ConsumerState<QoinRateHistoryPage> {
       children: [
         QoinRateHistoryList(
           items: list,
-          viewer: QoinHistoryViewer.reader,
+          viewer: widget.viewer,
           now: DateTime.now(),
+          highlightId: _highlightId,
+          highlightKey: _highlightKey,
+          // owner 에게는 콜백 자체를 만들지 않는다 (Rules 가 브랜드 이력 읽기를 거부한다 — N8).
+          onOpenBrandHistory:
+              widget.viewer == QoinHistoryViewer.brand && widget.brandId != null
+              ? _openBrandHistory
+              : null,
         ),
         QoinHistoryFooter(
           canLoadMore: list.length >= _limit,

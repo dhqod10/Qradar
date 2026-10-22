@@ -7,7 +7,7 @@ import 'package:qradar/presentation/admin/qoin/widgets/qoin_dialog_shell.dart';
 /// **전역 전용이라 공유 위젯이 아니다.** 900줄 파일로 돌아가지 않게 파일만 분리했다.
 ///
 /// 즉시 반영, 적립률 폼과 독립. 낙관적 갱신 없음(서버 스트림 값만 표시).
-/// 이 스위치는 적립·**회수 모두** 멈춘다. 한 곳만 멈추려면 `적립 안 함 (0%)` 을 써야 한다 (캡션이 말한다).
+/// 이 스위치는 적립·**회수 모두** 멈춘다. 한 곳만 멈추려면 해당 화면의 `적립 사용` 스위치를 쓴다 (캡션이 말한다).
 class QoinKillSwitchCard extends StatelessWidget {
   const QoinKillSwitchCard({
     super.key,
@@ -21,7 +21,7 @@ class QoinKillSwitchCard extends StatelessWidget {
   final ValueChanged<bool> onToggle;
 
   static const String caption =
-      '전체 비상 정지예요. 매장·브랜드 한 곳만 멈추려면 ‘적립 안 함 (0%)’ 을 쓰세요';
+      '전체 비상 정지예요. 매장·브랜드 한 곳만 멈추려면 해당 화면의 ‘적립 사용’ 을 끄세요';
 
   @override
   Widget build(BuildContext context) {

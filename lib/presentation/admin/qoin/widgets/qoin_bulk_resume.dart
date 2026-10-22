@@ -9,7 +9,7 @@ import 'package:qradar/presentation/common/providers/qoin_di_providers.dart';
 
 /// 끝나지 않은 일괄 적용 **이어서 적용** 흐름. 브랜드 편집 / 이력 / (허브→이력) 가 모두 이 한 곳을 쓴다.
 ///
-/// 확인 다이얼로그(체크박스를 다시 요구) → 실행. 성공이면 결과, 취소면 null,
+/// 확인 다이얼로그(체크박스 없음) → 실행. 성공이면 결과, 취소면 null,
 /// 실패하면 SnackBar 를 띄우고 null 을 돌려준다 (배너는 유지된다).
 /// [onRunning] 으로 호출 화면이 실행 중 덮개 / `PopScope` 를 걸 수 있다.
 Future<QoinBulkApplyResult?> runBulkResume(
@@ -32,7 +32,6 @@ Future<QoinBulkApplyResult?> runBulkResume(
     bulk: QoinBulkConfirm(
       total: 0,
       overridden: 0,
-      overriddenStopped: 0,
       mode: QoinBulkMode.overwrite,
       remaining: remaining,
     ),

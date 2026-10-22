@@ -253,10 +253,10 @@ await run('QR14b CUSTOMER 가 config/qoin enabled write', 'deny', () =>
 await run('QR15 OWNER 가 config/qoin write', 'deny', () =>
   updateDoc(doc(asOwner, 'config', 'qoin'), { accrualRate: 1 }));
 // 계층화(qoin_accrual_rate_hierarchy)로 의미 변경: 적립률 쓰기는 CF 전담, enabled 만 admin 직접 쓰기 유지.
-await run('QR16 admin 이 config/qoin enabled write', 'allow', () =>
-  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false }));
-await run('QR16b admin 이 config 신규 문서 create (accrualRate 없음)', 'allow', () =>
-  setDoc(doc(asAdmin, 'config', 'qoin_new'), { enabled: false }));
+await run('QR16 admin 이 config/qoin enabled write (F3: enabledChangedBy = 본인 uid)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
+await run('QR16b admin 이 config 신규 문서 create (accrualRate 없음, enabledChangedBy 포함)', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_new'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
 await run('QR17 비로그인 config/qoin read', 'deny', () =>
   getDoc(doc(asAnon, 'config', 'qoin')));
 await run('QR18 내역 쿼리 (createdAt desc limit 50)', 'allow', () =>
@@ -368,12 +368,12 @@ await run('RH9c P6 admin 이 config/qoin 을 setDoc 으로 교체(accrualRate �
   setDoc(doc(asAdmin, 'config', 'qoin'), { accrualRate: 0.2, enabled: true }));
 await run('RH9d P6 admin 이 enabled 와 accrualRate 동시 update', 'deny', () =>
   updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true, accrualRate: 0.2 }));
-await run('RH10 admin 이 config/qoin.enabled update', 'allow', () =>
-  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true }));
+await run('RH10 admin 이 config/qoin.enabled update (enabledChangedBy = 본인)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
 await run('RH11 P7 admin 이 config 문서를 accrualRate 포함해 create', 'deny', () =>
   setDoc(doc(asAdmin, 'config', 'qoin_create_probe'), { accrualRate: 0.2, enabled: true }));
-await run('RH11b admin 이 config 문서를 accrualRate 없이 create (회귀)', 'allow', () =>
-  setDoc(doc(asAdmin, 'config', 'qoin_create_probe2'), { enabled: false }));
+await run('RH11b admin 이 config 문서를 accrualRate 없이 create (회귀, enabledChangedBy 포함)', 'allow', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_create_probe2'), { enabled: false, enabledChangedBy: ADMIN }));
 await run('RH11c P6 admin 이 config/qoin delete (삭제 = accrualRate 소멸)', 'deny', () =>
   deleteDoc(doc(asAdmin, 'config', 'qoin')));
 await run('RH12 customer 의 config write', 'deny', () =>
@@ -436,6 +436,123 @@ await run('RH24b brand 의 collectionGroup 조회', 'deny', () =>
   getDocs(query(collectionGroup(asBrand, 'qoinRateHistory'), orderBy('changedAt', 'desc'), limit(50))));
 await run('RH24c customer 의 collectionGroup 조회', 'deny', () =>
   getDocs(query(collectionGroup(asCustomer, 'qoinRateHistory'), orderBy('changedAt', 'desc'), limit(50))));
+
+
+// ══ Qoin 적립 스위치 · 잠금 포인터 · enabledChangedBy · 이슈 (spec §20.5.4 / §20.5.6 #14~17, §19.3, Q2, Q3, N8) ══
+// 보호 필드 집합: qoinAccrualRate / qoinAccrualEnabled / qoinBulkHistoryId / qoinBulkStatus / qoinBulkAt
+const S_F4A = 'store_f4_a'; const S_F4B = 'store_f4_b'; const S_F4C = 'store_f4_c'; const S_F4D = 'store_f4_d';
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  const seed = { ownerId: OWNER, name: 'F4', status: 'approved', qoinAccrualRate: 0.1, qoinAccrualEnabled: false };
+  for (const id of [S_F4A, S_F4B, S_F4C, S_F4D]) await setDoc(doc(db, 'stores', id), seed);
+  await setDoc(doc(db, 'brands', 'brand_ptr'), { name: 'PTR', status: 'approved', qoinBulkHistoryId: 'h9', qoinBulkStatus: 'partial', qoinBulkAt: Timestamp.now() });
+  await setDoc(doc(db, 'config', 'qoin_f3'), { enabled: true, accrualRate: 0.03 });
+  await setDoc(doc(db, 'qoinSettlementIssues', 'o_issue'), { orderId: 'o_issue', reason: 'invalid_rate', scope: 'store', resolved: false });
+});
+const SWITCH_FIELDS = [
+  ['qoinAccrualEnabled', false], ['qoinBulkHistoryId', 'h1'], ['qoinBulkStatus', 'in_progress'], ['qoinBulkAt', Timestamp.now()],
+];
+for (const [field, val] of SWITCH_FIELDS) {
+  await run(`SW1 P14 owner 가 자기 매장 ${field} update`, 'deny', () =>
+    updateDoc(doc(asOwner, 'stores', S_A), { [field]: val }));
+  await run(`SW1b P14 owner 가 ${field} 를 정상 필드와 함께 update`, 'deny', () =>
+    updateDoc(doc(asOwner, 'stores', S_A), { name: 'A3', [field]: val }));
+  await run(`SW1c P14 customer 가 stores ${field} update`, 'deny', () =>
+    updateDoc(doc(asCustomer, 'stores', S_A), { [field]: val }));
+  await run(`SW2 P14 brand 가 가맹점 ${field} update`, 'deny', () =>
+    updateDoc(doc(asBrand, 'stores', S_BR), { [field]: val }));
+  await run(`SW3 P17 admin 이 stores ${field} update (전권 분기)`, 'deny', () =>
+    updateDoc(doc(asAdmin, 'stores', S_A), { [field]: val }));
+  await run(`SW3b P17 admin 이 stores ${field} setDoc(merge)`, 'deny', () =>
+    setDoc(doc(asAdmin, 'stores', S_A), { [field]: val }, { merge: true }));
+  await run(`SW4 P15 owner 가 stores create 에 ${field} 포함`, 'deny', () =>
+    setDoc(doc(asOwner, 'stores', `sw_new_o_${field}`), { ownerId: OWNER, name: 'N', status: 'pending', [field]: val }));
+  await run(`SW4b P15 brand 가 stores create 에 ${field} 포함`, 'deny', () =>
+    setDoc(doc(asBrand, 'stores', `sw_new_b_${field}`), { ownerId: OWNER, name: 'N', status: 'pending', brandId: B_A, [field]: val }));
+  await run(`SW4c P17 admin 이 stores create 에 ${field} 포함`, 'deny', () =>
+    setDoc(doc(asAdmin, 'stores', `sw_new_a_${field}`), { ownerId: OWNER, name: 'N', status: 'pending', [field]: val }));
+  await run(`SW5 P16 brand 가 자기 brands ${field} update`, 'deny', () =>
+    updateDoc(doc(asBrand, 'brands', B_A), { [field]: val }));
+  await run(`SW5b P16 brand 가 brands ${field} 를 정상 필드와 함께 update`, 'deny', () =>
+    updateDoc(doc(asBrand, 'brands', B_A), { description: 'd', [field]: val }));
+  await run(`SW6 P17 admin 이 brands ${field} update (전권 분기)`, 'deny', () =>
+    updateDoc(doc(asAdmin, 'brands', B_A), { [field]: val }));
+  await run(`SW6b P17 admin 이 brands ${field} setDoc(merge)`, 'deny', () =>
+    setDoc(doc(asAdmin, 'brands', B_A), { [field]: val }, { merge: true }));
+  await run(`SW7 P16 admin 이 brands create 에 ${field} 포함`, 'deny', () =>
+    setDoc(doc(asAdmin, 'brands', `sw_nb_a_${field}`), { name: 'N', status: 'approved', [field]: val }));
+  await run(`SW7b P16 brand 가 brands create(pending) 에 ${field} 포함`, 'deny', () =>
+    setDoc(doc(asBrand, 'brands', `sw_nb_b_${field}`), { name: 'N', status: 'pending', submittedBy: BRAND_U, brandKey: '', [field]: val }));
+}
+await run('SW8 P17 admin 이 stores 스위치 삭제(deleteField)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'stores', S_F4D), { qoinAccrualEnabled: deleteField() }));
+await run('SW8b P17 owner 가 stores 스위치 삭제(deleteField)', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_F4D), { qoinAccrualEnabled: deleteField() }));
+await run('SW8c P17 admin 이 brands 포인터 삭제(deleteField)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'brands', 'brand_ptr'), { qoinBulkStatus: deleteField() }));
+// 회귀: 보호 필드를 건드리지 않는 정상 쓰기는 막히지 않는다
+await run('SW9 회귀: 스위치가 이미 있는 매장의 다른 필드 update (owner)', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', S_F4D), { phone: '010-0000-0000' }));
+await run('SW9b 회귀: 스위치가 이미 있는 매장의 다른 필드 update (admin)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'stores', S_F4D), { phone: '010-1111-1111' }));
+
+// F3: enabledChangedBy 강제
+await run('F3a admin 이 enabled 를 enabledChangedBy 없이 update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin_f3'), { enabled: false }));
+await run('F3a2 admin 이 enabled 를 enabledChangedBy = 본인과 함께 update (같은 문서, 회귀)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin_f3'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
+await run('F3b admin 이 enabledChangedBy 를 타 uid 로 사칭해 update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false, enabledChangedBy: OWNER, enabledChangedAt: serverTimestamp() }));
+await run('F3c admin 이 enabledChangedBy = 본인 uid 로 update', 'allow', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
+await run('F3d admin 이 enabled 없이 enabledChangedBy 만 타 uid 로 update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabledChangedBy: OWNER }));
+await run('F3e admin 이 config create 에 enabled 포함 + enabledChangedBy 사칭', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_forge_by'), { enabled: false, enabledChangedBy: OWNER }));
+await run('F3f admin 이 enabledChangedBy 와 accrualRate 동시 update (accrualRate 차단 유지)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true, enabledChangedBy: ADMIN, accrualRate: 0.2 }));
+
+// Q2: qoinSettlementIssues — 읽기 admin, 쓰기 전면 차단
+await run('IS1 admin 이 qoinSettlementIssues read', 'allow', () =>
+  getDoc(doc(asAdmin, 'qoinSettlementIssues', 'o_issue')));
+await run('IS2 owner 가 qoinSettlementIssues read', 'deny', () =>
+  getDoc(doc(asOwner, 'qoinSettlementIssues', 'o_issue')));
+await run('IS2b customer 가 qoinSettlementIssues read', 'deny', () =>
+  getDoc(doc(asCustomer, 'qoinSettlementIssues', 'o_issue')));
+await run('IS2c brand 가 qoinSettlementIssues read', 'deny', () =>
+  getDoc(doc(asBrand, 'qoinSettlementIssues', 'o_issue')));
+for (const [role, db] of actors) {
+  await run(`IS3 ${role} 가 qoinSettlementIssues create`, 'deny', () =>
+    setDoc(doc(db, 'qoinSettlementIssues', 'o_forge'), { orderId: 'o_forge', reason: 'invalid_rate' }));
+  await run(`IS4 ${role} 가 qoinSettlementIssues update`, 'deny', () =>
+    updateDoc(doc(db, 'qoinSettlementIssues', 'o_issue'), { resolved: true }));
+  await run(`IS5 ${role} 가 qoinSettlementIssues delete`, 'deny', () =>
+    deleteDoc(doc(db, 'qoinSettlementIssues', 'o_issue')));
+}
+
+// Q3 ⓐ / F4: 점주 delete → 같은 ID 재생성 (수용된 경로 #13) — 현재 동작을 명시적으로 고정한다
+await run('F4a 점주가 개별 적립률·스위치가 있는 자기 매장 delete (수용)', 'allow', () =>
+  deleteDoc(doc(asOwner, 'stores', S_F4A)));
+await run('F4b 같은 ID 로 status:pending 재생성 (수용 — 재승인 필요)', 'allow', () =>
+  setDoc(doc(asOwner, 'stores', S_F4A), { ownerId: OWNER, name: 'F4re', status: 'pending' }));
+await run('F4c-pre 점주가 매장 delete (ⓒ 준비)', 'allow', () =>
+  deleteDoc(doc(asOwner, 'stores', S_F4B)));
+await run('F4c 같은 ID 로 qoinAccrualRate 포함 재생성', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', S_F4B), { ownerId: OWNER, name: 'F4re', status: 'pending', qoinAccrualRate: 0.1 }));
+await run('F4c-pre2 점주가 매장 delete (ⓒ 스위치 준비)', 'allow', () =>
+  deleteDoc(doc(asOwner, 'stores', S_F4C)));
+await run('F4c2 같은 ID 로 qoinAccrualEnabled 포함 재생성', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', S_F4C), { ownerId: OWNER, name: 'F4re', status: 'pending', qoinAccrualEnabled: false }));
+await run('F4c3 같은 ID 로 두 필드 모두 포함 재생성', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', S_F4C), { ownerId: OWNER, name: 'F4re', status: 'pending', qoinAccrualRate: 0.1, qoinAccrualEnabled: false }));
+
+// N8: 점주는 자기 매장이 소속된 브랜드의 이력을 읽을 수 없다 (링크를 숨기는 근거 — Rules 를 완화하지 않는다)
+await run('N8 owner 가 자기 매장(S_BR)이 소속된 브랜드(B_A)의 qoinRateHistory read', 'deny', () =>
+  getDocs(collection(asOwner, 'brands', B_A, 'qoinRateHistory')));
+await run('N8b owner 가 브랜드 이력 문서 단건 get', 'deny', () =>
+  getDoc(doc(asOwner, 'brands', B_A, 'qoinRateHistory', 'h1')));
+await run('N8c 회귀: owner 가 자기 매장(S_BR)의 이력은 read', 'allow', () =>
+  getDocs(collection(asOwner, 'stores', S_BR, 'qoinRateHistory')));
 
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;

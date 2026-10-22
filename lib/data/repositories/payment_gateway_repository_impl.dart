@@ -98,7 +98,7 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
       orderId: orderId,
       amount: amount,
       idempotencyKey: orderId,
-      cartSnapshot: _cartToMap(cartSnapshot),
+      cartSnapshot: cartToMap(cartSnapshot),
       paymentMethod: paymentMethod.name,
     );
 
@@ -172,7 +172,11 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
   ///
   /// Functions 측에서 storeId / storeName / items 를 사용하여
   /// Firestore orders/{orderId} doc 을 생성.
-  Map<String, dynamic> _cartToMap(CartEntity cart) {
+  ///
+  /// **`brandId` 를 보내지 않는다 (의도).** 적립의 브랜드는 서버가 `stores/{storeId}.brandId` 에서 읽는다 —
+  /// 클라이언트가 보낸 브랜드는 신뢰원이 아니다 (F1). 키 집합은 `test_fixtures/qoin_cart_contract.json` 골든이 고정한다.
+  @visibleForTesting
+  static Map<String, dynamic> cartToMap(CartEntity cart) {
     return <String, dynamic>{
       'storeId': cart.storeId,
       'storeName': cart.storeName,
@@ -180,12 +184,12 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
       'discount': null,
       'totalPrice': cart.subtotal,
       'items': cart.items
-          .map((item) => _cartItemToMap(item))
+          .map((item) => _cartItemToMapStatic(item))
           .toList(growable: false),
     };
   }
 
-  Map<String, dynamic> _cartItemToMap(CartItemEntity item) {
+  static Map<String, dynamic> _cartItemToMapStatic(CartItemEntity item) {
     return <String, dynamic>{
       'menuItemId': item.menuItemId,
       'menuItemName': item.menuItemName,

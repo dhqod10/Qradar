@@ -16,11 +16,12 @@ class QoinConfigModel {
   /// CF 와 같은 기준이다 (전역은 0 도 무효). 유효하지 않으면 [QoinConfigEntity.accrualRate] 는 null.
   static QoinConfigEntity fromMap(Map<String, dynamic> data) {
     final enabled = data['enabled'];
-    final setting = QoinRateSetting.fromRaw(
+    final parsed = QoinRateSetting.fromRaw(
       data[FirestorePaths.qoinGlobalAccrualRateField],
       present: data.containsKey(FirestorePaths.qoinGlobalAccrualRateField),
-      allowZero: false,
     );
+    // 전역은 0 도 무효다 (R16). TRANSITIONAL legacyZero 는 store/brand 단계에만 적용된다.
+    final setting = parsed.isLegacyZero ? QoinRateSetting.invalid : parsed;
     return QoinConfigEntity(
       accrualRate: setting.isValid ? setting.value : null,
       accrualRateSetting: setting,

@@ -119,6 +119,14 @@ class FirestorePaths {
   /// 적립률 필드 키 — `stores/{id}` / `brands/{id}` 의 `qoinAccrualRate`. **읽기 전용** (쓰기는 CF 전담).
   static const String qoinAccrualRateField = 'qoinAccrualRate';
 
+  /// 적립 스위치 필드 키 — `stores/{id}` / `brands/{id}` 의 `qoinAccrualEnabled`. `false` 만 저장된다. **읽기 전용** (쓰기는 CF 전담).
+  static const String qoinAccrualEnabledField = 'qoinAccrualEnabled';
+
+  /// 브랜드 일괄 적용 포인터 필드 (`brands/{id}`). CF 가 유지하고 앱은 읽기만 한다.
+  static const String qoinBulkHistoryIdField = 'qoinBulkHistoryId';
+  static const String qoinBulkStatusField = 'qoinBulkStatus';
+  static const String qoinBulkAtField = 'qoinBulkAt';
+
   /// 전역 적립률 필드 키 — `config/qoin.accrualRate`. 읽기 전용 (쓰기는 CF 전담).
   static const String qoinGlobalAccrualRateField = 'accrualRate';
 

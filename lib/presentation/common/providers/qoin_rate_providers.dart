@@ -37,6 +37,7 @@ final qoinAllRateHistoryProvider = StreamProvider.autoDispose
 AsyncValue<EffectiveQoinRate> _combine(
   Ref ref, {
   required QoinRateSetting store,
+  QoinSwitchSetting storeSwitch = QoinSwitchSetting.enabled,
   required String? brandId,
   required bool storeScope,
 }) {
@@ -54,17 +55,25 @@ AsyncValue<EffectiveQoinRate> _combine(
   }
   final global = cfg.value?.accrualRateSetting ?? QoinRateSetting.absent;
   final brandSetting = brand?.value?.qoinAccrualRate ?? QoinRateSetting.absent;
+  final brandSwitch =
+      brand?.value?.qoinAccrualEnabled ?? QoinSwitchSetting.enabled;
   return AsyncValue.data(
     resolveEffectiveQoinRate(
       store: storeScope ? store : QoinRateSetting.absent,
+      storeSwitch: storeScope ? storeSwitch : QoinSwitchSetting.enabled,
       brand: brandSetting,
+      brandSwitch: brandSwitch,
       global: global,
       hasBrand: hasBrand,
     ),
   );
 }
 
-typedef QoinStoreRateKey = ({QoinRateSetting store, String? brandId});
+typedef QoinStoreRateKey = ({
+  QoinRateSetting store,
+  QoinSwitchSetting storeSwitch,
+  String? brandId,
+});
 
 /// 한 매장의 유효 적립률. 점주 읽기 행 / 매장 편집 화면이 쓴다.
 final effectiveStoreQoinRateProvider = Provider.autoDispose
@@ -72,6 +81,7 @@ final effectiveStoreQoinRateProvider = Provider.autoDispose
       return _combine(
         ref,
         store: key.store,
+        storeSwitch: key.storeSwitch,
         brandId: key.brandId,
         storeScope: true,
       );
@@ -100,9 +110,13 @@ EffectiveQoinRate resolveStoreQoinRate(
   final hasBrand = brandId != null && brandId.isNotEmpty;
   return resolveEffectiveQoinRate(
     store: store.qoinAccrualRate,
+    storeSwitch: store.qoinAccrualEnabled,
     brand: hasBrand
         ? (brandsById[brandId]?.qoinAccrualRate ?? QoinRateSetting.absent)
         : QoinRateSetting.absent,
+    brandSwitch: hasBrand
+        ? (brandsById[brandId]?.qoinAccrualEnabled ?? QoinSwitchSetting.enabled)
+        : QoinSwitchSetting.enabled,
     global: config?.accrualRateSetting ?? QoinRateSetting.absent,
     hasBrand: hasBrand,
   );
@@ -116,6 +130,7 @@ EffectiveQoinRate resolveBrandQoinRate(
   return resolveEffectiveQoinRate(
     store: QoinRateSetting.absent,
     brand: brand.qoinAccrualRate,
+    brandSwitch: brand.qoinAccrualEnabled,
     global: config?.accrualRateSetting ?? QoinRateSetting.absent,
   );
 }

@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/core/errors/permission_denied_exception.dart';
-import 'package:qradar/core/errors/qoin_rate_exception.dart';
+import 'package:qradar/data/datasources/remote/qoin_callable.dart';
 import 'package:qradar/data/models/qoin_rate_change_model.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_results.dart';
@@ -22,6 +22,7 @@ class QoinRateRemoteDataSource {
 
   final FirebaseFunctions _functions;
   final FirebaseFirestore _firestore;
+  late final QoinCallable _callable = QoinCallable(_functions);
 
   Future<QoinRateSetResult> setRate({
     required QoinRateScope scope,
@@ -30,7 +31,7 @@ class QoinRateRemoteDataSource {
     bool clear = false,
     String? reason,
   }) async {
-    final data = await _call('setQoinAccrualRate', <String, dynamic>{
+    final data = await _callable.call('setQoinAccrualRate', <String, dynamic>{
       'scope': scope.code,
       if (scope != QoinRateScope.global) 'targetId': targetId,
       if (clear) 'clear': true else 'rate': rate,
@@ -52,7 +53,7 @@ class QoinRateRemoteDataSource {
     String? reason,
     String? resumeHistoryId,
   }) async {
-    final data = await _call(
+    final data = await _callable.call(
       'applyBrandQoinRate',
       <String, dynamic>{
         'brandId': brandId,
@@ -78,48 +79,34 @@ class QoinRateRemoteDataSource {
       processedCount: n('processedCount'),
       totalCount: n('totalCount'),
       historyId: data['historyId'] as String?,
+      disabledUntouchedCount: n('disabledUntouchedCount'),
+      clearedValueCount: n('clearedValueCount'),
+      clearedInvalidCount: n('clearedInvalidCount'),
+      brandDisabled: data['brandDisabled'] == true,
     );
   }
 
-  Future<Map<String, dynamic>> _call(
-    String name,
-    Map<String, dynamic> payload, {
-    Duration? timeout,
+  Future<QoinAccrualEnabledResult> setAccrualEnabled({
+    required QoinRateScope scope,
+    required String targetId,
+    required bool enabled,
+    String? reason,
   }) async {
-    try {
-      final callable = _functions.httpsCallable(
-        name,
-        options: HttpsCallableOptions(
-          timeout: timeout ?? const Duration(seconds: 70),
-        ),
-      );
-      final res = await callable.call<Object?>(payload);
-      final d = res.data;
-      return d is Map ? Map<String, dynamic>.from(d) : <String, dynamic>{};
-    } on FirebaseFunctionsException catch (e) {
-      throw QoinRateException(_classify(e.code), code: e.code);
-    } on QoinRateException {
-      rethrow;
-    } catch (_) {
-      // 네트워크 끊김 등 — 요청이 서버에 닿았는지 알 수 없다.
-      throw const QoinRateException(QoinRateFailureKind.unknownOutcome);
-    }
-  }
-
-  /// 확정 실패(서버가 거부, 반영되지 않음) vs 결과 불명(서버에서는 반영됐을 수 있음).
-  static QoinRateFailureKind _classify(String code) {
-    switch (code) {
-      case 'permission-denied':
-      case 'unauthenticated':
-      case 'invalid-argument':
-      case 'not-found':
-      case 'failed-precondition':
-      case 'already-exists':
-      case 'out-of-range':
-        return QoinRateFailureKind.rejected;
-      default:
-        return QoinRateFailureKind.unknownOutcome;
-    }
+    final data = await _callable.call(
+      'setQoinAccrualEnabled',
+      <String, dynamic>{
+        'scope': scope.code,
+        'targetId': targetId,
+        'enabled': enabled,
+        'reason': ?reason,
+      },
+    );
+    return QoinAccrualEnabledResult(
+      before: data['before'] as bool?,
+      after: data['after'] as bool?,
+      changed: data['changed'] == true,
+      historyId: data['historyId'] as String?,
+    );
   }
 
   Stream<List<QoinRateChangeEntity>> watchHistory(

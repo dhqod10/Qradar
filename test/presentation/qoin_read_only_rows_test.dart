@@ -82,17 +82,73 @@ void main() {
       expect(find.textContaining('%'), findsNothing);
     });
 
-    testWidgets('명시적 0%: 적립 안 함 배지 + 브랜드 설정 문장', (t) async {
+    testWidgets(
+      '브랜드 스위치 off: 점주 block 은 "적립 사용 안 함" + 브랜드에서 중단 + 문장, 숫자 없음, Switch 없음',
+      (t) async {
+        final stopped = resolveEffectiveQoinRate(
+          store: QoinRateSetting.valid(0.1), // 개별 적립률이 있어도 숫자를 보이지 않는다 (N4)
+          brand: QoinRateSetting.valid(0.05),
+          brandSwitch: QoinSwitchSetting.disabled,
+          global: QoinRateSetting.valid(0.03),
+        );
+        await t.pumpWidget(row(QoinRateInfoVariant.block, data(stopped)));
+        expect(find.text('적립 사용 안 함'), findsOneWidget);
+        expect(find.text('브랜드에서 중단'), findsOneWidget);
+        expect(find.text('브랜드 설정에 따라 이 매장은 Qoin 을 적립하지 않아요'), findsOneWidget);
+        expect(find.textContaining(RegExp(r'\d%')), findsNothing);
+        expect(find.byType(Switch), findsNothing);
+        expect(
+          find.textContaining('다시 켜면'),
+          findsNothing,
+          reason: '점주는 바꿀 수 없는 정보',
+        );
+      },
+    );
+
+    testWidgets('매장 스위치 off: 매장에서 중단', (t) async {
       final stopped = resolveEffectiveQoinRate(
         store: QoinRateSetting.absent,
-        brand: QoinRateSetting.zero,
+        storeSwitch: QoinSwitchSetting.disabled,
+        brand: QoinRateSetting.valid(0.05),
         global: QoinRateSetting.valid(0.03),
       );
       await t.pumpWidget(row(QoinRateInfoVariant.block, data(stopped)));
-      expect(find.text('0%'), findsOneWidget);
-      expect(find.text('적립 안 함'), findsOneWidget);
-      expect(find.text('브랜드 설정에 따라 이 매장은 Qoin 을 적립하지 않아요'), findsOneWidget);
+      expect(find.text('적립 사용 안 함'), findsOneWidget);
+      expect(find.text('매장에서 중단'), findsOneWidget);
+      expect(find.text('이 매장은 Qoin 을 적립하지 않아요'), findsOneWidget);
     });
+
+    testWidgets('tile: 값 칸은 "사용 안 함" + 출처 배지', (t) async {
+      final stopped = resolveEffectiveQoinRate(
+        store: QoinRateSetting.absent,
+        storeSwitch: QoinSwitchSetting.disabled,
+        brand: QoinRateSetting.valid(0.05),
+        global: QoinRateSetting.valid(0.03),
+      );
+      await t.pumpWidget(row(QoinRateInfoVariant.tile, data(stopped)));
+      expect(find.text('사용 안 함'), findsOneWidget);
+      expect(find.text('매장에서 중단'), findsOneWidget);
+    });
+
+    testWidgets(
+      '브랜드 summary 가 꺼져 있으면 "매장이 따로 설정한 적립률이 있으면 그 값이 우선해요" 를 숨긴다 (N4)',
+      (t) async {
+        final off = resolveEffectiveQoinRate(
+          store: QoinRateSetting.absent,
+          brand: QoinRateSetting.valid(0.05),
+          brandSwitch: QoinSwitchSetting.disabled,
+          global: QoinRateSetting.valid(0.03),
+        );
+        await t.pumpWidget(row(QoinRateInfoVariant.summary, data(off)));
+        expect(find.text('적립 사용 안 함'), findsOneWidget);
+        expect(
+          find.text('이 브랜드는 Qoin 을 적립하지 않아요. 산하 매장 전체가 적립되지 않아요'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('그 값이 우선해요'), findsNothing);
+        expect(find.text('가맹점별 적립률은 가맹점 목록에서 확인할 수 있어요'), findsOneWidget);
+      },
+    );
 
     testWidgets('해석 불가: — + 설정 확인 필요', (t) async {
       final bad = resolveEffectiveQoinRate(

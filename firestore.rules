@@ -58,17 +58,26 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
     }
 
-    // Qoin 적립률 필드(`qoinAccrualRate`)를 건드리는 update 인가?
-    // 적립률 쓰기는 Cloud Function(setQoinAccrualRate / applyBrandQoinRate) 전담이다.
-    // admin 전권 분기도 예외가 아니다 (1차 F1: 보호가 한 경로에만 걸려 있어 구멍이 났다).
-    // 사용처: stores / brands 의 update 최상위 조건.
-    function touchesQoinRate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasAny(['qoinAccrualRate']);
+    // Qoin 이 관리하는 stores / brands 필드 **집합** — 필드 목록은 여기 1곳뿐이다 (spec §20.5.4).
+    //   qoinAccrualRate    적립률 숫자      (setQoinAccrualRate / applyBrandQoinRate / migrateQoinZeroRates)
+    //   qoinAccrualEnabled 적립 스위치      (setQoinAccrualEnabled / migrateQoinZeroRates)
+    //   qoinBulk*          일괄 적용 잠금 포인터 (applyBrandQoinRate)
+    // 전부 Cloud Function(Admin SDK) 전담이다. 필드가 늘 때 분기 6곳을 찾아다니지 않도록 집합 헬퍼로 일반화했다
+    // (1차 F1: 보호가 한 경로에만 걸려 있어 구멍이 났다).
+    function qoinManagedFields() {
+      return ['qoinAccrualRate', 'qoinAccrualEnabled',
+              'qoinBulkHistoryId', 'qoinBulkStatus', 'qoinBulkAt'];
     }
 
-    // create 문서에 Qoin 적립률 필드가 들어 있는가? (create 경로 차단용)
-    function hasQoinRateOnCreate() {
-      return 'qoinAccrualRate' in request.resource.data;
+    // 위 필드를 건드리는 update 인가? admin 전권 분기도 예외가 아니다.
+    // 사용처: stores / brands 의 update 최상위 조건.
+    function touchesQoinManaged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(qoinManagedFields());
+    }
+
+    // create 문서에 위 필드가 들어 있는가? (create 경로 차단용)
+    function hasQoinManagedOnCreate() {
+      return request.resource.data.keys().hasAny(qoinManagedFields());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -271,18 +280,18 @@ service cloud.firestore {
       allow read: if isSignedIn();
 
       // create: owner role 사용자가 본인 ownerId 로 등록. status 는 'pending' 으로 시작.
-      // 적립률 필드는 create 로도 심을 수 없다 (CF 전담).
+      // Qoin 관리 필드(적립률·스위치·잠금 포인터)는 create 로도 심을 수 없다 (CF 전담).
       allow create: if isOwner()
                     && request.resource.data.ownerId == uid()
                     && request.resource.data.get('status', 'pending') == 'pending'
-                    && !hasQoinRateOnCreate();
+                    && !hasQoinManagedOnCreate();
 
       // delete: 점주 본인 또는 admin
       allow delete: if isAdmin() || isStoreOwner(storeId);
 
       // update: admin 전권, 점주 운영 필드, brand 운영 필드 (status/ownerId/brandId 제외)
-      // 적립률 필드 변경은 모든 분기(admin 전권 포함)에서 거부 — CF 전담.
-      allow update: if !touchesQoinRate()
+      // Qoin 관리 필드 변경은 모든 분기(admin 전권 포함)에서 거부 — CF 전담.
+      allow update: if !touchesQoinManaged()
                     && (isAdmin()
                         || isStoreOwnerFieldUpdate(storeId)
                         || isStoreOwnerBrandUpdate());
@@ -409,8 +418,8 @@ service cloud.firestore {
 
       // create: admin 전권 또는 brand 유저 자기 신청.
       // brand 유저 조건: 본인 uid 가 submittedBy, status=pending, brandKey='' (승인 전 미발급).
-      // 적립률 필드는 create 로도 심을 수 없다 (admin 포함, CF 전담).
-      allow create: if !hasQoinRateOnCreate()
+      // Qoin 관리 필드는 create 로도 심을 수 없다 (admin 포함, CF 전담).
+      allow create: if !hasQoinManagedOnCreate()
                     && (isAdmin()
                         || (isBrand()
                             && request.resource.data.get('submittedBy', '') == uid()
@@ -421,8 +430,8 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       // update: admin 전권, brand 본인은 운영 필드만 (status/brandKey 는 admin 전용)
-      // 적립률 필드 변경은 모든 분기(admin 전권 포함)에서 거부 — CF 전담.
-      allow update: if !touchesQoinRate()
+      // Qoin 관리 필드 변경은 모든 분기(admin 전권 포함)에서 거부 — CF 전담.
+      allow update: if !touchesQoinManaged()
                     && (isAdmin()
                         || isBrandSelfUpdate(brandId));
 
@@ -603,14 +612,20 @@ service cloud.firestore {
     // 적립률(`accrualRate`)은 CF(setQoinAccrualRate) 전담 — admin 의 SDK 직접 쓰기도 거부한다
     // (이력 누락 방지, H7). `enabled`(비상 정지)만 admin 직접 쓰기를 유지한다: CF 장애 중에도
     // 끌 수 있어야 하기 때문. 그 변경은 onQoinConfigWritten 트리거가 이력으로 남긴다.
+    // **F3**: `enabled` 를 바꾸는 쓰기는 `enabledChangedBy == 본인 uid` 를 같이 써야 한다 (행위자 사칭 불가).
+    // 트리거는 `enabledChangedAt` 이 갱신됐으면 그 uid 를 행위자로 이력에 남긴다 (source 'app_direct').
     // delete 도 막는다 (삭제 = accrualRate 소멸 = 적립률 쓰기 경로).
     // ─────────────────────────────────────────────────────────────────────────
     match /config/{docId} {
       allow read: if isSignedIn();
       allow create: if isAdmin()
-                    && !('accrualRate' in request.resource.data);
+                    && !('accrualRate' in request.resource.data)
+                    && (!('enabled' in request.resource.data)
+                        || request.resource.data.get('enabledChangedBy', '') == uid());
       allow update: if isAdmin()
-                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['accrualRate']);
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['accrualRate'])
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['enabled', 'enabledChangedBy'])
+                        || request.resource.data.get('enabledChangedBy', '') == uid());
       allow delete: if false;
 
       // config/qoin/qoinRateHistory/{id} — 전역 적립률 / 비상 정지 변경 이력. CF 전담 쓰기.
@@ -618,6 +633,16 @@ service cloud.firestore {
         allow read: if isAdmin();
         allow create, update, delete: if false; // admin 도 불가 (1차 원장과 같은 패턴)
       }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // qoinSettlementIssues/{orderId} — 무효 설정으로 적립이 멈춘 주문 기록 (Q2 ⓐ, audit_trail §4-6).
+    // 쓰기는 Cloud Function(onOrderQoinSettled) 전담 — admin 포함 클라이언트 전면 차단. read: admin.
+    // 소급 적립 도구는 아직 없다 (backlog) — 이 기록이 그 도구의 대상 목록이 된다.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /qoinSettlementIssues/{orderId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

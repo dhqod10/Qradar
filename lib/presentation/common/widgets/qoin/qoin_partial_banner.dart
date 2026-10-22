@@ -15,8 +15,6 @@ class QoinPartialBanner extends StatelessWidget {
     required this.change,
     this.onResume,
     this.onLater,
-    this.moreCount = 0,
-    this.onTap,
   });
 
   /// 브랜드 편집 화면용 풀 배너 (이어서 적용 / 나중에).
@@ -40,29 +38,12 @@ class QoinPartialBanner extends StatelessWidget {
     VoidCallback? onResume,
   }) : this._(key: key, mode: QoinPartialBannerMode.inRow, change: change, onResume: onResume);
 
-  /// 허브 축약형. 탭 → 이력 `미완료` 필터. [moreCount] 는 첫 건 외 개수.
-  const QoinPartialBanner.hub({
-    Key? key,
-    required QoinRateChangeEntity change,
-    int moreCount = 0,
-    required VoidCallback onTap,
-  }) : this._(
-         key: key,
-         mode: QoinPartialBannerMode.hub,
-         change: change,
-         moreCount: moreCount,
-         onTap: onTap,
-       );
-
   final QoinPartialBannerMode mode;
   final QoinRateChangeEntity change;
   final VoidCallback? onResume;
   final VoidCallback? onLater;
-  final int moreCount;
-  final VoidCallback? onTap;
 
   static const String title = '일부 매장에는 아직 적용되지 않았어요';
-  static const String hubTitle = '끝나지 않은 일괄 적용이 있어요';
   static const String readerRowText = '일부 매장에 아직 적용되지 않았어요';
   static const String resumeLabel = '이어서 적용';
   static const String laterLabel = '나중에';
@@ -71,7 +52,6 @@ class QoinPartialBanner extends StatelessWidget {
   String get _changedPhrase {
     final a = change.afterRate;
     if (a == null) return '이미 상위 설정을 따르도록 바뀌었어요.';
-    if (a == 0) return '이미 적립 안 함 (0%) 으로 바뀌었어요.';
     return '이미 ${QoinRateValueLabel.history(a)} 로 바뀌었어요.';
   }
 
@@ -192,64 +172,6 @@ class QoinPartialBanner extends StatelessWidget {
             ],
           ),
         );
-      case QoinPartialBannerMode.hub:
-        final sub = moreCount > 0
-            ? '브랜드 "${change.targetName}" 외 $moreCount건'
-            : '브랜드 "${change.targetName}"';
-        return Semantics(
-          button: true,
-          label: '경고. $hubTitle. $sub',
-          excludeSemantics: true,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.warning.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    size: 20,
-                    color: AppColors.warning,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          hubTitle,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textBody,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          sub,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: AppColors.textMuted,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
     }
   }
 
@@ -316,4 +238,200 @@ class QoinPartialBanner extends StatelessWidget {
   );
 }
 
-enum QoinPartialBannerMode { full, inRow, hub }
+enum QoinPartialBannerMode { full, inRow }
+
+
+// ── 허브 배너 3상태 (design §18-8) ───────────────────────────────────────────────
+// 데이터 출처는 이력(인덱스 의존)이 아니라 **브랜드 문서의 포인터**다. 로딩·에러·없음이 서로 다르게 보여야 한다 —
+// 에러 때 배너가 사라지면 "중단 없음" 과 "알 수 없음" 이 구별되지 않는다 (H-3).
+
+/// 허브 데이터 배너 (1건 이상). 탭 → 1건이면 그 브랜드 편집, 2건 이상이면 브랜드 목록.
+class QoinHubPartialBanner extends StatelessWidget {
+  const QoinHubPartialBanner({
+    super.key,
+    required this.brandName,
+    this.moreCount = 0,
+    required this.onTap,
+  });
+
+  final String brandName;
+  final int moreCount;
+  final VoidCallback onTap;
+
+  static const String title = '끝나지 않은 일괄 적용이 있어요';
+
+  @override
+  Widget build(BuildContext context) {
+    final sub = moreCount > 0
+        ? '브랜드 "$brandName" 외 $moreCount건'
+        : '브랜드 "$brandName"';
+    return Semantics(
+      button: true,
+      label: '경고. $title. $sub',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 20,
+                color: AppColors.warning,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textBody,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 허브 배너 로딩: "아직 모름" 을 보인다 (배너를 그리지도, 없음으로 읽히게 비우지도 않는다).
+class QoinHubBannerSkeleton extends StatelessWidget {
+  const QoinHubBannerSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: true,
+      label: '일괄 적용 상태를 확인하고 있어요',
+      excludeSemantics: true,
+      child: Container(
+        height: 56,
+        decoration: BoxDecoration(
+          color: AppColors.border,
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+    );
+  }
+}
+
+/// 허브 배너 에러: 관측 실패는 `error` 틴트로 말한다. 중복 호출 방지를 위해 진행 중에는 버튼에 인디케이터.
+class QoinHubBannerError extends StatelessWidget {
+  const QoinHubBannerError({
+    super.key,
+    required this.onRetry,
+    this.retrying = false,
+  });
+
+  final VoidCallback onRetry;
+  final bool retrying;
+
+  static const String title = '일괄 적용 상태를 확인하지 못했어요';
+  static const String body =
+      '끝나지 않은 일괄 적용이 있는지 알 수 없어요. 브랜드별 적립률에서 직접 확인해주세요';
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: '오류. $title. 끝나지 않은 일괄 적용이 있는지 알 수 없어요. 다시 시도 버튼이 있어요',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ExcludeSemantics(
+                  child: Icon(
+                    Icons.error_outline_rounded,
+                    size: 18,
+                    color: AppColors.error,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textBody,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              body,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: AppColors.textMuted,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: retrying ? null : onRetry,
+                style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
+                child: retrying
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : const Text(
+                        '다시 시도',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

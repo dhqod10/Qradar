@@ -1,6 +1,8 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
+import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/admin/providers/admin_brand_approval_providers.dart';
 import 'package:qradar/presentation/admin/providers/admin_store_approval_providers.dart';
@@ -25,17 +27,18 @@ final qoinBrandBulkStatsProvider = Provider.autoDispose
       return stores.whenData((all) {
         var total = 0;
         var overridden = 0;
-        var stopped = 0;
+        var disabled = 0;
         for (final s in all) {
           if (s.brandId != brandId) continue;
           total++;
           if (!s.qoinAccrualRate.isAbsent) overridden++;
-          if (s.qoinAccrualRate.isZero) stopped++;
+          // 스위치가 꺼진 매장: 일괄 적용이 스위치를 건드리지 않으므로 새 값을 받아도 적립이 시작되지 않는다.
+          if (s.qoinAccrualEnabled.isDisabled) disabled++;
         }
         return QoinBulkStats(
           total: total,
           overridden: overridden,
-          overriddenStopped: stopped,
+          disabled: disabled,
         );
       });
     });
@@ -85,7 +88,31 @@ final qoinAdminStoreEffectiveProvider = Provider.autoDispose
       return ref.watch(
         effectiveStoreQoinRateProvider((
           store: s.qoinAccrualRate,
+          storeSwitch: s.qoinAccrualEnabled,
           brandId: s.brandId,
         )),
       );
+    });
+
+/// 브랜드의 일괄 적용이 끝나지 않았는가: `partial`, 또는 `in_progress` 인데 포인터 시각이 기준(5분)보다 오래됨(고아).
+/// 이력(collectionGroup 쿼리·인덱스)이 아니라 **브랜드 문서의 포인터**로 판정한다 — 인덱스 미배포·50건 윈도우와 무관 (spec §19.5 D-1).
+bool isBulkUnfinished(BrandEntity b, DateTime now) {
+  final status = b.qoinBulkStatus;
+  if (status == QoinBulkStatus.partial) return true;
+  if (status != QoinBulkStatus.inProgress) return false;
+  final at = b.qoinBulkAt;
+  if (at == null) return true;
+  return now.difference(at) > QoinPolicy.bulkStaleAfter;
+}
+
+/// 끝나지 않은 일괄 적용이 있는 브랜드들 (허브 배너). 로딩/에러를 그대로 전달한다 — **조용히 비우지 않는다.**
+/// 브랜드 스트림은 목록 화면과 공유하므로 추가 조회 0.
+final qoinUnfinishedBulkBrandsProvider =
+    Provider.autoDispose<AsyncValue<List<BrandEntity>>>((ref) {
+      final now = DateTime.now();
+      return ref
+          .watch(qoinAdminBrandsProvider)
+          .whenData(
+            (all) => all.where((b) => isBulkUnfinished(b, now)).toList(),
+          );
     });

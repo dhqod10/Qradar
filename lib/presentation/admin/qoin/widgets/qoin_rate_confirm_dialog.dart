@@ -14,9 +14,6 @@ enum QoinConfirmAction {
   /// 직접 설정 (숫자)
   set('적립률을 변경할까요?', '변경하기'),
 
-  /// 적립 안 함 (0%)
-  stop('적립을 중단할까요?', '적립 중단'),
-
   /// 상위 설정 따르기
   inherit('설정을 지우고 상위 설정을 따르게 할까요?', '되돌리기'),
 
@@ -38,14 +35,14 @@ class QoinConfirmValue {
     this.tenths,
   });
 
-  /// `3%` / `0%` / `설정 없음` / `—`.
+  /// `3%` / `설정 없음` / `—`.
   final String label;
 
-  /// `전역 상속` / `브랜드 설정` / `적립 안 함` / `확인 필요` …
+  /// `전역 상속` / `브랜드 설정` / `확인 필요` …
   final String caption;
   final String spoken;
 
-  /// 환산용 0.1% 단위. 0 = 적립 없음. null = 환산 불가(해석 불가 / 설정 없음).
+  /// 환산용 0.1% 단위. null = 환산 불가(해석 불가 / 설정 없음).
   final int? tenths;
 
   /// 해석 결과로부터. [target] 은 보는 대상 범위. 전역 대상이면 캡션은 `전역 기본값`.
@@ -58,6 +55,14 @@ class QoinConfirmValue {
         label: '—',
         caption: QoinRateLabels.needsCheck,
         spoken: QoinRateLabels.needsCheck,
+      );
+    }
+    // 비교는 "켜져 있다면 적용될 값" 끼리 한다 (호출자가 asIfEnabled 를 넘긴다). 방어적으로만 처리.
+    if (e.isDisabled) {
+      return QoinConfirmValue(
+        label: QoinRateLabels.switchOff,
+        caption: QoinRateBadgeKind.of(e, target: target).label,
+        spoken: QoinRateLabels.switchOff,
       );
     }
     final caption = target == QoinRateScope.global
@@ -84,8 +89,9 @@ class QoinBulkConfirm {
   const QoinBulkConfirm({
     required this.total,
     required this.overridden,
-    required this.overriddenStopped,
     required this.mode,
+    this.disabledUntouched = 0,
+    this.brandDisabled = false,
     this.remaining,
   });
 
@@ -95,8 +101,11 @@ class QoinBulkConfirm {
   /// 개별 설정이 있는 매장 수 M.
   final int overridden;
 
-  /// 그중 `적립 안 함(0)` 인 매장 수 Z — 덮어쓰기는 이 매장도 다시 적립하게 만든다.
-  final int overriddenStopped;
+  /// 스위치가 꺼진 산하 매장 수 K (미리보기). 일괄 적용은 스위치를 건드리지 않으므로 이 매장은 새 값을 받아도 적립이 시작되지 않는다.
+  final int disabledUntouched;
+
+  /// 브랜드 자신의 스위치가 꺼져 있다 (N4) — 산하 매장 전체가 적립되지 않는다. 있으면 K 줄은 숨긴다.
+  final bool brandDisabled;
   final QoinBulkMode mode;
 
   /// 이어서 적용일 때 남은 매장 수 R.
@@ -108,7 +117,7 @@ class QoinBulkConfirm {
 /// 첫 줄 = 범위 + 대상명 (18/w800 — 다이얼로그에서 가장 큰 글자). 숫자보다 먼저 읽히도록 위계를 뒤집었다:
 /// 범위 오입력(한 매장에 주려던 값을 전역에)이 100배 오입력보다 위험하다.
 /// **인상 경고(`2배 이상이거나 10% 이상`) 문구와 판정은 이 파일에만 있다.**
-/// 덮어쓰기/이어서 적용은 체크박스를 체크해야 실행 버튼이 활성된다 (열 때마다 미체크로 시작).
+/// 체크박스는 없다 (design §18-5). 마찰은 범위·대상명, 경고 plate, 동사 버튼(`덮어쓰고 적용`)이 진다.
 class QoinRateConfirmDialog extends StatefulWidget {
   const QoinRateConfirmDialog({
     super.key,
@@ -120,6 +129,7 @@ class QoinRateConfirmDialog extends StatefulWidget {
     this.reason,
     this.followingStores,
     this.bulk,
+    this.savedWhileDisabled = false,
   });
 
   final QoinRateScope scope;
@@ -135,6 +145,9 @@ class QoinRateConfirmDialog extends StatefulWidget {
   /// 브랜드일 때.
   final QoinBulkConfirm? bulk;
 
+  /// 지금 이 대상이 `사용 안 함` 상태에서 적립률을 저장한다 → `바꾼 값은 다시 켤 때부터 적용돼요` 한 줄.
+  final bool savedWhileDisabled;
+
   static Future<bool> show(
     BuildContext context, {
     required QoinRateScope scope,
@@ -145,6 +158,7 @@ class QoinRateConfirmDialog extends StatefulWidget {
     String? reason,
     int? followingStores,
     QoinBulkConfirm? bulk,
+    bool savedWhileDisabled = false,
   }) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -157,6 +171,7 @@ class QoinRateConfirmDialog extends StatefulWidget {
         reason: reason,
         followingStores: followingStores,
         bulk: bulk,
+        savedWhileDisabled: savedWhileDisabled,
       ),
     );
     return ok == true;
@@ -167,16 +182,9 @@ class QoinRateConfirmDialog extends StatefulWidget {
 }
 
 class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
-  bool _checked = false;
-
   bool get _isResume => widget.action == QoinConfirmAction.resume;
   bool get _isOverwrite =>
       widget.bulk != null && widget.bulk!.mode == QoinBulkMode.overwrite && widget.bulk!.overridden > 0;
-  bool get _needsCheck => _isResume || _isOverwrite;
-
-  int get _clearCount => _isResume
-      ? (widget.bulk?.remaining ?? 0)
-      : (widget.bulk?.overridden ?? 0);
 
   String get _confirmLabel =>
       _isOverwrite && !_isResume ? '덮어쓰고 적용' : widget.action.confirmLabel;
@@ -192,12 +200,8 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
     String? conversion;
     String? conversionSpoken;
     if (!_isResume && cur.tenths != null && next.tenths != null) {
-      final a = cur.tenths == 0
-          ? '적립 없음'
-          : '${QoinFormatters.number(QoinPolicy.previewAmount(cur.tenths!))} Q';
-      final b = next.tenths == 0
-          ? '적립 없음'
-          : '${QoinFormatters.number(QoinPolicy.previewAmount(next.tenths!))} Q';
+      final a = '${QoinFormatters.number(QoinPolicy.previewAmount(cur.tenths!))} Q';
+      final b = '${QoinFormatters.number(QoinPolicy.previewAmount(next.tenths!))} Q';
       conversion = '$pay 결제 기준 $a → $b';
       conversionSpoken = '$pay 결제 기준 $a에서 $b';
     }
@@ -209,20 +213,13 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
     final warnIncrease =
         !_isResume &&
         nt != null &&
-        nt > 0 &&
-        QoinPolicy.shouldWarnIncrease(
-          // 현재가 0(적립 안 함)이면 "2배" 비교가 무의미하다 — 절대값(10%) 기준만 본다.
-          currentTenths: (ct == null || ct == 0) ? null : ct,
-          newTenths: nt,
-        );
+        QoinPolicy.shouldWarnIncrease(currentTenths: ct, newTenths: nt);
 
     final semantic = StringBuffer(
       '${scopeLine.replaceAll('"', '')}. ',
     );
     if (!_isResume) {
-      semantic.write(
-        widget.action == QoinConfirmAction.stop ? '적립을 ' : '적립률을 ',
-      );
+      semantic.write('적립률을 ');
       semantic.write('현재 ${cur.spoken}');
       if (cur.caption.isNotEmpty) semantic.write(', ${cur.caption}');
       semantic.write('에서 ${next.spoken}');
@@ -231,9 +228,6 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
         '${QoinRateValueLabel.particleEuroOrRo(next.caption.isEmpty ? next.spoken : next.caption)} 변경. ',
       );
       if (conversionSpoken != null) semantic.write('$conversionSpoken. ');
-      if (widget.action == QoinConfirmAction.stop) {
-        semantic.write('환불 회수는 계속돼요');
-      }
     } else {
       semantic.write(widget.action.question);
     }
@@ -263,7 +257,7 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
       ),
       cancelLabel: '취소',
       confirmLabel: _confirmLabel,
-      confirmEnabled: !_needsCheck || _checked,
+      confirmEnabled: true,
       content: [
         if (!_isResume)
           Semantics(
@@ -282,20 +276,11 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
             text: '변경 값이 현재의 2배 이상이거나 10% 이상이에요. 입력값이 맞는지 한 번 더 확인해주세요',
           ),
         ],
-        if (widget.action == QoinConfirmAction.stop) ...[
+        if (widget.savedWhileDisabled && !_isResume) ...[
           const SizedBox(height: 12),
-          const _WarnPlate(
-            text: '이후 픽업이 완료되는 주문은 적립되지 않아요. 이미 적립된 Qoin 의 환불 회수는 계속돼요',
-          ),
-        ],
-        if (_needsCheck) ...[
-          const SizedBox(height: 8),
-          _CheckRow(
-            value: _checked,
-            label: _isResume
-                ? '남은 $_clearCount곳의 개별 설정이 지워지는 것을 확인했어요'
-                : '개별 설정 $_clearCount곳이 지워지는 것을 확인했어요',
-            onChanged: (v) => setState(() => _checked = v),
+          const Text(
+            '지금은 적립 사용 안 함이라, 바꾼 값은 다시 켤 때부터 적용돼요',
+            style: QoinDialogShell.bodyStyle,
           ),
         ],
         if (widget.reason != null && widget.reason!.isNotEmpty) ...[
@@ -319,6 +304,32 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
   /// 범위별 영향 블록.
   List<Widget> _impact() {
     final b = widget.bulk;
+    // 브랜드 자신이 꺼져 있으면 (모드 무관, 이어서 적용 제외) 맨 위에 plate 1개. K 줄은 숨긴다 (전체 정지가 K 를 포함).
+    final brandOff = b != null && b.brandDisabled && !_isResume;
+    final infoK = b != null && !brandOff && !_isResume && b.disabledUntouched > 0
+        ? _InfoLine(
+            text:
+                '적립 사용 안 함 ${b.disabledUntouched}곳은 새 값을 받아도 적립이 시작되지 않아요',
+            note: '이 화면 기준이에요. 실제 수는 완료 후 알려드려요',
+          )
+        : null;
+    final inner = _impactInner(b);
+    if (widget.scope != QoinRateScope.brand) return inner;
+    return [
+      if (brandOff) ...[
+        const SizedBox(height: 12),
+        const _WarnPlate(
+          title: '이 브랜드는 지금 적립 사용 안 함이에요',
+          text: '새 값을 적용해도 브랜드의 ‘적립 사용’ 을 켜기 전에는 산하 매장 전부가 적립되지 않아요',
+        ),
+      ],
+      ...inner,
+      ?infoK == null ? null : const SizedBox(height: 12),
+      ?infoK,
+    ];
+  }
+
+  List<Widget> _impactInner(QoinBulkConfirm? b) {
     switch (widget.scope) {
       case QoinRateScope.global:
         if (widget.followingStores == null) return const [];
@@ -342,7 +353,6 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
             _HeavyPlate(
               title: '남은 ${b.remaining ?? 0}곳의 개별 설정이 지워져요',
               body: null,
-              stoppedLine: null,
             ),
           ];
         }
@@ -378,9 +388,6 @@ class _QoinRateConfirmDialogState extends State<QoinRateConfirmDialog> {
             body:
                 '산하 매장 ${b.total}곳 중 개별 설정이 있는 ${b.overridden}곳의 설정이 지워지고, '
                 '${b.total}곳 모두 새 값을 따르게 돼요.',
-            stoppedLine: b.overriddenStopped > 0
-                ? '그중 적립 안 함 ${b.overriddenStopped}곳도 다시 적립해요'
-                : null,
           ),
         ];
     }
@@ -470,8 +477,11 @@ class _CompareBlock extends StatelessWidget {
 }
 
 class _WarnPlate extends StatelessWidget {
-  const _WarnPlate({required this.text});
+  const _WarnPlate({required this.text, this.title});
   final String text;
+
+  /// 있으면 14/w700 제목 줄 + 13 본문.
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
@@ -487,14 +497,69 @@ class _WarnPlate extends StatelessWidget {
           const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.warning),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                height: 1.4,
-                color: AppColors.textBody,
-              ),
+            child: title == null
+                ? Text(
+                    text,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                      color: AppColors.textBody,
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title!,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textBody,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(text, style: QoinDialogShell.bodyStyle),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 일괄 적용 정보 줄 — 경고 plate 가 아니라 **안내**다 (배경 없음, `info` 아이콘, 접두 `경고` 없음).
+class _InfoLine extends StatelessWidget {
+  const _InfoLine({required this.text, this.note});
+  final String text;
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '정보. $text',
+      excludeSemantics: true,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.info_outline_rounded,
+              size: 16,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(text, style: QoinDialogShell.bodyStyle),
+                if (note != null)
+                  Text(note!, style: QoinDialogShell.noteStyle.copyWith(fontSize: 11)),
+              ],
             ),
           ),
         ],
@@ -508,11 +573,9 @@ class _HeavyPlate extends StatelessWidget {
   const _HeavyPlate({
     required this.title,
     required this.body,
-    required this.stoppedLine,
   });
   final String title;
   final String? body;
-  final String? stoppedLine;
 
   @override
   Widget build(BuildContext context) {
@@ -547,62 +610,12 @@ class _HeavyPlate extends StatelessWidget {
             const SizedBox(height: 6),
             Text(body!, style: QoinDialogShell.bodyStyle),
           ],
-          if (stoppedLine != null) ...[
-            const SizedBox(height: 4),
-            Text('· $stoppedLine', style: QoinDialogShell.bodyStyle),
-          ],
           const SizedBox(height: 6),
           Text(
             '되돌리려면 매장마다 다시 설정해야 해요',
             style: QoinDialogShell.bodyStyle.copyWith(fontWeight: FontWeight.w600),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CheckRow extends StatelessWidget {
-  const _CheckRow({
-    required this.value,
-    required this.label,
-    required this.onChanged,
-  });
-  final bool value;
-  final String label;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      checked: value,
-      label: '$label, 체크박스, ${value ? '선택됨' : '선택 안 됨'}. 체크해야 실행 버튼을 누를 수 있어요',
-      excludeSemantics: true,
-      child: InkWell(
-        onTap: () => onChanged(!value),
-        borderRadius: BorderRadius.circular(8),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 48),
-          child: Row(
-            children: [
-              Checkbox(
-                value: value,
-                activeColor: AppColors.primary,
-                onChanged: (v) => onChanged(v ?? false),
-              ),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textBody,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

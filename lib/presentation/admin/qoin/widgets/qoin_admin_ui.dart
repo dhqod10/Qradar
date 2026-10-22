@@ -3,6 +3,7 @@ import 'package:qradar/core/errors/qoin_rate_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/domain/entities/qoin_rate_results.dart';
+import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 
 /// 관리자 Qoin 화면 공용 AppBar (1차와 동일: 뒤로가기 + 17/w700, `background`, elevation 0).
 PreferredSizeWidget qoinAppBar(BuildContext context, String title, {bool canPop = true}) {
@@ -44,10 +45,38 @@ class QoinMessages {
   static const String enabledOff = 'Qoin 적립을 중단했어요';
   static const String enabledFailed = '변경하지 못했어요. 다시 시도해주세요';
 
+  /// 일괄 적용이 진행 중인 브랜드(또는 그 산하 매장)에 대한 단건 변경 거부 (`failed-precondition`).
+  static const String bulkInProgress =
+      '이 브랜드에 일괄 적용이 진행 중이에요. 끝난 뒤 다시 시도해주세요';
+
+  /// 재개 시 브랜드 값이 그 사이 바뀌었다 (`failed-precondition`).
+  static const String resumeStale = '브랜드 값이 그 뒤에 변경됐어요. 다시 적용하세요';
+
+  /// TRANSITIONAL(spec §20.4.5): 일괄 적용 레거시 0 가드.
+  static String legacyZeroGuard(int count) =>
+      '레거시 0% 매장 $count곳이 있어요. Qoin 설정 허브에서 마이그레이션을 먼저 실행하세요';
+
+  /// 스위치 변경 성공 SnackBar. [scope] 는 store 또는 brand.
+  static String switchChanged(QoinRateScope scope, {required bool enabled}) {
+    final who = scope == QoinRateScope.brand ? '이 브랜드' : '이 매장';
+    return enabled ? '$who의 적립을 다시 시작했어요' : '$who의 적립을 중단했어요';
+  }
+
   /// 실패 분류별 문구. [bulk]/[resume] 로 확정 실패 문구가 달라진다.
-  static String failure(Object e, {bool bulk = false, bool resume = false}) {
+  static String failure(
+    Object e, {
+    bool bulk = false,
+    bool resume = false,
+    bool switchChange = false,
+  }) {
     if (e is QoinRateException && e.isUnknownOutcome) return unknownOutcome;
+    if (e is QoinRateException && e.code == 'failed-precondition') {
+      // TRANSITIONAL(spec §20.4.5): 레거시 0 가드
+      if (e.isLegacyZeroGuard) return legacyZeroGuard(e.legacyZeroCount!);
+      return resume ? resumeStale : bulkInProgress;
+    }
     if (resume) return resumeFailed;
+    if (switchChange) return enabledFailed;
     return bulk ? bulkFailed : saveFailed;
   }
 
@@ -57,8 +86,6 @@ class QoinMessages {
       case QoinRateValueRate(:final tenths):
         final pct = QoinPolicy.formatTenths(tenths);
         return global ? '전역 기본값을 $pct% 로 변경했어요' : '적립률을 $pct% 로 변경했어요';
-      case QoinRateValueStop():
-        return '적립 안 함 (0%) 으로 설정했어요';
       case QoinRateValueInherit():
         return '상위 설정을 따르도록 되돌렸어요';
     }
