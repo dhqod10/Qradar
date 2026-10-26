@@ -106,7 +106,7 @@ class _NearbyError extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: () => ref.invalidate(nearbyStoresProvider),
+              onPressed: () => ref.invalidate(storeSnapshotProvider),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.onPrimary,

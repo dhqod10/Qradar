@@ -4,6 +4,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/presentation/common/q_logo.dart';
 import 'package:qradar/presentation/common/scaffold_with_nav.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/search/search_page.dart';
 
 /// 홈 헤더의 세 가지 상태:
 /// - [full]: 홈 탭 + 스크롤 최상단. 브랜드·인삿말·서치박스 모두 노출
@@ -123,7 +124,7 @@ class HomeHeader extends ConsumerWidget {
                 curve: Curves.easeInOut,
                 opacity: mode == HomeHeaderMode.full ? 1 : 0,
                 child: _HomeSearchBox(
-                  onTap: () => _showSearchComingSoon(context),
+                  onTap: () => _openSearch(context),
                 ),
               ),
             ),
@@ -194,10 +195,10 @@ class HomeHeader extends ConsumerWidget {
     );
   }
 
-  void _showSearchComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('검색 준비 중입니다')));
+  void _openSearch(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+    );
   }
 }
 
@@ -207,7 +208,11 @@ class _HomeSearchBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: '매장이나 메뉴 검색, 탭하면 검색 화면으로 이동',
+      excludeSemantics: true,
+      child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
@@ -239,6 +244,7 @@ class _HomeSearchBox extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }

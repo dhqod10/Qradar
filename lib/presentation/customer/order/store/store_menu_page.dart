@@ -19,13 +19,68 @@ import 'package:qradar/presentation/customer/order/store/widgets/store_menu_head
 import 'package:qradar/presentation/customer/order/store/widgets/sub_category_chips.dart';
 import 'package:shimmer/shimmer.dart';
 
-class StoreMenuPage extends ConsumerWidget {
-  const StoreMenuPage({super.key, required this.store});
+class StoreMenuPage extends ConsumerStatefulWidget {
+  const StoreMenuPage({
+    super.key,
+    required this.store,
+    this.initialMainCategoryCode,
+    this.highlightMenuItemId,
+  });
 
   final StoreEntity store;
 
+  /// 홈 검색에서 진입할 때 미리 선택할 메인 카테고리 id. null = 현행 동작.
+  /// 매장에 해당 카테고리 메뉴가 없으면 `filteredMenuItemsProvider` 가 선택을 무시한다 (기존 폴백).
+  final String? initialMainCategoryCode;
+
+  /// 홈 검색에서 찾은 메뉴 id. 있으면 그 카드에 테두리 + 상단 안내 띠를 그린다 (스크롤 없음).
+  /// 목록에 없으면 `이 매장에서는 판매하지 않는 메뉴일 수 있어요` 띠.
+  final String? highlightMenuItemId;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<StoreMenuPage> createState() => _StoreMenuPageState();
+}
+
+class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
+  /// 이 화면이 `selectedMainCategoryProvider` 를 바꿨는지 (바꿨다면 나갈 때 되돌려 다른 매장으로 새지 않게).
+  bool _appliedInitialCategory = false;
+  bool _highlightDismissed = false;
+  late final ProviderContainer _container;
+
+  StoreEntity get store => widget.store;
+
+  @override
+  void initState() {
+    super.initState();
+    _container = ProviderScope.containerOf(context, listen: false);
+    final code = widget.initialMainCategoryCode;
+    if (code != null) {
+      // 위젯 빌드 중 provider 수정은 금지 -> 첫 프레임 직후 적용. 첫 프레임은 메뉴 stream 로딩(shimmer) 구간이다.
+      Future.microtask(() {
+        if (!mounted) return;
+        _appliedInitialCategory = true;
+        _container.read(selectedMainCategoryProvider.notifier).select(code);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_appliedInitialCategory) {
+      final container = _container;
+      Future.microtask(() {
+        try {
+          container.read(selectedMainCategoryProvider.notifier).select(null);
+        } on StateError {
+          // 앱/스코프 종료 중 container 가 이미 dispose 됨 — 되돌릴 상태가 없다.
+        }
+      });
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final storeId = store.id;
     // 평가 직후 CF 가 갱신한 등급·건수를 헤더 배지에 즉시 반영한다.
     // 진입 시점 스냅샷만 쓰면 평가를 남겨도 `미평가` 로 남아 사용자가
@@ -91,6 +146,16 @@ class StoreMenuPage extends ConsumerWidget {
                   ),
                 ),
               ),
+              if (widget.highlightMenuItemId != null && !_highlightDismissed)
+                SliverToBoxAdapter(
+                  child: _SearchedMenuBand(
+                    foundName: filtered
+                        .where((m) => m.id == widget.highlightMenuItemId)
+                        .map((m) => m.name)
+                        .firstOrNull,
+                    onClose: () => setState(() => _highlightDismissed = true),
+                  ),
+                ),
               if (filtered.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
@@ -115,6 +180,8 @@ class StoreMenuPage extends ConsumerWidget {
                         final item = filtered[i];
                         return MenuItemCard(
                           menuItem: item,
+                          highlighted: !_highlightDismissed &&
+                              item.id == widget.highlightMenuItemId,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => MenuItemDetailPage(
@@ -133,6 +200,68 @@ class StoreMenuPage extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// 검색에서 넘어온 메뉴 안내 띠. 목록에서 찾으면 `검색한 메뉴  {이름}`, 못 찾으면 판매하지 않을 수 있다는 정직한 안내.
+class _SearchedMenuBand extends StatelessWidget {
+  const _SearchedMenuBand({required this.foundName, required this.onClose});
+
+  final String? foundName;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final found = foundName != null;
+    final text = found
+        ? '검색한 메뉴  $foundName'
+        : '이 매장에서는 판매하지 않는 메뉴일 수 있어요';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 40),
+        padding: const EdgeInsets.only(left: 12),
+        decoration: BoxDecoration(
+          color: found
+              ? AppColors.primaryBright.withValues(alpha: 0.12)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              found ? Icons.search_rounded : Icons.info_outline_rounded,
+              size: 16,
+              color: found ? AppColors.primary : AppColors.warning,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textBody,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: '닫기',
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 40),
+              padding: EdgeInsets.zero,
+              onPressed: onClose,
+              icon: const Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

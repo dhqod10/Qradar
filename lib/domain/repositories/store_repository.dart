@@ -15,6 +15,13 @@ abstract class StoreRepository {
     int limit = 10,
   });
 
+  /// 승인 매장 전체(거리 계산 + 가까운 순) — 홈 스냅샷 전용. 반경·개수 절단은 호출 측(파생 provider) 책임.
+  /// 쿼리는 [getNearbyStores] 와 같은 1회 `fetchAll`(100건) — 홈 진입 읽기를 200 -> 100 으로 줄이는 단일 원본.
+  Future<List<StoreEntity>> getApprovedStores({
+    required UserLocation location,
+    int limit = 100,
+  });
+
   /// 선택된 카테고리에 해당하는 매장 조회 (status=approved 필터 적용, T7).
   Future<List<StoreEntity>> getStoresByCategories({
     required List<String> categories,

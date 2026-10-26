@@ -26,6 +26,30 @@ class GradeThresholds {
   static const double orderRadiusKm = 10.0;
   static const int orderStoresLimit = 50;
 
+  // ── 홈 검색 / 추천 전체보기 (docs/tasks/home_search/spec.md §9.3) ─────────
+  // 상수는 이 한 곳에만 둔다 — 리터럴을 위젯에 흩뿌리면 spec §5.3 전환 트리거를 코드에서 찾을 수 없게 된다.
+
+  /// 메뉴 검색 후보 매장 반경 (km).
+  static const double searchRadiusKm = 10.0;
+
+  /// 메뉴 검색 후보 매장 수 (가까운 순 상위). 메뉴 인덱스 쿼리 수의 상한이 된다.
+  static const int menuSearchStoreLimit = 30;
+
+  /// 메뉴 결과 표시 상한 (행).
+  static const int menuSearchResultLimit = 30;
+
+  /// 홈 `맞춤 추천` 미리보기 건수.
+  static const int recommendedPreviewCount = 5;
+
+  /// 최근 검색어 보관 건수 (세션 메모리).
+  static const int recentSearchLimit = 10;
+
+  /// 검색 입력 debounce (ms). 주문 탭 매장 검색과 같다.
+  static const int searchDebounceMs = 250;
+
+  /// 메뉴 검색을 시작하는 최소 글자 수 (정규화 후). 매장 검색은 1글자부터.
+  static const int menuSearchMinQueryLength = 2;
+
   // 기본 위치 (서울 시청) — 위치 권한 거부 시 폴백
   static const double defaultLatitude = 37.5665;
   static const double defaultLongitude = 126.9780;

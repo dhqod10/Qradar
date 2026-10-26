@@ -7,6 +7,9 @@ abstract class MasterMenuItemRepository {
   /// 특정 브랜드의 마스터 메뉴 전체 스트림 (brand 본인 + admin).
   Stream<List<MenuItemEntity>> watchByBrand(String brandId);
 
+  /// 특정 브랜드의 마스터 메뉴 1회 조회 — 홈 검색 메뉴 인덱스 전용. 필터(visible/approved)는 호출 측 책임.
+  Future<List<MenuItemEntity>> fetchBrandMasterMenusOnce(String brandId);
+
   /// status == pending 인 마스터 메뉴 전체 스트림 (collectionGroup query).
   /// admin 승인 큐 전용.
   Stream<List<MenuItemEntity>> watchPendingForAdmin();

@@ -10,6 +10,9 @@ abstract class MenuItemRepository {
   /// brandId != null 인 매장은 case B 머지 결과 반환 (sub-phase 3 활성화).
   Stream<List<MenuItemEntity>> watchByStore(String storeId, {String? brandId});
 
+  /// 개인 매장(brandId==null) 메뉴 1회 조회 — 홈 검색 메뉴 인덱스 전용. 필터는 호출 측 책임.
+  Future<List<MenuItemEntity>> fetchStoreMenusOnce(String storeId);
+
   /// 매장 내 단일 메뉴 stream. 삭제되면 null.
   Stream<MenuItemEntity?> watchById({
     required String storeId,

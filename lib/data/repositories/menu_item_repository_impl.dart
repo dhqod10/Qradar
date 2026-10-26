@@ -42,6 +42,12 @@ class MenuItemRepositoryImpl implements MenuItemRepository {
   static String? _defaultGetter() => null;
 
   @override
+  Future<List<MenuItemEntity>> fetchStoreMenusOnce(String storeId) async {
+    final models = await _dataSource.fetchByStore(storeId);
+    return models.map((m) => m.toEntity()).toList(growable: false);
+  }
+
+  @override
   Stream<List<MenuItemEntity>> watchByStore(String storeId, {String? brandId}) {
     if (brandId != null) {
       // brandId 명시됨 — case B 직행 (owner 측 호출 흐름)

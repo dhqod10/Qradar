@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseException;
+import 'package:qradar/core/errors/permission_denied_exception.dart';
 import 'package:qradar/core/utils/distance_calculator.dart';
 import 'package:qradar/data/datasources/remote/store_remote_data_source.dart';
 import 'package:qradar/data/models/store_model.dart';
@@ -49,6 +51,26 @@ class StoreRepositoryImpl implements StoreRepository {
     return withDistance
         .where((pair) => pair.$2 <= radiusKm)
         .take(limit)
+        .map((pair) => pair.$1.toEntity(distanceKm: pair.$2))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<StoreEntity>> getApprovedStores({
+    required UserLocation location,
+    int limit = 100,
+  }) async {
+    final List<StoreModel> models;
+    try {
+      models = await _dataSource.fetchAll(limit: limit);
+    } on FirebaseException catch (e) {
+      // 비로그인(permission-denied) 은 검색 화면이 로그인 유도로 구분할 수 있게 변환한다.
+      if (e.code == 'permission-denied') throw const PermissionDeniedException();
+      rethrow;
+    }
+    final withDistance = _attachDistance(_filterApproved(models), location);
+    withDistance.sort((a, b) => a.$2.compareTo(b.$2));
+    return withDistance
         .map((pair) => pair.$1.toEntity(distanceKm: pair.$2))
         .toList(growable: false);
   }

@@ -25,6 +25,15 @@ class MenuItemRemoteDataSource {
             .toList(growable: false));
   }
 
+  /// 매장 메뉴 1회 조회 (홈 검색 메뉴 인덱스용). [streamByStore] 와 **같은 쿼리**(`orderBy('displayOrder')`)
+  /// — `where` / `collectionGroup` 을 쓰지 않으므로 새 인덱스가 필요 없다.
+  Future<List<MenuItemModel>> fetchByStore(String storeId) async {
+    final snap = await _menuItems(storeId).orderBy('displayOrder').get();
+    return snap.docs
+        .map((doc) => MenuItemModel.fromFirestore(doc, storeId: storeId))
+        .toList(growable: false);
+  }
+
   /// 매장 내 단일 메뉴 stream. 삭제되면 null.
   Stream<MenuItemModel?> streamById({
     required String storeId,

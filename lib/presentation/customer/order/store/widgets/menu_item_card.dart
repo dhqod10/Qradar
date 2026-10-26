@@ -5,10 +5,18 @@ import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 
 class MenuItemCard extends StatelessWidget {
-  const MenuItemCard({super.key, required this.menuItem, required this.onTap});
+  const MenuItemCard({
+    super.key,
+    required this.menuItem,
+    required this.onTap,
+    this.highlighted = false,
+  });
 
   final MenuItemEntity menuItem;
   final VoidCallback onTap;
+
+  /// 홈 검색에서 넘어온 "찾은 메뉴" 표시 — 테두리만 `primary` 1.5px (스크롤 이동 없음).
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
@@ -126,7 +134,9 @@ class MenuItemCard extends StatelessWidget {
     return BoxDecoration(
       color: AppColors.surfaceElevated,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.border),
+      border: highlighted
+          ? Border.all(color: AppColors.primary, width: 1.5)
+          : Border.all(color: AppColors.border),
       boxShadow: [
         BoxShadow(
           color: AppColors.primary.withValues(alpha: 0.04),

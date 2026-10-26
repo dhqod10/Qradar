@@ -1,50 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/constants/grade_thresholds.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
+import 'package:qradar/presentation/common/store_list_states.dart';
 import 'package:qradar/presentation/customer/home/providers/home_providers.dart';
+import 'package:qradar/presentation/customer/home/providers/recommended_stores_providers.dart';
+import 'package:qradar/presentation/customer/home/recommended_stores_page.dart';
 import 'package:qradar/presentation/customer/home/widgets/section_title.dart';
 import 'package:qradar/presentation/customer/home/widgets/store_card.dart';
 import 'package:qradar/presentation/customer/order/store/store_menu_page.dart';
-import 'package:shimmer/shimmer.dart';
 
+/// 홈 `맞춤 추천` — 상위 [GradeThresholds.recommendedPreviewCount] 건 미리보기.
+/// 헤더 건수 / `전체보기` / `더 보기` 는 모두 [recommendedTotalCountProvider] 한 곳에서 나온다.
 class RecommendedStoresSection extends ConsumerWidget {
   const RecommendedStoresSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final stores = ref.watch(filteredStoresProvider);
+    final stores = ref.watch(recommendedStoresPreviewProvider);
+    final total = ref.watch(recommendedTotalCountProvider);
+    final hasMore =
+        total != null && total > GradeThresholds.recommendedPreviewCount;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionTitle(
-          title: stores.maybeWhen(
-            data: (list) => '맞춤 추천 (${list.length})',
-            orElse: () => '맞춤 추천',
-          ),
-          trailing: TextButton(
-            onPressed: () => _showComingSoon(context),
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(0, 0),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text(
-              '전체보기',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.info,
-              ),
-            ),
-          ),
+          // 로딩·에러에는 건수를 그리지 않는다 ('(0)' 오독 방지).
+          title: total == null ? '맞춤 추천' : '맞춤 추천 ($total)',
+          trailing: hasMore ? _SeeAllButton(onTap: () => _openAll(context)) : null,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: stores.when(
             data: (list) {
-              if (list.isEmpty) return const _EmptyRecommended();
+              if (list.isEmpty) return const RecommendedEmptyState();
               return Column(
                 children: [
                   for (var i = 0; i < list.length; i++) ...[
@@ -54,20 +45,30 @@ class RecommendedStoresSection extends ConsumerWidget {
                     ),
                     if (i != list.length - 1) const SizedBox(height: 12),
                   ],
+                  if (hasMore) ...[
+                    const SizedBox(height: 12),
+                    _MoreButton(
+                      remaining:
+                          total - GradeThresholds.recommendedPreviewCount,
+                      onTap: () => _openAll(context),
+                    ),
+                  ],
                 ],
               );
             },
-            loading: () => const _RecommendedLoading(),
-            error: (e, _) => _RecommendedError(message: '$e'),
+            loading: () => const StoreListSkeleton(),
+            error: (_, _) => StoreListError(
+              onRetry: () => ref.invalidate(storeSnapshotProvider),
+            ),
           ),
         ),
       ],
     );
   }
 
-  void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('준비 중입니다')),
+  void _openAll(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const RecommendedStoresPage()),
     );
   }
 
@@ -80,24 +81,28 @@ class RecommendedStoresSection extends ConsumerWidget {
   }
 }
 
-class _RecommendedLoading extends StatelessWidget {
-  const _RecommendedLoading();
+/// 헤더 `전체보기` — 터치 영역 최소 44x44.
+class _SeeAllButton extends StatelessWidget {
+  const _SeeAllButton({required this.onTap});
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        3,
-        (i) => Padding(
-          padding: EdgeInsets.only(bottom: i == 2 ? 0 : 12),
-          child: Shimmer.fromColors(
-            baseColor: AppColors.surface,
-            highlightColor: AppColors.surfaceElevated,
-            child: Container(
-              height: 96,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: const SizedBox(
+        height: 44,
+        child: Center(
+          widthFactor: 1,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '전체보기',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.info,
               ),
             ),
           ),
@@ -107,81 +112,50 @@ class _RecommendedLoading extends StatelessWidget {
   }
 }
 
-class _RecommendedError extends ConsumerWidget {
-  final String message;
-  const _RecommendedError({required this.message});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
-      child: Center(
-        child: Column(
-          children: [
-            const Icon(Icons.error_outline, size: 40, color: AppColors.error),
-            const SizedBox(height: 12),
-            const Text(
-              '매장 정보를 불러올 수 없어요',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textHeading,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textMuted,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => ref.invalidate(filteredStoresProvider),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text(
-                '다시 시도',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyRecommended extends StatelessWidget {
-  const _EmptyRecommended();
+/// 5건 아래 `맞춤 추천 N곳 더 보기` 버튼 (전체 > 5 일 때만).
+class _MoreButton extends StatelessWidget {
+  const _MoreButton({required this.remaining, required this.onTap});
+  final int remaining;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 32),
-      child: Center(
-        child: Column(
-          children: [
-            Icon(Icons.filter_alt_off_outlined, size: 40, color: AppColors.textMuted),
-            SizedBox(height: 12),
-            Text(
-              '선택한 카테고리에 해당하는 매장이 없습니다',
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.textBody,
-                fontWeight: FontWeight.w500,
-              ),
+    return Semantics(
+      button: true,
+      label: '맞춤 추천 $remaining곳 더 보기, 버튼',
+      excludeSemantics: true,
+      child: Material(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 48,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
             ),
-          ],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '맞춤 추천 $remaining곳 더 보기',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textBody,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

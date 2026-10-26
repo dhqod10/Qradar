@@ -114,10 +114,15 @@ class RecommendedStoreCard extends StatelessWidget {
   final StoreEntity store;
   final VoidCallback onTap;
 
+  /// 이름이 아니라 **주소로만** 걸린 검색 결과에 매칭된 주소를 보조 표기한다.
+  /// null(기본)이면 현행 2줄 레이아웃 그대로 — 3줄 배치는 값이 있을 때만.
+  final String? subtitle;
+
   const RecommendedStoreCard({
     super.key,
     required this.store,
     required this.onTap,
+    this.subtitle,
   });
 
   @override
@@ -169,6 +174,17 @@ class RecommendedStoreCard extends StatelessWidget {
                         color: AppColors.textHeading,
                       ),
                     ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
                     Row(
                       children: [
                         const Icon(

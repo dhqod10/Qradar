@@ -81,10 +81,10 @@ final quickReorderCandidatesProvider =
   return ref.watch(getQuickReorderCandidatesUseCaseProvider).call();
 });
 
-/// 매장 id → StoreEntity lookup. nearbyStoresProvider 결과 기반.
+/// 매장 id → StoreEntity lookup. 스냅샷(거리 포함 승인 매장 전체) 기반.
 /// FrequentMenuCard 의 매장 진입에서도 사용.
 final storesByIdProvider = Provider<Map<String, StoreEntity>>((ref) {
-  final stores = ref.watch(nearbyStoresProvider).asData?.value ??
+  final stores = ref.watch(storeSnapshotProvider).asData?.value ??
       const <StoreEntity>[];
   return {for (final s in stores) s.id: s};
 });

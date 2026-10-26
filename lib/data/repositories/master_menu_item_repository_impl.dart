@@ -28,6 +28,12 @@ class MasterMenuItemRepositoryImpl implements MasterMenuItemRepository {
         _menuOverrideRepository = menuOverrideRepository;
 
   @override
+  Future<List<MenuItemEntity>> fetchBrandMasterMenusOnce(String brandId) async {
+    final models = await _dataSource.fetchAllByBrand(brandId);
+    return models.map((m) => m.toEntity()).toList(growable: false);
+  }
+
+  @override
   Stream<List<MenuItemEntity>> watchByBrand(String brandId) {
     return _dataSource.streamByBrand(brandId).map(
           (models) =>

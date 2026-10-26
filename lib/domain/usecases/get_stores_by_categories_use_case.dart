@@ -15,4 +15,16 @@ class GetStoresByCategoriesUseCase {
       location: location,
     );
   }
+
+  /// 스냅샷에서 카테고리 중 하나라도 가진 매장 — [call] 과 같은 규칙의 순수 버전 (읽기 0).
+  /// 선택이 비면 빈 목록 (기존 동작과 동일). 입력 순서(가까운 순)를 보존한다.
+  static List<StoreEntity> filterByCategories(
+    List<StoreEntity> stores,
+    Set<String> categories,
+  ) {
+    if (categories.isEmpty) return const [];
+    return stores
+        .where((s) => s.menuCategories.any(categories.contains))
+        .toList(growable: false);
+  }
 }

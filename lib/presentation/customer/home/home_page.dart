@@ -131,8 +131,8 @@ class _HomePageState extends ConsumerState<HomePage> {
       // pull-to-refresh 중 대화상자 재노출은 방해되므로 폴백 유지.
       notifier.declineAndFallback();
     }
-    ref.invalidate(nearbyStoresProvider);
-    ref.invalidate(filteredStoresProvider);
+    // 주변/필터/추천은 모두 스냅샷 파생이므로 스냅샷 하나만 무효화하면 된다.
+    ref.invalidate(storeSnapshotProvider);
     await ref.read(userLocationProvider.future);
   }
 }

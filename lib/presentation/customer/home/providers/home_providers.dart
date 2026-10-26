@@ -12,6 +12,7 @@ import 'package:qradar/domain/entities/user_location.dart';
 import 'package:qradar/domain/repositories/location_repository.dart';
 import 'package:qradar/domain/repositories/store_repository.dart';
 import 'package:qradar/domain/usecases/check_location_permission_use_case.dart';
+import 'package:qradar/domain/usecases/get_approved_stores_use_case.dart';
 import 'package:qradar/domain/usecases/get_current_location_use_case.dart';
 import 'package:qradar/domain/usecases/get_nearby_stores_use_case.dart';
 import 'package:qradar/domain/usecases/get_stores_by_categories_use_case.dart';
@@ -32,6 +33,10 @@ final storeRepositoryProvider = Provider<StoreRepository>(
 
 final locationRepositoryProvider = Provider<LocationRepository>(
   (ref) => LocationRepositoryImpl(ref.watch(_locationDataSourceProvider)),
+);
+
+final getApprovedStoresUseCaseProvider = Provider<GetApprovedStoresUseCase>(
+  (ref) => GetApprovedStoresUseCase(ref.watch(storeRepositoryProvider)),
 );
 
 final getNearbyStoresUseCaseProvider = Provider<GetNearbyStoresUseCase>(
@@ -92,11 +97,18 @@ class UserLocationNotifier extends AsyncNotifier<UserLocation> {
   }
 }
 
-/// 주변 매장(등급 상관없이 5km 이내, 가까운 순).
-final nearbyStoresProvider = FutureProvider<List<StoreEntity>>((ref) async {
+/// 승인 매장 스냅샷 — 홈 진입 시 **단 한 번** 읽는다 (`fetchAll(100)`).
+/// 주변 / 필터 / 추천 전체보기 / 검색은 모두 이 값에서 파생한다. 당겨서 새로고침은 이것만 invalidate.
+final storeSnapshotProvider = FutureProvider<List<StoreEntity>>((ref) async {
   final location = await ref.watch(userLocationProvider.future);
-  final useCase = ref.watch(getNearbyStoresUseCaseProvider);
-  return useCase(location: location);
+  return ref.watch(getApprovedStoresUseCaseProvider)(location: location);
+});
+
+/// 주변 매장(반경 [GradeThresholds.nearbyRadiusKm] 이내, 가까운 순, 10건). 스냅샷 파생 — 추가 읽기 없음.
+final nearbyStoresProvider = Provider<AsyncValue<List<StoreEntity>>>((ref) {
+  return ref
+      .watch(storeSnapshotProvider)
+      .whenData(GetNearbyStoresUseCase.withinRadius);
 });
 
 /// 선택된 카테고리(다중 선택). 초기값: ["추천메뉴"]. 최소 1개 유지.
@@ -122,10 +134,10 @@ class SelectedCategoriesNotifier extends Notifier<Set<String>> {
   }
 }
 
-/// 선택된 카테고리 기반 필터링 매장. 카테고리 변경 시 자동 재조회.
-final filteredStoresProvider = FutureProvider<List<StoreEntity>>((ref) async {
-  final categories = ref.watch(selectedCategoriesProvider).toList();
-  final location = await ref.watch(userLocationProvider.future);
-  final useCase = ref.watch(getStoresByCategoriesUseCaseProvider);
-  return useCase(categories: categories, location: location);
+/// 선택된 카테고리 기반 필터링 매장. 스냅샷 파생이라 토글해도 읽기가 발생하지 않는다.
+final filteredStoresProvider = Provider<AsyncValue<List<StoreEntity>>>((ref) {
+  final categories = ref.watch(selectedCategoriesProvider);
+  return ref
+      .watch(storeSnapshotProvider)
+      .whenData((all) => GetStoresByCategoriesUseCase.filterByCategories(all, categories));
 });
