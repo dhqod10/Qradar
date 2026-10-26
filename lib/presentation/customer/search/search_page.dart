@@ -15,6 +15,7 @@ import 'package:qradar/presentation/customer/home/providers/recommendation_provi
 import 'package:qradar/presentation/customer/home/widgets/section_title.dart';
 import 'package:qradar/presentation/customer/home/widgets/store_card.dart';
 import 'package:qradar/presentation/customer/order/store/store_menu_page.dart';
+import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
 import 'package:qradar/presentation/customer/search/providers/search_providers.dart';
 import 'package:qradar/presentation/customer/search/widgets/menu_search_result_tile.dart';
 import 'package:qradar/presentation/customer/search/widgets/recent_search_list.dart';
@@ -241,7 +242,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           ..._storeSection(vm, q),
           const SizedBox(height: 12),
           SearchOneLiner("'${_echo(q)}' 와 일치하는 메뉴가 없어요"),
-          const MenuScopeNotice(),
+          MenuScopeNotice(searchedStoreCount: vm.menu.searchedStoreCount),
         ];
 
       case SearchView.s6StoresMenuError:
@@ -275,7 +276,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         ];
 
       case SearchView.s10UnifiedEmpty:
-        return [SearchUnifiedEmpty(query: q)];
+        return [
+          SearchUnifiedEmpty(
+            query: q,
+            searchedStoreCount: vm.menu.searchedStoreCount,
+          ),
+        ];
 
       case SearchView.s11NoStoresMenuError:
         return [
@@ -287,7 +293,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
       case SearchView.s12UnifiedEmptyPartial:
         return [
-          SearchUnifiedEmpty(query: q),
+          SearchUnifiedEmpty(
+            query: q,
+            searchedStoreCount: vm.menu.searchedStoreCount,
+          ),
           MenuPartialFailureRow(
             onRetry: _retryMenu,
             retrying: vm.menuRefreshing,
@@ -299,7 +308,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   /// 질의 echo — 최대 20자 후 말줄임.
   String _echo(String q) => q.length > 20 ? '${q.substring(0, 20)}…' : q;
 
-  void _retryMenu() => ref.invalidate(menuSearchIndexProvider);
+  void _retryMenu() {
+    ref.invalidate(menuSearchIndexProvider);
+    // 결과 필터가 쓰는 활성 카테고리도 실패했을 수 있다.
+    ref.invalidate(mainCategoriesActiveProvider);
+  }
 
   Widget _storeErrorBlock(Object? error) {
     if (error is PermissionDeniedException) {
@@ -375,7 +388,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         SearchOneLiner("'${_echo(q)}' 와 일치하는 메뉴가 없어요"),
       if (menu.isPartial)
         MenuPartialFailureRow(onRetry: _retryMenu, retrying: vm.menuRefreshing),
-      const MenuScopeNotice(),
+      MenuScopeNotice(searchedStoreCount: menu.searchedStoreCount),
     ];
   }
 }

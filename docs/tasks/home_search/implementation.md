@@ -2,6 +2,7 @@
 
 | 일자 | 작성자 | 내용 |
 |---|---|---|
+| 2026-10-26 | developer | 검증 FAIL 3건 + 부수 5건 수정 반영(§11). |
 | 2026-10-26 | developer | 최초 작성. spec §9 · design §1~§10 기준 구현. 확정 결정(D1~D7, N1 확장안) 변경 없음 |
 
 ## 1. 구현 요약
@@ -123,3 +124,26 @@
 1. `selectedMainCategoryProvider` 가 전역이라 **검색 경로가 아닌** 기존 진입(홈/주문 탭)에서는 이전 선택이 다른 매장으로 새는 기존 동작이 남아 있다 (`filteredMenuItemsProvider` 가 없는 카테고리를 무시해 빈 화면은 피함). family 화 또는 화면 단위 reset 은 별도 과제.
 2. `storesByIdProvider` 가 스냅샷 기반이 되어 20km 밖 자주 찾는 매장도 lookup 된다 (spec 이 인정한 부수 개선) — 홈 `자주 찾는 매장` 노출 대상이 늘 수 있다.
 3. 100건 절단(D7)은 손대지 않았다. 스냅샷이 `fetchAll(100)` 상한에 묶이므로 승인 매장 80곳 트리거(`docs/backlog.md`) 도달 시 검색·추천이 함께 영향받는다.
+
+## 11. 검증 FAIL 수정 (test_report.md 후속)
+
+테스트가 provider 를 `overrideWith` 하거나 `AsyncValue` 를 손으로 만들면 Riverpod 3 자동 재시도 · `whenData` 변환 · 전역 UI 상태 누수가 실행되지 않는다. 회귀 테스트는 **I/O 경계만 대체하고 실제 provider 그래프·실제 화면·실제 타이머**로 만들었다 (`test/presentation/home_search_real_graph_test.dart`).
+
+| 항목 | 수정 | 위치 |
+|---|---|---|
+| FAIL-1 띠 오경보 | 띠의 `foundName` 을 `filtered` 가 아니라 **머지 목록 전체(`allItems`)** 에서 F5 단일 함수로 찾는다. 초기 카테고리 적용 시 `selectedSubCategoryIdProvider.clear()` 도 호출(같은 메인이면 `select` 가 early return 하던 경로). 활성 카테고리 미도달이면 띠를 그리지 않는다 | `store_menu_page.dart` |
+| FAIL-2 비활성 카테고리 | **양쪽을 한 함수로 통합**: `isMenuShownOnStoreScreen`(`core/utils/store_menu_visibility.dart`)를 `filteredMenuItemsProvider` 와 검색 결과 필터가 같이 쓴다. 검색 결과에서 매장 화면에 안 보일 메뉴를 빼고, `effectiveMain` 후보도 "보이는 메뉴의 카테고리" 로 한정해 비활성 카테고리가 선택돼도 매장의 다른 메뉴가 사라지지 않는다 | `store_menu_providers.dart`, `search_providers.dart` |
+| FAIL-3 자동 재시도 | `storeSnapshotProvider` / `menuSearchIndexProvider` 에 `retry: searchReadRetry`(일시 오류 1회·0.8초, `PermissionDeniedException` 은 즉시 확정). 범위 판단은 backlog B-1 | `home_providers.dart` |
+| ① 범위 안내 | 인덱스가 `searchedStoreCount` 를 싣고, 문구는 그 값을 말한다. 0곳이면 별도 문구 | `menu_search_hit_entity.dart`, `search_state_widgets.dart` |
+| ② L1 | 안내 둘째 줄에 `매장 한정 메뉴` 한 구절 | `search_state_widgets.dart` |
+| ③ F5 | design §1-e 추가. 판정 통합은 위 FAIL-2 | `design.md` |
+| ④ 목적지 에러 | `StoreMenuPage._ErrorView` 의 `err.toString()` 노출 제거 -> `잠시 후 다시 시도해 주세요` | `store_menu_page.dart` |
+| ⑤ 새로고침 2회 | `refreshHomeStoreSnapshot` — 권한 허용이면 `allowAndFetch` 의 재빌드에 맡기고 invalidate 하지 않는다(거부/폴백 경로만 invalidate). 컨테이너에서 단순 연속 호출은 재빌드가 합쳐져 재현되지 않았고, 두 호출 사이에 한 번 양보(`Future.delayed(zero)`)가 있으면 3회가 나오는 것으로 재현·검증 | `home_providers.dart`, `home_page.dart` |
+
+### 문서 정정
+- 커밋 `38f9319` 메시지의 "띠가 L2·L5 를 알리는 유일한 지점" 은 틀렸다. **띠는 L2(머지 목록에 없음)만** 알린다. **L5(품절)는 `MenuItemCard` 의 품절 배지**가 알린다 (design §1-e F5-4).
+- §3-7 의 "첫 프레임은 shimmer 구간" 은 메뉴 스트림이 이미 살아 있는 매장에서는 틀렸다. 그 경우 첫 프레임은 전역에 남은 이전 카테고리로 그려질 수 있으나 띠는 목록 필터와 무관해져 오경보는 나오지 않는다 (카드 테두리는 microtask 보정 프레임부터).
+
+### 남은 것
+- 첫 프레임 1프레임 동안 이전 카테고리 목록이 보일 수 있다 (근본 원인은 전역 선택 상태, backlog B-2).
+- 전역 재시도 정책은 사용자 결정 대기 (backlog B-1).

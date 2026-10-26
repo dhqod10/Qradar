@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/constants/grade_thresholds.dart';
 import 'package:qradar/core/constants/menu_categories.dart';
+import 'package:qradar/core/errors/permission_denied_exception.dart';
 import 'package:qradar/data/datasources/remote/location_data_source.dart';
 import 'package:qradar/data/datasources/remote/store_remote_data_source.dart';
 import 'package:qradar/data/repositories/location_repository_impl.dart';
@@ -97,12 +98,41 @@ class UserLocationNotifier extends AsyncNotifier<UserLocation> {
   }
 }
 
+/// 읽기 실패 자동 재시도 정책 (홈 스냅샷 · 메뉴 인덱스 전용).
+///
+/// Riverpod 3 기본값은 10회·약 38초라 그동안 사용자는 정상 로딩으로 보이는 skeleton 만 본다 (design ⓑ 표가
+/// 보증한 "실패 시 보이는 것" 이 38초 뒤에야 성립). 일시 오류는 **한 번만** 0.8초 뒤 다시 시도하고,
+/// 권한 거부는 재시도해도 같으므로 즉시 에러로 확정한다. 그 뒤는 `다시 시도` 버튼이 맡는다.
+Duration? searchReadRetry(int retryCount, Object error) {
+  if (error is PermissionDeniedException) return null;
+  return retryCount < 1 ? const Duration(milliseconds: 800) : null;
+}
+
 /// 승인 매장 스냅샷 — 홈 진입 시 **단 한 번** 읽는다 (`fetchAll(100)`).
 /// 주변 / 필터 / 추천 전체보기 / 검색은 모두 이 값에서 파생한다. 당겨서 새로고침은 이것만 invalidate.
-final storeSnapshotProvider = FutureProvider<List<StoreEntity>>((ref) async {
-  final location = await ref.watch(userLocationProvider.future);
-  return ref.watch(getApprovedStoresUseCaseProvider)(location: location);
-});
+final storeSnapshotProvider = FutureProvider<List<StoreEntity>>(
+  (ref) async {
+    final location = await ref.watch(userLocationProvider.future);
+    return ref.watch(getApprovedStoresUseCaseProvider)(location: location);
+  },
+  retry: searchReadRetry,
+);
+
+/// 당겨서 새로고침 — 스냅샷을 **한 번만** 다시 읽는다.
+/// 권한이 있으면 `allowAndFetch` 가 위치 상태를 바꿔 스냅샷을 이미 다시 만들므로 invalidate 를 또 부르지 않는다
+/// (불필요한 2회 읽기 방지). 폴백 경로는 위치 값이 그대로일 수 있어 invalidate 로 보장한다.
+Future<void> refreshHomeStoreSnapshot({
+  required UserLocationNotifier notifier,
+  required bool permissionGranted,
+  required void Function() invalidateSnapshot,
+}) async {
+  if (permissionGranted) {
+    await notifier.allowAndFetch();
+  } else {
+    notifier.declineAndFallback();
+    invalidateSnapshot();
+  }
+}
 
 /// 주변 매장(반경 [GradeThresholds.nearbyRadiusKm] 이내, 가까운 순, 10건). 스냅샷 파생 — 추가 읽기 없음.
 final nearbyStoresProvider = Provider<AsyncValue<List<StoreEntity>>>((ref) {

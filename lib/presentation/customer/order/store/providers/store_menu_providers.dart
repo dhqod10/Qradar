@@ -1,4 +1,5 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/utils/store_menu_visibility.dart';
 import 'package:qradar/data/datasources/remote/master_menu_item_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/menu_item_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/menu_override_remote_data_source.dart';
@@ -206,14 +207,28 @@ final filteredMenuItemsProvider =
     data: (items) {
       // selectedMain 이 매장에 없는 카테고리면 자동 무시 (예: 다른 매장에서
       // 선택했던 카테고리가 NotifierProvider 에 남아있는 경우 빈 화면 방지).
-      final storeMains = items.map((m) => m.mainCategoryCode).toSet();
+      // 매장 화면에 실제로 보이는 메뉴(F5 단일 판정)의 카테고리만 후보로 본다 — 비활성 카테고리를 선택해
+      // 매장의 다른 메뉴까지 전부 사라지는 것을 막는다.
+      final storeMains = items
+          .where((m) => isMenuShownOnStoreScreen(
+                visible: m.visible,
+                mainCategoryCode: m.mainCategoryCode,
+                activeCategoryIds: activeCategories,
+              ))
+          .map((m) => m.mainCategoryCode)
+          .toSet();
       final effectiveMain =
           (main != null && storeMains.contains(main)) ? main : null;
       return items.where((m) {
         // 비활성(visible=false) 메뉴 제외 — 개인 매장(case A) 흐름은 repository
         // 단에서 필터링이 없어 customer 측에서 직접 필터.
-        if (!m.visible) return false;
-        if (!activeCategories.contains(m.mainCategoryCode)) return false;
+        if (!isMenuShownOnStoreScreen(
+          visible: m.visible,
+          mainCategoryCode: m.mainCategoryCode,
+          activeCategoryIds: activeCategories,
+        )) {
+          return false;
+        }
         if (effectiveMain != null && m.mainCategoryCode != effectiveMain) {
           return false;
         }

@@ -1,12 +1,14 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/constants/grade_thresholds.dart';
 import 'package:qradar/core/utils/search_normalizer.dart';
+import 'package:qradar/core/utils/store_menu_visibility.dart';
 import 'package:qradar/domain/entities/menu_search_hit_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/usecases/search_menu_items_use_case.dart';
 import 'package:qradar/domain/usecases/search_stores_use_case.dart';
 import 'package:qradar/presentation/brand/providers/brand_di_providers.dart';
 import 'package:qradar/presentation/customer/home/providers/home_providers.dart';
+import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
 import 'package:qradar/presentation/customer/order/store/providers/store_menu_providers.dart';
 
 // ── 질의 ─────────────────────────────────────────────────────────────────
@@ -71,7 +73,7 @@ final menuSearchIndexProvider = FutureProvider<MenuSearchIndex>((ref) async {
   return ref
       .read(searchMenuItemsUseCaseProvider)
       .buildIndex(candidateStores: candidates);
-});
+}, retry: searchReadRetry);
 
 /// 메뉴 검색 결과 — 인덱스 + 질의. [total] 은 상한 적용 전 일치 수, [rows] 는 최대 `menuSearchResultLimit`.
 class MenuSearchResults {
@@ -79,6 +81,7 @@ class MenuSearchResults {
     required this.rows,
     required this.total,
     this.failedSourceCount = 0,
+    this.searchedStoreCount = 0,
   });
 
   static const MenuSearchResults empty = MenuSearchResults(rows: [], total: 0);
@@ -86,6 +89,9 @@ class MenuSearchResults {
   final List<MenuSearchHitEntity> rows;
   final int total;
   final int failedSourceCount;
+
+  /// 실제로 메뉴를 찾아본 후보 매장 수 — 범위 안내 문구의 근거 (고정 숫자를 말하지 않는다).
+  final int searchedStoreCount;
 
   bool get isPartial => failedSourceCount > 0;
   bool get isTruncated => total > rows.length;
@@ -98,9 +104,37 @@ final menuSearchResultsProvider =
       if (q.length < GradeThresholds.menuSearchMinQueryLength) {
         return const AsyncData(MenuSearchResults.empty);
       }
-      return ref.watch(menuSearchIndexProvider).whenData((index) {
+      final indexAsync = ref.watch(menuSearchIndexProvider);
+      if (indexAsync.hasError && !indexAsync.hasValue) {
+        return AsyncError(
+          indexAsync.error!,
+          indexAsync.stackTrace ?? StackTrace.empty,
+        );
+      }
+      // F5 단일 판정: 매장 화면에 보이지 않을 메뉴(비활성 카테고리 등)는 결과에서 뺀다.
+      // 활성 카테고리를 모르는 동안 행을 먼저 보여주면 나중에 사라질 수 있으므로 로딩으로 둔다.
+      final activeAsync = ref.watch(mainCategoriesActiveProvider);
+      if (!activeAsync.hasValue) {
+        return activeAsync.hasError
+            ? AsyncError(
+                activeAsync.error!,
+                activeAsync.stackTrace ?? StackTrace.empty,
+              )
+            : const AsyncLoading();
+      }
+      final activeIds = activeAsync.requireValue.map((c) => c.id).toSet();
+      return indexAsync.whenData((index) {
+        final shown = index.hits
+            .where(
+              (h) => isMenuShownOnStoreScreen(
+                visible: true, // 인덱스가 visible 메뉴만 담는다 (buildIndex 필터)
+                mainCategoryCode: h.mainCategoryCode,
+                activeCategoryIds: activeIds,
+              ),
+            )
+            .toList(growable: false);
         final all = SearchMenuItemsUseCase.filter(
-          index: index.hits,
+          index: shown,
           normalizedQuery: q,
         );
         return MenuSearchResults(
@@ -109,6 +143,7 @@ final menuSearchResultsProvider =
               .toList(growable: false),
           total: all.length,
           failedSourceCount: index.failedSourceCount,
+          searchedStoreCount: index.searchedStoreCount,
         );
       });
     });

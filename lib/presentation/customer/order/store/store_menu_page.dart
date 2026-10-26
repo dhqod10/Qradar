@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/errors/unauthenticated_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/store_menu_visibility.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/sub_category_entity.dart';
 import 'package:qradar/presentation/common/favorite_login_required_dialog.dart';
@@ -11,6 +12,7 @@ import 'package:qradar/presentation/customer/cart/cart_page.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/order/favorites/providers/favorites_providers.dart';
 import 'package:qradar/presentation/customer/order/menu/menu_item_detail_page.dart';
+import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
 import 'package:qradar/presentation/customer/order/store/providers/store_menu_providers.dart';
 import 'package:qradar/presentation/customer/review/providers/store_review_providers.dart';
 import 'package:qradar/presentation/customer/order/store/widgets/main_category_tabs.dart';
@@ -60,6 +62,8 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
         if (!mounted) return;
         _appliedInitialCategory = true;
         _container.read(selectedMainCategoryProvider.notifier).select(code);
+        // 같은 메인이 이미 선택돼 있으면 select 가 early return 해 서브 선택이 남는다 -> 직접 비운다.
+        _container.read(selectedSubCategoryIdProvider.notifier).clear();
       });
     }
   }
@@ -95,6 +99,12 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
     final availableSubIds =
         ref.watch(storeAvailableSubCategoryIdsProvider(storeId));
     final filtered = ref.watch(filteredMenuItemsProvider(storeId));
+    final activeCategoryIds = ref
+        .watch(mainCategoriesActiveProvider)
+        .asData
+        ?.value
+        .map((c) => c.id)
+        .toSet();
     final subCategoriesAsync = selectedMain == null
         ? const AsyncValue<List<SubCategoryEntity>>.data([])
         : ref.watch(subCategoriesForStoreProvider(
@@ -111,7 +121,6 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
         loading: () => _LoadingShimmer(store: liveStore),
         error: (err, _) => _ErrorView(
           store: liveStore,
-          message: err.toString(),
           onRetry: () => ref.invalidate(storeMenuItemsProvider(storeId)),
         ),
         data: (allItems) {
@@ -146,11 +155,23 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
                   ),
                 ),
               ),
-              if (widget.highlightMenuItemId != null && !_highlightDismissed)
+              if (widget.highlightMenuItemId != null &&
+                  !_highlightDismissed &&
+                  activeCategoryIds != null)
                 SliverToBoxAdapter(
                   child: _SearchedMenuBand(
-                    foundName: filtered
-                        .where((m) => m.id == widget.highlightMenuItemId)
+                    // "이 매장이 이 메뉴를 파는가" 는 카테고리 탭·서브 필터와 무관하다 -> 머지 목록 전체(allItems)
+                    // 에서 F5 단일 판정으로 찾는다. 현재 탭에 안 보여도 오경보를 내지 않는다.
+                    foundName: allItems
+                        .where(
+                          (m) =>
+                              m.id == widget.highlightMenuItemId &&
+                              isMenuShownOnStoreScreen(
+                                visible: m.visible,
+                                mainCategoryCode: m.mainCategoryCode,
+                                activeCategoryIds: activeCategoryIds,
+                              ),
+                        )
                         .map((m) => m.name)
                         .firstOrNull,
                     onClose: () => setState(() => _highlightDismissed = true),
@@ -488,11 +509,9 @@ class _LoadingShimmer extends StatelessWidget {
 class _ErrorView extends StatelessWidget {
   const _ErrorView({
     required this.store,
-    required this.message,
     required this.onRetry,
   });
   final StoreEntity store;
-  final String message;
   final VoidCallback onRetry;
 
   @override
@@ -521,6 +540,11 @@ class _ErrorView extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       color: AppColors.textHeading,
                     ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '잠시 후 다시 시도해 주세요',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(

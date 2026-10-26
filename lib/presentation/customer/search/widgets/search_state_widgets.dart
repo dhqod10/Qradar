@@ -280,21 +280,24 @@ class MenuPartialFailureRow extends StatelessWidget {
 
 /// 섹션 하단 고정 범위 안내 (F2-5). 로딩·에러에서는 그리지 않는다.
 class MenuScopeNotice extends StatelessWidget {
-  const MenuScopeNotice({super.key});
+  const MenuScopeNotice({super.key, required this.searchedStoreCount});
+
+  /// 실제로 메뉴를 찾아본 매장 수 (인덱스가 알려준 값).
+  final int searchedStoreCount;
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.only(top: 12),
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '가까운 매장 ${GradeThresholds.menuSearchStoreLimit}곳의 메뉴에서 찾았어요',
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            menuScopeSentence(searchedStoreCount),
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
-          Text(
-            '가격과 판매 여부는 매장 화면에서 확인해 주세요',
+          const Text(
+            menuScopeCaveat,
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ],
@@ -303,10 +306,25 @@ class MenuScopeNotice extends StatelessWidget {
   }
 }
 
+/// 범위 안내 — **실제 검색한 매장 수**를 말한다 (고정 숫자 금지). 0곳이면 찾지 않았다고 말한다.
+String menuScopeSentence(int searchedStoreCount) {
+  final radius = GradeThresholds.searchRadiusKm.toInt();
+  if (searchedStoreCount <= 0) return '${radius}km 이내에 메뉴를 찾아볼 매장이 없어요';
+  return '가까운 매장 $searchedStoreCount곳(${radius}km 이내)의 메뉴에서 찾았어요';
+}
+
+/// 검색이 알 수 없는 것: 가격·판매 여부(override) 와 브랜드 매장의 매장 한정 메뉴(L1).
+const String menuScopeCaveat = '가격, 판매 여부, 매장 한정 메뉴는 매장 화면에서 확인해 주세요';
+
 /// 통합 빈 상태 — 메뉴가 확정(데이터 0 또는 부분 실패)일 때만 호출 측이 그린다.
 class SearchUnifiedEmpty extends StatelessWidget {
-  const SearchUnifiedEmpty({super.key, required this.query});
+  const SearchUnifiedEmpty({
+    super.key,
+    required this.query,
+    required this.searchedStoreCount,
+  });
   final String query;
+  final int searchedStoreCount;
 
   @override
   Widget build(BuildContext context) {
@@ -333,10 +351,12 @@ class SearchUnifiedEmpty extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
-              '매장 이름·주소와 가까운 매장 ${GradeThresholds.menuSearchStoreLimit}곳의 메뉴에서 찾았어요',
+            Text(
+              searchedStoreCount > 0
+                  ? '매장 이름·주소와 ${menuScopeSentence(searchedStoreCount)}'
+                  : '매장 이름·주소만 찾았어요. ${menuScopeSentence(0)}',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
             const Text(
               '다른 검색어로 찾아보세요',

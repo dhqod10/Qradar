@@ -103,7 +103,7 @@ void main() {
     expect(tester.getTopLeft(find.text('매장 (1)')), before);
     // 카테고리 태그 = 이동 후 선택될 탭의 글자, 범위 안내 고정 문구
     expect(find.text('커피'), findsOneWidget);
-    expect(find.text('가격과 판매 여부는 매장 화면에서 확인해 주세요'), findsOneWidget);
+    expect(find.text('가격, 판매 여부, 매장 한정 메뉴는 매장 화면에서 확인해 주세요'), findsOneWidget);
     // 가격·숫자 칸 없음
     expect(find.textContaining('원'), findsNothing);
     expect(find.textContaining('₩'), findsNothing);
@@ -215,6 +215,7 @@ void main() {
     );
     await tester.enterText(find.byType(TextField), '아메');
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(seconds: 1)); // 자동 재시도 1회(0.8s) 이후 에러 확정
     await tester.pump();
     expect(find.text('매장 정보를 불러올 수 없어요'), findsOneWidget);
     expect(find.text('잠시 후 다시 시도해 주세요'), findsOneWidget);
@@ -269,6 +270,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(seconds: 1)); // 재시도 1회 이후
       await tester.pump();
     }
 

@@ -646,3 +646,19 @@ Rules 배포는 앱 배포와 순서를 맞춰야 해서(런북 ③→④) 한 �
 
 **그다음 단계(매장 수백~수천)** 에서야 "홈은 일부만 받고 검색은 서버가 전체에서
 찾는" 구조로 간다. 그때는 클라이언트 필터링을 버리는 결정이므로 별도 task 다.
+
+---
+
+## Follow-up (home_search 검증 후 — 사용자 결정 필요)
+
+### B-1. 앱 전역 Riverpod 자동 재시도 정책
+
+- **현상**: Riverpod 3.3.1 기본값은 예외 10회·약 38초(200ms 시작 2배, 상한 6.4s). 읽기가 실패해도 그동안 사용자는 정상 로딩(skeleton)만 본다. 홈, 지난 사이클의 Qoin 화면(허브 partial 배너 / 이력 / 링크 점검) 등 `FutureProvider`/`StreamProvider` 전반에 해당한다.
+- **home_search 에서 한 것**: `storeSnapshotProvider` / `menuSearchIndexProvider` 두 곳만 `retry: searchReadRetry`(일시 오류 1회, 0.8초 뒤, 권한 거부는 재시도 없음).
+- **전역으로 가지 않은 이유**: ① 38초 안에 자동 복구되던 일시 네트워크 오류를 포기하는 trade-off 가 화면마다 다르다(결제·주문·Qoin 은 재시도가 유용할 수 있다). ② Qoin 화면들은 `skeleton -> 에러` 전환 시점이 이미 검증된 상태라 일괄 변경 시 재검증 범위가 크다. ③ 제품 판단(사용자에게 에러를 얼마나 빨리 보일 것인가)이 필요하다.
+- **선택지**: (a) `ProviderScope(retry: …)` 전역 기본값을 `searchReadRetry` 와 같은 "1회 + 권한거부 즉시 실패" 로 (b) 화면군별 적용(Qoin 먼저) (c) 현행 유지.
+- **검증 방법**: 이번에 만든 `test/presentation/home_search_real_graph_test.dart` 의 재시도 테스트 패턴(실제 provider + 실제 타이머, override 로 에러 주입 금지)을 재사용한다.
+
+### B-2. 전역 선택 상태 누수
+
+- `selectedMainCategoryProvider` / `selectedSubCategoryIdProvider` 가 전역이라 검색이 아닌 진입(홈·주문 탭)에서는 이전 매장의 선택이 새어 들어간다. 검색 경로는 화면이 바꾼 경우에만 되돌린다. 근본 해결은 family 화 또는 화면 스코프화.

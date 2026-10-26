@@ -32,12 +32,19 @@ abstract class MenuSearchHitEntity with _$MenuSearchHitEntity {
 ///
 /// 출처 하나가 실패해도 검색 전체를 죽이지 않는다 (spec §11). 전부 실패하면 인덱스 대신 예외가 된다.
 class MenuSearchIndex {
-  const MenuSearchIndex({required this.hits, this.failedSourceCount = 0});
+  const MenuSearchIndex({
+    required this.hits,
+    this.failedSourceCount = 0,
+    this.searchedStoreCount = 0,
+  });
 
   final List<MenuSearchHitEntity> hits;
 
   /// 가져오지 못한 출처(브랜드/개인 매장) 수. 1 이상이면 `일부 매장의 메뉴를 불러오지 못했어요`.
   final int failedSourceCount;
+
+  /// 실제로 메뉴를 찾아본 후보 매장 수 (범위 안내 문구의 근거 — 고정 숫자를 말하지 않는다).
+  final int searchedStoreCount;
 
   bool get isPartial => failedSourceCount > 0;
 }

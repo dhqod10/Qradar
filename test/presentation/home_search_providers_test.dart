@@ -6,7 +6,9 @@ import 'package:qradar/data/datasources/remote/store_remote_data_source.dart';
 import 'package:qradar/data/models/store_model.dart';
 import 'package:qradar/data/repositories/store_repository_impl.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
+import 'package:qradar/domain/entities/main_category_entity.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
+import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
 import 'package:qradar/domain/entities/user_location.dart';
@@ -145,6 +147,11 @@ void main() {
           userLocationProvider.overrideWith(_FixedLocation.new),
           menuItemRepositoryProvider.overrideWithValue(menuRepo),
           masterMenuItemRepositoryProvider.overrideWithValue(masterRepo),
+          mainCategoriesActiveProvider.overrideWith(
+            (ref) => Stream.value(const [
+              MainCategoryEntity(id: 'coffee', label: '커피'),
+            ]),
+          ),
         ],
       );
       addTearDown(c.dispose);
@@ -272,6 +279,7 @@ void main() {
       c.listen(searchViewModelProvider, (_, _) {});
       c.read(searchQueryProvider.notifier).set('아메');
       await c.read(menuSearchIndexProvider.future);
+      await c.read(mainCategoriesActiveProvider.future);
       final vm = c.read(searchViewModelProvider);
       expect(vm.menu.isPartial, isTrue);
       expect(vm.menuTotal, greaterThan(0));

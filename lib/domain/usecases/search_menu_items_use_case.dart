@@ -107,6 +107,7 @@ class SearchMenuItemsUseCase {
     return MenuSearchIndex(
       hits: List.unmodifiable(unique),
       failedSourceCount: failed,
+      searchedStoreCount: candidateStores.length,
     );
   }
 

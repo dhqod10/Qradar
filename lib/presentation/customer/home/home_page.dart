@@ -125,14 +125,13 @@ class _HomePageState extends ConsumerState<HomePage> {
     final status = await ref.read(checkLocationPermissionUseCaseProvider)();
     if (!mounted) return;
 
-    if (status == LocationPermissionStatus.granted) {
-      await notifier.allowAndFetch();
-    } else {
-      // pull-to-refresh 중 대화상자 재노출은 방해되므로 폴백 유지.
-      notifier.declineAndFallback();
-    }
-    // 주변/필터/추천은 모두 스냅샷 파생이므로 스냅샷 하나만 무효화하면 된다.
-    ref.invalidate(storeSnapshotProvider);
+    // pull-to-refresh 중 대화상자 재노출은 방해되므로 거부 상태면 폴백 유지.
+    // 주변/필터/추천은 모두 스냅샷 파생이라 스냅샷을 한 번만 다시 읽으면 된다.
+    await refreshHomeStoreSnapshot(
+      notifier: notifier,
+      permissionGranted: status == LocationPermissionStatus.granted,
+      invalidateSnapshot: () => ref.invalidate(storeSnapshotProvider),
+    );
     await ref.read(userLocationProvider.future);
   }
 }
