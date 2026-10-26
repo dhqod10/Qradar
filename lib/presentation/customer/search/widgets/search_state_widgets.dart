@@ -296,10 +296,6 @@ class MenuScopeNotice extends StatelessWidget {
             menuScopeSentence(searchedStoreCount),
             style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
-          const Text(
-            menuScopeCaveat,
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-          ),
         ],
       ),
     );
@@ -312,9 +308,6 @@ String menuScopeSentence(int searchedStoreCount) {
   if (searchedStoreCount <= 0) return '${radius}km 이내에 메뉴를 찾아볼 매장이 없어요';
   return '가까운 매장 $searchedStoreCount곳(${radius}km 이내)의 메뉴에서 찾았어요';
 }
-
-/// 검색이 알 수 없는 것: 가격·판매 여부(override) 와 브랜드 매장의 매장 한정 메뉴(L1).
-const String menuScopeCaveat = '가격, 판매 여부, 매장 한정 메뉴는 매장 화면에서 확인해 주세요';
 
 /// 통합 빈 상태 — 메뉴가 확정(데이터 0 또는 부분 실패)일 때만 호출 측이 그린다.
 class SearchUnifiedEmpty extends StatelessWidget {

@@ -1,6 +1,8 @@
 import 'dart:developer' as developer;
 
 import 'package:qradar/core/utils/search_normalizer.dart';
+import 'package:qradar/core/utils/store_menu_visibility.dart';
+import 'package:qradar/domain/entities/menu_override_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/menu_search_hit_entity.dart';
@@ -63,14 +65,20 @@ class SearchMenuItemsUseCase {
       }
     }
 
-    Future<void> personalSource(StoreEntity store) async {
+    // 매장 자체 메뉴(`stores/{id}/menuItems`): 개인 매장 + 브랜드 매장의 점포 한정 메뉴 (D10).
+    // 개인 매장 메뉴는 status 가 null 일 수 있고(승인 불필요), 브랜드 매장의 점포 한정 메뉴는
+    // 승인된 것만 매장 화면에 보인다 (`_mergeForBrandStore` 의 approvedStoreOnly 와 같은 기준).
+    Future<void> storeOwnSource(
+      StoreEntity store, {
+      required bool brandStore,
+    }) async {
       try {
         final items = await _menuRepository.fetchStoreMenusOnce(store.id);
         for (final item in items) {
-          // 개인 매장 메뉴는 status 가 null 일 수 있다 (승인 불필요). StoreMenuPage 와 같은 기준.
-          final okStatus =
-              item.status == null ||
-              item.status == EntityApprovalStatus.approved;
+          final okStatus = brandStore
+              ? item.status == EntityApprovalStatus.approved
+              : (item.status == null ||
+                    item.status == EntityApprovalStatus.approved);
           if (!item.visible || !okStatus) continue;
           hits.add(_hit(item, store, MenuHitSource.storeOwn));
         }
@@ -84,7 +92,9 @@ class SearchMenuItemsUseCase {
 
     final tasks = <Future<void>>[
       for (final e in brandStores.entries) brandSource(e.key, e.value),
-      for (final s in personalStores) personalSource(s),
+      for (final s in personalStores) storeOwnSource(s, brandStore: false),
+      for (final list in brandStores.values)
+        for (final s in list) storeOwnSource(s, brandStore: true),
     ];
     await Future.wait(tasks); // 각 task 가 자체적으로 예외를 흡수하므로 Future.wait 가 죽지 않는다.
 
@@ -137,6 +147,76 @@ class SearchMenuItemsUseCase {
       storeName: store.name,
       distanceKm: store.distanceKm,
       source: source,
+      basePrice: item.basePrice,
+      soldOut: item.soldOut,
+    );
+  }
+
+  // ── 2단계: override 검증 (spec §15.1 / §15.4) ─────────────────────────────
+
+  /// 일치한 행에서 override 를 읽을 브랜드 매장을 고른다 (순수).
+  /// 행은 이미 거리 오름차순이므로 등장 순서가 곧 가까운 순이다. 상한 밖 매장의 행은 [applyVerification] 이 버린다.
+  /// 개인 매장·점포 한정 메뉴 행은 override 가 존재하지 않으므로 대상이 아니다.
+  static MenuVerifyPlan planVerification(
+    List<MenuSearchHitEntity> matched, {
+    required int storeLimit,
+  }) {
+    final stores = <String>[];
+    var truncated = false;
+    for (final h in matched) {
+      if (h.source != MenuHitSource.brandMaster) continue;
+      if (stores.contains(h.storeId)) continue;
+      if (stores.length < storeLimit) {
+        stores.add(h.storeId);
+      } else {
+        truncated = true;
+      }
+    }
+    return MenuVerifyPlan(storeIds: stores, truncated: truncated);
+  }
+
+  /// override 를 적용해 검증된 행만 남긴다 (순수). 규칙은 [applyOverrideForCustomer] 한 곳 —
+  /// 여기서 excluded/priceOverride/soldOut 을 따로 판정하지 않는다.
+  /// - 브랜드 마스터 행: 계획 밖 매장 -> 버림(+truncated) / 검증 실패 매장 -> 버림(R6) / excluded -> 버림 / 그 외 가격·품절 반영
+  /// - 그 외 행(개인·점포 한정): 그대로 통과
+  static VerifiedMenuHits applyVerification({
+    required List<MenuSearchHitEntity> matched,
+    required MenuVerifyPlan plan,
+    required Map<String, List<MenuOverrideEntity>> overridesByStore,
+    required Set<String> failedStores,
+  }) {
+    final planned = plan.storeIds.toSet();
+    final maps = <String, Map<String, MenuOverrideEntity>>{
+      for (final e in overridesByStore.entries)
+        e.key: {for (final o in e.value) o.masterMenuItemId: o},
+    };
+    final out = <MenuSearchHitEntity>[];
+    for (final h in matched) {
+      if (h.source != MenuHitSource.brandMaster) {
+        out.add(h);
+        continue;
+      }
+      if (!planned.contains(h.storeId)) continue; // 상한 밖 (truncated 로 알린다)
+      if (failedStores.contains(h.storeId)) continue; // 검증 못 한 행은 그리지 않는다
+      final master = MenuItemEntity(
+        id: h.menuItemId,
+        storeId: h.storeId,
+        name: h.menuName,
+        mainCategoryCode: h.mainCategoryCode,
+        basePrice: h.basePrice,
+        soldOut: h.soldOut,
+      );
+      final applied = applyOverrideForCustomer(
+        master: master,
+        override: maps[h.storeId]?[h.menuItemId],
+      );
+      if (applied == null) continue; // 이 매장은 팔지 않는다 (excluded)
+      out.add(h.copyWith(basePrice: applied.basePrice, soldOut: applied.soldOut));
+    }
+    return VerifiedMenuHits(
+      hits: out,
+      failedStoreCount: failedStores.length,
+      truncated: plan.truncated,
     );
   }
 }

@@ -26,6 +26,27 @@ class MenuOverrideRemoteDataSource {
         );
   }
 
+  /// override 문서 **단건** 실시간 스트림 (메뉴 상세용). 문서가 없으면 null.
+  /// 컬렉션 쿼리가 아니라 문서 구독이므로 인덱스가 필요 없다.
+  Stream<MenuOverrideModel?> streamByStoreAndMaster(
+    String storeId,
+    String masterMenuItemId,
+  ) {
+    return _overrideCol(storeId).doc(masterMenuItemId).snapshots().map(
+          (doc) =>
+              doc.exists ? MenuOverrideModel.fromFirestore(doc, storeId) : null,
+        );
+  }
+
+  /// 매장 override 전체 1회 조회 (홈 검색 2단계용). [streamByStore] 와 **같은 문장**의 one-shot —
+  /// `where` / `collectionGroup` 을 쓰지 않으므로 새 인덱스가 필요 없다.
+  Future<List<MenuOverrideModel>> fetchByStore(String storeId) async {
+    final snap = await _overrideCol(storeId).get();
+    return snap.docs
+        .map((doc) => MenuOverrideModel.fromFirestore(doc, storeId))
+        .toList(growable: false);
+  }
+
   /// admin 승인 큐: status==pending (collectionGroup query).
   ///
   /// 인덱스: menuOverrides collectionGroup + status asc + submittedAt desc.

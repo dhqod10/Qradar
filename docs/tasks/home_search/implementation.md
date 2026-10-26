@@ -2,6 +2,7 @@
 
 | 일자 | 작성자 | 내용 |
 |---|---|---|
+| 2026-10-26 | developer | **2차 개정(spec §15 / design §13) 구현 — §12 추가** (1차 이력 보존). |
 | 2026-10-26 | developer | 검증 FAIL 3건 + 부수 5건 수정 반영(§11). |
 | 2026-10-26 | developer | 최초 작성. spec §9 · design §1~§10 기준 구현. 확정 결정(D1~D7, N1 확장안) 변경 없음 |
 
@@ -147,3 +148,85 @@
 ### 남은 것
 - 첫 프레임 1프레임 동안 이전 카테고리 목록이 보일 수 있다 (근본 원인은 전역 선택 상태, backlog B-2).
 - 전역 재시도 정책은 사용자 결정 대기 (backlog B-1).
+
+---
+
+## 12. 2차 개정 구현 (spec §15 / design §13) — §1~§11 은 이력, 충돌 시 이 절이 이긴다
+
+### 12.1 구현 순서와 검증 게이트
+
+라이브 화면을 건드리는 ①②를 먼저 끝내고 검증한 뒤(전체 526 통과) ③~⑧로 갔다. 전환 애니메이션(§13-4)은 단순 버전이 끝난 뒤 별도 단계로 올렸다.
+
+| # | 내용 | 위치 |
+|---|---|---|
+| ① | `applyOverrideForCustomer` 추출 — `_mergeForBrandStore` 가 이 함수만 쓴다 (**동작 변화 0**, 교체 전 구현의 사본과 전 조합 동치 테스트) | `core/utils/store_menu_visibility.dart`, `menu_item_repository_impl.dart` |
+| ② | `watchById` case B = `combineLatest3` + override 문서 단건 스트림 + 같은 함수 (D13). override 스트림 실패는 **에러로 전파**(마스터 값 폴백 없음), `excluded` -> null -> `_DeletedView`. 개인 매장(case A)은 override 를 구독하지 않는다 | `menu_item_repository_impl.dart`, `menu_override_remote_data_source.dart#streamByStoreAndMaster` |
+| ③ | override one-shot: `fetchByStore` -> `fetchByStoreOnce` (`_overrideCol(storeId).get()`, **where / collectionGroup 없음**) | data source / repository IF / impl |
+| ④ | `MenuSearchHitEntity` + `basePrice`·`soldOut`. `SearchMenuItemsUseCase.planVerification` / `applyVerification` (순수) | domain |
+| ⑤ | `storeMenuOverridesProvider` (매장 단위, 검색 화면 수명) + `menuSearchResultsProvider` 결합 (R1~R6) | `search_providers.dart` |
+| ⑥ | 메뉴 상세 품절 UI, `_DeletedView` 개정, `SoldOutOverlay` 공용화, `QuantityStepper.enabled` | `menu_item_detail_page.dart`, `common/` |
+| ⑦ | `autoOpenMenuItemId` + 1회 자동 push | `store_menu_page.dart` |
+| ⑧ | 검색 행 가격·품절 (`PriceFormatter.formatKrw` 한 곳), D9 매장 카드 품절 탭 허용 | `menu_search_result_tile.dart`, `menu_item_card.dart` |
+| 마지막 | 전환 애니메이션 (§13-4) | `SeamlessStoreMenuRoute`, `StoreMenuPage.seamlessEntry` |
+
+### 12.2 핵심 결정
+
+- **override 규칙은 `applyOverrideForCustomer` 하나** (핵심 필드 `excluded`/`priceOverride` = `status==approved` 일 때만, 운영 필드 `soldOut`/`disabledOption*` = status 무관 즉시). 매장 화면 목록 · 메뉴 상세 · 검색 2단계가 모두 이것만 호출한다. 검색 2단계는 1단계 행에서 최소 `MenuItemEntity` 를 재구성해 같은 함수에 넣고 결과의 가격·품절만 취한다 (규칙 복제 없음).
+- **D10 (점포 한정 메뉴 포함)**: 1단계가 브랜드 매장의 `stores/{id}/menuItems` 도 읽는다 (승인된 것만 — `_mergeForBrandStore` 의 점포 한정 기준과 같다). 1단계 쿼리 17 -> 32 (backlog "검색 1단계 비용" 20곳 트리거와 연결).
+- **R1**: 2단계(`storeMenuOverridesProvider` 전부)가 도달하기 전에는 `AsyncLoading` — 1단계 행을 그리지 않는다. **자동 재시도 중(`isLoading`)에는 실패로 확정하지 않는다** (에러/부분 실패가 잠깐 비쳤다 사라지는 깜빡임 방지). 재시도 정책은 1차의 `searchReadRetry` 재사용 (override 1회·0.8초).
+- **R4**: 일치한 distinct 브랜드 매장을 거리순으로 최대 `menuSearchVerifyStoreLimit`(10) 곳. 상한 밖 브랜드 행은 버리고 `fanOutTruncated` -> `검색 범위를 좁혀 보세요`. 개인·점포 한정 행은 override 가 없으므로 상한과 무관하게 통과.
+- **R5/R6**: `total` = 검증 통과 수. 검증 실패 매장의 행은 **그리지 않고** `failedSourceCount` 에 합산(`s7`/`s9`/`s12`). 일치 행이 전부 브랜드 매장이고 검증이 전멸이면 `AsyncError` -> `s6`/`s11`.
+- **D12**: override 캐시 = 검색 화면 수명. `SearchPage.dispose` 가 `invalidate(storeMenuOverridesProvider)` (family 전체) — 화면을 다시 열면 2단계만 다시 읽고, 1단계 인덱스(`menuSearchIndexProvider`, 세션 캐시)는 그대로. 부분 실패 `다시 시도` 와 당겨서 새로고침은 둘 다 invalidate.
+- **자동 push (U2)**: `StoreMenuPage` 가 메뉴 목록·활성 카테고리가 확정되면 `isMenuShownOnStoreScreen`(F5 단일 판정)으로 `autoOpenMenuItemId` 를 찾아 다음 프레임에 상세를 1회 push (`_autoOpened`). 목록에 없으면 올리지 않고 `_SearchedMenuBand`. 판정은 `ref.listen` 대신 data 빌더 안에서 1회 수행해, 이미 로드된 스트림도 같은 경로로 처리한다.
+- **`_DeletedView` 의 `매장 메뉴 보기`**: 바로 아래 스택이 그 매장의 `StoreMenuPage` 인지 `openStoreMenuStoreIds`(열린 매장 화면 id 목록)로 판단 — 맞으면 pop, 아니면 매장 화면으로 교체. 매장 정보를 못 얻으면 주 액션을 숨기고 `뒤로가기`만.
+- **품절 판정 순서**: 상세 `_BottomAction` 은 `soldOut` -> `_busy` -> required 미선택. 품절은 버튼이 `onPressed: null` + 라벨 `품절`, `_onAddPressed` 도 품절이면 토스트 없이 즉시 return. 즐겨찾기는 그대로.
+- **장바구니·결제의 품절 검증(spec F8)은 범위 밖**이라 손대지 않았다 (backlog F8 등재).
+
+### 12.3 전환 애니메이션 (design §13-4) — §13-4 해법을 올렸다. 플랫폼 문제 1건과 대응
+
+- **올린 것**: 메뉴 행 탭 전용 `SeamlessStoreMenuRoute`(앞으로 0ms · 뒤로 300ms · `opaque:false`) + `StoreMenuPage.seamlessEntry`(상세가 덮을 때까지 `AnimatedOpacity` 0 으로 아무것도 그리지 않음, 데이터 판정은 계속 수행) + 250ms 뒤 스크림 + 3초 폴백 reveal + 상세를 올리지 않는 분기는 200ms 페이드 인. `secondaryAnimation` 이 completed 또는 reverse 가 되면 reveal. 매장 결과 탭 등 다른 진입은 기존 `MaterialPageRoute` 그대로.
+- **플랫폼 문제**: design 이 가정한 `MaterialPageRoute` 상속(`opaque` 재정의)은 **생성자가 `assert(opaque)` 라 불가능**했다. 대신 `PageRoute` + `MaterialRouteTransitionMixin` 으로 직접 정의해 플랫폼 기본 전환(iOS 스와이프 백 포함)을 유지했다. 위젯 테스트는 Android·iOS 전환 둘 다에서 통과 (실기기 확인은 못 했다).
+- 보이는 슬라이드는 상세 1회, 상세가 덮기 전 프레임마다 매장 화면 opacity 0 + 검색 화면 유지, 뒤로 나오면 완성된 매장 화면(강조 카드 유지)을 테스트로 고정했다.
+- **알려진 한계**: 숨겨진 매장 화면도 위젯은 빌드되어 shimmer 애니메이션이 투명하게 돈다(비용 미미). iOS 에서 상세 위의 스와이프 백 도중 reveal 타이밍은 실기기 확인 필요.
+
+### 12.4 표면 인벤토리 F5-5 ~ F5-12 와 구현의 일치
+
+| 행 | 구현 | 확인 |
+|---|---|---|
+| F5-5 행 가격 | 검증된 `basePrice` (`PriceFormatter.formatKrw`, 접미사 없음). 가격만 비운 행은 존재하지 않음 | 테스트 |
+| F5-6 행 품절 | 같은 검증 결과 `soldOut`: 배지 + 썸네일 덮개 + textMuted | 테스트 |
+| F5-7 상세 가격 | `watchById` case B 3-스트림. override 실패 -> `_ErrorView`, 마스터 폴백 없음 | 테스트(실제 리포지토리) |
+| F5-8 상세 품절 | 이미지 오버레이 · 안내 plate · 옵션 흐림/무시 · 수량 비활성 · `품절` 비활성 버튼 | 테스트 |
+| F5-9 담기 합계 | `menuItemCurrentPriceProvider` <- 상세 `basePrice` (위와 같은 값) | 교차 테스트 |
+| F5-10 `_DeletedView` | `watchById == null` 일 때만. 스트림 에러는 `_ErrorView` | 테스트 |
+| F5-11 자동 열림 판정 | 매장 화면의 `isMenuShownOnStoreScreen`. 로딩: 투명 + 250ms 스크림 / 3초 폴백 | 테스트 |
+| F5-12 카테고리 태그 | 해석 실패면 그리지 않음 (1차 그대로) | 1차 테스트 |
+| 교차 일치 | 검색 행 == 매장 카드 == 상세 == 담기 합계 기본가 (품절 판정 포함) | `home_search_stage2_test.dart` |
+
+### 12.5 쿼리 실측 (카운팅 fake, 후보 30곳 = 개인 15 + 브랜드 매장 15 / 브랜드 2개)
+
+| 시나리오 | 1차 (실측) | 2차 (실측) |
+|---|---|---|
+| 첫 메뉴 검색 1단계 | 17 쿼리 / 55 docs | **32 쿼리** / 100 docs (브랜드 마스터 2 + 매장 자체 30 — D10 로 브랜드 매장 점포 한정 15 추가) |
+| 2단계 (일치 브랜드 매장 15곳) | — | **10 쿼리** (fan-out 상한) + `fanOutTruncated` |
+| 합계 | 17 | **42** (spec 의 "최악 27" 은 D10 이전 계산 — 1단계가 17 -> 32 가 된 만큼 올라갔다) |
+| 개인 매장만 일치 | 17 | 32 + **2단계 0** |
+| 같은 세션, 같은 매장 재일치 | 0 | **0** |
+| 검색 화면 재진입 | 0 | 1단계 **0** / 2단계 **다시 10** (D12 의도) |
+
+- **인덱스 0건**: 신규 one-shot 은 `.orderBy('displayOrder').get()` / `.get()` 뿐(`where`·`collectionGroup` 없음), 상세는 문서 단건 `snapshots()`. `firestore.rules` / `firestore.indexes.json` 무수정.
+- 42 는 spec §5.3 전환선(60) 아래이지만 **여유가 줄었다**: 가맹점이 늘면 backlog "검색 1단계 비용"(가맹점 20곳)이 먼저 닿는다.
+
+### 12.6 검증 결과
+
+- `flutter analyze`: No issues found. `flutter test`: 544 통과. Rules 하네스: 341/341 PASS.
+- **최우선 회귀 2건 통과**: ① `test/data/menu_override_apply_test.dart` — 교체 전 구현의 사본과 status x excluded x price x soldOut x disabled 전 조합 동치(+ `status != approved` 에서 `excluded`/`priceOverride` 무시, `soldOut`/`disabledOption*` 적용). ② 같은 파일 — 실제 `MenuItemRepositoryImpl` 로 카드 가격 == 상세 가격 (개정 전 상세는 마스터 가격).
+- 2차 회귀 테스트는 모두 **Firestore 데이터 소스만 대체한 실제 그래프**: `test/presentation/home_search_stage2_test.dart` (R1 단일 전이, R4, R6, 자동 열림, 품절 상세, D9, `_DeletedView`, 전환 프레임 단위 검증, Android·iOS). 의도적 고장(R1 해제 / 전환 해제)으로 테스트가 잡는 것을 확인했다.
+- 1차 테스트는 1단계가 브랜드 매장의 `menuItems` 도 읽는 변경(D10)과 `basePrice` 필수화를 반영해 수정했다.
+
+### 12.7 남은 것 / 우려 (보고만)
+
+1. 숨겨진 매장 화면의 shimmer 틱 / iOS 실기기 스와이프 백 타이밍 — 수동 확인 필요.
+2. 상세에서 `담기` 를 막아도 장바구니·결제의 품절 검증은 없다 (backlog F8, 출시 전 점검 권장).
+3. 부분 실패 `다시 시도` 는 1단계 인덱스(32쿼리)까지 다시 읽는다 — 2단계 실패만 다시 읽는 세분화는 하지 않았다.
+4. design §13-5 의 150ms 페이드(shimmer -> 행)는 구현하지 않았다 (한 번에 교체; 행이 떴다 사라지는 일은 없다).

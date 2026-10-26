@@ -32,6 +32,12 @@ class MenuOverrideRepositoryImpl implements MenuOverrideRepository {
   }
 
   @override
+  Future<List<MenuOverrideEntity>> fetchByStoreOnce(String storeId) async {
+    final models = await _dataSource.fetchByStore(storeId);
+    return models.map((m) => m.toEntity()).toList(growable: false);
+  }
+
+  @override
   Stream<List<MenuOverrideEntity>> watchPendingForAdmin() {
     return _dataSource.streamPending().map(
           (models) => models.map((m) => m.toEntity()).toList(growable: false),

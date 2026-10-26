@@ -2,6 +2,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/constants/grade_thresholds.dart';
 import 'package:qradar/core/utils/search_normalizer.dart';
 import 'package:qradar/core/utils/store_menu_visibility.dart';
+import 'package:qradar/data/datasources/remote/menu_override_remote_data_source.dart';
+import 'package:qradar/data/repositories/menu_override_repository_impl.dart';
+import 'package:qradar/domain/entities/menu_override_entity.dart';
+import 'package:qradar/domain/repositories/menu_override_repository.dart';
 import 'package:qradar/domain/entities/menu_search_hit_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/usecases/search_menu_items_use_case.dart';
@@ -75,13 +79,34 @@ final menuSearchIndexProvider = FutureProvider<MenuSearchIndex>((ref) async {
       .buildIndex(candidateStores: candidates);
 }, retry: searchReadRetry);
 
-/// 메뉴 검색 결과 — 인덱스 + 질의. [total] 은 상한 적용 전 일치 수, [rows] 는 최대 `menuSearchResultLimit`.
+/// 메뉴 검색 2단계(override 검증)가 쓰는 override 저장소. customer 읽기 경로 — auth 의존 없음.
+final searchMenuOverrideRepositoryProvider = Provider<MenuOverrideRepository>(
+  (ref) => MenuOverrideRepositoryImpl(MenuOverrideRemoteDataSource()),
+);
+
+/// 매장 1곳의 `menuOverrides` 전체 (2단계). **검색 화면 수명** 캐시 (D12):
+/// 화면을 열어 둔 동안은 같은 매장이 다시 일치해도 0쿼리, [SearchPage] 가 닫힐 때
+/// `invalidate(storeMenuOverridesProvider)` 로 비워 재진입 시 다시 읽는다 (가격·품절의 신선도를 방문 단위로 보장).
+/// 쿼리: `_overrideCol(storeId).get()` — where / collectionGroup 없음 (인덱스 0건).
+final storeMenuOverridesProvider =
+    FutureProvider.family<List<MenuOverrideEntity>, String>(
+      (ref, storeId) => ref
+          .read(searchMenuOverrideRepositoryProvider)
+          .fetchByStoreOnce(storeId),
+      retry: searchReadRetry,
+    );
+
+/// 메뉴 검색 결과 — 인덱스 + 질의 + 2단계 검증.
+///
+/// [total] 은 **검증을 통과한** 일치 수 (R5), [rows] 는 최대 `menuSearchResultLimit`.
 class MenuSearchResults {
   const MenuSearchResults({
     required this.rows,
     required this.total,
     this.failedSourceCount = 0,
     this.searchedStoreCount = 0,
+    this.fanOutTruncated = false,
+    this.refreshing = false,
   });
 
   static const MenuSearchResults empty = MenuSearchResults(rows: [], total: 0);
@@ -93,11 +118,30 @@ class MenuSearchResults {
   /// 실제로 메뉴를 찾아본 후보 매장 수 — 범위 안내 문구의 근거 (고정 숫자를 말하지 않는다).
   final int searchedStoreCount;
 
+  /// 2단계 fan-out 상한(R4) 밖 브랜드 매장의 행이 버려졌다.
+  final bool fanOutTruncated;
+
   bool get isPartial => failedSourceCount > 0;
-  bool get isTruncated => total > rows.length;
+  bool get isTruncated => total > rows.length || fanOutTruncated;
+
+  /// override 재시도 중 (직전 검증 결과는 유지한 채).
+  final bool refreshing;
+
+  MenuSearchResults withRefreshing() => MenuSearchResults(
+    rows: rows,
+    total: total,
+    failedSourceCount: failedSourceCount,
+    searchedStoreCount: searchedStoreCount,
+    fanOutTruncated: fanOutTruncated,
+    refreshing: true,
+  );
 }
 
 /// 정규화 길이가 [GradeThresholds.menuSearchMinQueryLength] 미만이면 인덱스를 **구독하지 않는다** (읽기 0).
+///
+/// 1단계 인덱스 -> 활성 카테고리 필터 -> 질의 일치 -> **2단계 override 검증** 순서.
+/// **R1**: 2단계가 끝나기 전에는 1단계 행을 그리지 않는다 (나중에 사라지거나 가격이 바뀌는 깜빡임 금지) —
+/// 전부 도달할 때까지 `AsyncLoading`.
 final menuSearchResultsProvider =
     Provider.autoDispose<AsyncValue<MenuSearchResults>>((ref) {
       final q = ref.watch(normalizedQueryProvider);
@@ -105,7 +149,10 @@ final menuSearchResultsProvider =
         return const AsyncData(MenuSearchResults.empty);
       }
       final indexAsync = ref.watch(menuSearchIndexProvider);
-      if (indexAsync.hasError && !indexAsync.hasValue) {
+      // 자동 재시도 중(isLoading)에는 에러로 확정하지 않는다 — 에러가 잠깐 비쳤다 사라지는 깜빡임 방지.
+      if (indexAsync.hasError &&
+          !indexAsync.hasValue &&
+          !indexAsync.isLoading) {
         return AsyncError(
           indexAsync.error!,
           indexAsync.stackTrace ?? StackTrace.empty,
@@ -115,37 +162,92 @@ final menuSearchResultsProvider =
       // 활성 카테고리를 모르는 동안 행을 먼저 보여주면 나중에 사라질 수 있으므로 로딩으로 둔다.
       final activeAsync = ref.watch(mainCategoriesActiveProvider);
       if (!activeAsync.hasValue) {
-        return activeAsync.hasError
+        return activeAsync.hasError && !activeAsync.isLoading
             ? AsyncError(
                 activeAsync.error!,
                 activeAsync.stackTrace ?? StackTrace.empty,
               )
             : const AsyncLoading();
       }
+      if (!indexAsync.hasValue) return const AsyncLoading();
+      final index = indexAsync.requireValue;
       final activeIds = activeAsync.requireValue.map((c) => c.id).toSet();
-      return indexAsync.whenData((index) {
-        final shown = index.hits
-            .where(
-              (h) => isMenuShownOnStoreScreen(
-                visible: true, // 인덱스가 visible 메뉴만 담는다 (buildIndex 필터)
-                mainCategoryCode: h.mainCategoryCode,
-                activeCategoryIds: activeIds,
-              ),
-            )
-            .toList(growable: false);
-        final all = SearchMenuItemsUseCase.filter(
-          index: shown,
-          normalizedQuery: q,
+
+      final shown = index.hits
+          .where(
+            (h) => isMenuShownOnStoreScreen(
+              visible: true, // 인덱스가 visible 메뉴만 담는다 (buildIndex 필터)
+              mainCategoryCode: h.mainCategoryCode,
+              activeCategoryIds: activeIds,
+            ),
+          )
+          .toList(growable: false);
+      final matched = SearchMenuItemsUseCase.filter(
+        index: shown,
+        normalizedQuery: q,
+      );
+
+      // ── 2단계: 일치한 브랜드 매장(거리순 상한)의 override 를 읽는다 ──
+      final plan = SearchMenuItemsUseCase.planVerification(
+        matched,
+        storeLimit: GradeThresholds.menuSearchVerifyStoreLimit,
+      );
+      final overrides = <String, List<MenuOverrideEntity>>{};
+      final failedStores = <String>{};
+      var pending = false;
+      var refreshing = false;
+      for (final storeId in plan.storeIds) {
+        final a = ref.watch(storeMenuOverridesProvider(storeId));
+        if (a.hasValue) {
+          overrides[storeId] = a.requireValue;
+          if (a.isLoading) {
+            refreshing = true; // 재시도 중에도 직전 검증 결과는 유지 (hasValue 우선)
+          }
+        } else if (a.isLoading || !a.hasError) {
+          pending = true; // 로딩 또는 자동 재시도 중 — 아직 모른다
+        } else {
+          failedStores.add(storeId);
+        }
+      }
+      if (pending) return const AsyncLoading(); // R1: 검증 전 행은 그리지 않는다
+
+      final verified = SearchMenuItemsUseCase.applyVerification(
+        matched: matched,
+        plan: plan,
+        overridesByStore: overrides,
+        failedStores: failedStores,
+      );
+
+      // 일치 행이 전부 브랜드 매장이고 검증이 전멸이면 메뉴 전체 에러 (s6 / s11).
+      final onlyBrandRows =
+          matched.isNotEmpty &&
+          matched.every((h) => h.source == MenuHitSource.brandMaster);
+      if (onlyBrandRows &&
+          plan.storeIds.isNotEmpty &&
+          failedStores.length == plan.storeIds.length &&
+          verified.hits.isEmpty) {
+        return AsyncError(
+          StateError('menu verification failed'),
+          StackTrace.empty,
         );
-        return MenuSearchResults(
-          rows: all
-              .take(GradeThresholds.menuSearchResultLimit)
-              .toList(growable: false),
-          total: all.length,
-          failedSourceCount: index.failedSourceCount,
-          searchedStoreCount: index.searchedStoreCount,
-        );
-      });
+      }
+
+      final results = MenuSearchResults(
+        rows: verified.hits
+            .take(GradeThresholds.menuSearchResultLimit)
+            .toList(growable: false),
+        total: verified.hits.length,
+        failedSourceCount: index.failedSourceCount + verified.failedStoreCount,
+        searchedStoreCount: index.searchedStoreCount,
+        fanOutTruncated: verified.truncated,
+      );
+      // 인덱스 새로고침 중이면 whenData 가 isLoading 플래그를 실어 준다 (부분 실패 재시도 스피너용).
+      final carried = indexAsync.whenData((_) => results);
+      if (refreshing && !carried.isLoading) {
+        // override 재시도 중: 플래그를 실을 수 없으므로 결과에 표시한다.
+        return AsyncData(results.withRefreshing());
+      }
+      return carried;
     });
 
 // ── 최근 검색어 (세션 메모리) ─────────────────────────────────────────────
@@ -287,6 +389,8 @@ final searchViewModelProvider = Provider.autoDispose<SearchViewModel>((ref) {
     stores: storeAsync.value ?? const [],
     menu: menuAsync.value ?? MenuSearchResults.empty,
     normalizedQuery: q,
-    menuRefreshing: menuAsync.hasValue && menuAsync.isLoading,
+    menuRefreshing:
+        (menuAsync.hasValue && menuAsync.isLoading) ||
+        (menuAsync.value?.refreshing ?? false),
   );
 });

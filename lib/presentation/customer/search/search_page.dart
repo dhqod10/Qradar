@@ -36,8 +36,20 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   final _focus = FocusNode();
   Timer? _debounce;
 
+  late final ProviderContainer _container;
+
+  @override
+  void initState() {
+    super.initState();
+    _container = ProviderScope.containerOf(context, listen: false);
+  }
+
   @override
   void dispose() {
+    // D12: 2단계 override 캐시의 수명은 검색 화면 수명이다 — 닫히면 비워서 다음 방문에 다시 읽는다
+    // (가격·품절을 "이번 방문 시점" 기준으로 보이기 위함). 1단계 인덱스(세션 캐시)는 건드리지 않는다.
+    final container = _container;
+    Future.microtask(() => container.invalidate(storeMenuOverridesProvider));
     _debounce?.cancel();
     _controller.dispose();
     _focus.dispose();
@@ -86,20 +98,25 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     ref
         .read(recentSearchesProvider.notifier)
         .record(ref.read(searchQueryProvider));
+    Widget build(BuildContext _) => StoreMenuPage(
+      store: store,
+      initialMainCategoryCode: hit?.mainCategoryCode,
+      highlightMenuItemId: hit?.menuItemId,
+      autoOpenMenuItemId: hit?.menuItemId,
+      seamlessEntry: hit != null,
+    );
+    // 메뉴 행 탭: 매장 화면을 보이지 않게 깔고 상세 하나만 보이게 한다 (design §13-4). 매장 결과 탭은 그대로.
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => StoreMenuPage(
-          store: store,
-          initialMainCategoryCode: hit?.mainCategoryCode,
-          highlightMenuItemId: hit?.menuItemId,
-        ),
-      ),
+      hit == null
+          ? MaterialPageRoute<void>(builder: build)
+          : SeamlessStoreMenuRoute<void>(builder: build),
     );
   }
 
   Future<void> _refresh() async {
     ref.invalidate(storeSnapshotProvider);
     ref.invalidate(menuSearchIndexProvider);
+    ref.invalidate(storeMenuOverridesProvider); // 2단계(override)도 함께 — 부분 실패 재시도
     try {
       await ref.read(storeSnapshotProvider.future);
     } catch (_) {
@@ -310,6 +327,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   void _retryMenu() {
     ref.invalidate(menuSearchIndexProvider);
+    ref.invalidate(storeMenuOverridesProvider);
     // 결과 필터가 쓰는 활성 카테고리도 실패했을 수 있다.
     ref.invalidate(mainCategoriesActiveProvider);
   }
@@ -376,7 +394,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
-              '메뉴 ${menu.total}개 중 ${GradeThresholds.menuSearchResultLimit}개만 보여드려요. 검색어를 더 구체적으로 입력해 보세요',
+              menu.total > menu.rows.length
+                  ? '메뉴 ${menu.total}개 중 ${GradeThresholds.menuSearchResultLimit}개만 보여드려요. 검색어를 더 구체적으로 입력해 보세요'
+                  : '검색 범위를 좁혀 보세요. 일부 매장의 메뉴는 보여드리지 못했어요',
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,

@@ -11,6 +11,7 @@ class QuantityStepper extends StatelessWidget {
     required this.onChanged,
     this.min = 1,
     this.max = 99,
+    this.enabled = true,
   });
 
   final int value;
@@ -18,44 +19,50 @@ class QuantityStepper extends StatelessWidget {
   final int max;
   final ValueChanged<int> onChanged;
 
+  /// false 면 −/+ 와 숫자를 흐리게 하고 탭을 무시한다 (품절 메뉴 상세). 레이아웃 불변.
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
-    final canDec = value > min;
-    final canInc = value < max;
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StepButton(
-            icon: Icons.remove_rounded,
-            enabled: canDec,
-            onTap: canDec ? () => onChanged(value - 1) : null,
-          ),
-          SizedBox(
-            width: 64,
-            child: Center(
-              child: Text(
-                '$value',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textHeading,
+    final canDec = enabled && value > min;
+    final canInc = enabled && value < max;
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StepButton(
+              icon: Icons.remove_rounded,
+              enabled: canDec,
+              onTap: canDec ? () => onChanged(value - 1) : null,
+            ),
+            SizedBox(
+              width: 64,
+              child: Center(
+                child: Text(
+                  '$value',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textHeading,
+                  ),
                 ),
               ),
             ),
-          ),
-          _StepButton(
-            icon: Icons.add_rounded,
-            enabled: canInc,
-            onTap: canInc ? () => onChanged(value + 1) : null,
-          ),
-        ],
+            _StepButton(
+              icon: Icons.add_rounded,
+              enabled: canInc,
+              onTap: canInc ? () => onChanged(value + 1) : null,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -7,8 +7,10 @@ enum MenuHitSource { brandMaster, storeOwn }
 
 /// 메뉴 검색 결과 1행 = (메뉴 1개 x 매장 1개).
 ///
-/// **가격 필드를 일부러 두지 않는다.** 메뉴 인덱스는 `menuOverrides` 를 읽지 않아 매장별 실제 가격과 다를 수 있다 —
-/// 가격은 매장 메뉴 화면이 정식 머지로 보여준다 (spec §2.1 / §4.1). 숫자 칸(할인·품절·별점)도 예약하지 않는다.
+/// **2차 개정(spec §15.5, D8)**: 가격(`basePrice`)과 품절(`soldOut`)만 둔다.
+/// 1차는 인덱스가 `menuOverrides` 를 읽지 않아 가격이 틀릴 수 있어 금지했지만, 2단계 검증이 override 를
+/// `applyOverrideForCustomer` 로 적용하므로 그 이유가 사라졌다. 1단계 직후의 값(마스터 가격)은 **화면에 쓰이지 않는다** —
+/// 검증을 통과한 행만 그려진다. 할인·별점·리뷰 수·옵션 최저가 칸은 여전히 두지 않는다 (해제한 것은 가격 하나뿐).
 @freezed
 abstract class MenuSearchHitEntity with _$MenuSearchHitEntity {
   const factory MenuSearchHitEntity({
@@ -25,7 +27,36 @@ abstract class MenuSearchHitEntity with _$MenuSearchHitEntity {
     /// 스냅샷의 값 그대로.
     double? distanceKm,
     required MenuHitSource source,
+
+    /// 매장 메뉴 화면 카드와 같은 값 (검증 후 override 적용분). 표기는 `PriceFormatter.formatKrw` 한 곳.
+    required int basePrice,
+    @Default(false) bool soldOut,
   }) = _MenuSearchHitEntity;
+}
+
+/// 2단계 검증 계획 — 어느 브랜드 매장의 override 를 읽을지 (거리순 상한 적용).
+class MenuVerifyPlan {
+  const MenuVerifyPlan({required this.storeIds, required this.truncated});
+
+  /// override 를 읽을 distinct 브랜드 매장 id (가까운 순, 최대 상한).
+  final List<String> storeIds;
+
+  /// 상한 밖 브랜드 매장의 행이 있어 버려졌는가 (`검색 범위를 좁혀 보세요`).
+  final bool truncated;
+}
+
+/// 2단계 검증 결과.
+class VerifiedMenuHits {
+  const VerifiedMenuHits({
+    required this.hits,
+    this.failedStoreCount = 0,
+    this.truncated = false,
+  });
+
+  /// 검증을 통과한 행 (제외·검증 실패·상한 밖은 없다).
+  final List<MenuSearchHitEntity> hits;
+  final int failedStoreCount;
+  final bool truncated;
 }
 
 /// 메뉴 인덱스(세션 캐시) — 결과 + 출처별 실패 수.

@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/domain/entities/main_category_entity.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
+import 'package:qradar/domain/entities/menu_override_entity.dart';
+import 'package:qradar/domain/repositories/menu_override_repository.dart';
 import 'package:qradar/domain/entities/menu_search_hit_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
@@ -50,6 +52,7 @@ const hit = MenuSearchHitEntity(
   storeName: '강남점',
   distanceKm: 1.2,
   source: MenuHitSource.brandMaster,
+  basePrice: 4500,
 );
 
 Stream<List<MainCategoryEntity>> _cats() => Stream.value(const [
@@ -69,6 +72,9 @@ void main() {
         overrides: [
           storeSnapshotProvider.overrideWith((ref) async => stores),
           menuSearchIndexProvider.overrideWith((ref) => index()),
+          searchMenuOverrideRepositoryProvider.overrideWithValue(
+            _NoOverrides(),
+          ),
           mainCategoriesActiveProvider.overrideWith((ref) => _cats()),
         ],
         child: const MaterialApp(home: SearchPage()),
@@ -103,10 +109,11 @@ void main() {
     expect(tester.getTopLeft(find.text('매장 (1)')), before);
     // 카테고리 태그 = 이동 후 선택될 탭의 글자, 범위 안내 고정 문구
     expect(find.text('커피'), findsOneWidget);
-    expect(find.text('가격, 판매 여부, 매장 한정 메뉴는 매장 화면에서 확인해 주세요'), findsOneWidget);
-    // 가격·숫자 칸 없음
-    expect(find.textContaining('원'), findsNothing);
+    // 2차(D8): 가격이 행에 있다 — 매장 카드와 같은 표기, 접미사 없음. 1차의 "가격 없음" 문구는 사라졌다.
+    expect(find.text('4,500원'), findsOneWidget);
+    expect(find.text('가격과 판매 여부는 매장 화면에서 확인해 주세요'), findsNothing);
     expect(find.textContaining('₩'), findsNothing);
+    expect(find.textContaining('부터'), findsNothing);
   });
 
   testWidgets('매장 0 + 메뉴 0 = 통합 빈 상태 (메뉴 확정일 때만)', (tester) async {
@@ -127,6 +134,7 @@ void main() {
       index: () => Future<MenuSearchIndex>.error(StateError('x')),
       query: '없는검색어',
     );
+    await tester.pump(const Duration(seconds: 1)); // 자동 재시도 1회 이후 에러 확정
     await tester.pump();
     expect(find.textContaining('일치하는 매장이나 메뉴가 없어요'), findsNothing);
     expect(find.text("'없는검색어' 와 일치하는 매장이 없어요"), findsOneWidget);
@@ -141,6 +149,7 @@ void main() {
       index: () => Future<MenuSearchIndex>.error(StateError('x')),
       query: '아메',
     );
+    await tester.pump(const Duration(seconds: 1)); // 자동 재시도 1회 이후 에러 확정
     await tester.pump();
     expect(find.text('매장 (1)'), findsOneWidget);
     expect(find.text('메뉴를 불러오지 못했어요'), findsOneWidget);
@@ -435,4 +444,14 @@ void main() {
       expect(find.text('이 매장에서는 판매하지 않는 메뉴일 수 있어요'), findsOneWidget);
     });
   });
+}
+
+class _NoOverrides implements MenuOverrideRepository {
+  @override
+  Future<List<MenuOverrideEntity>> fetchByStoreOnce(String storeId) async =>
+      const [];
+
+  @override
+  dynamic noSuchMethod(Invocation i) =>
+      throw UnimplementedError('${i.memberName}');
 }

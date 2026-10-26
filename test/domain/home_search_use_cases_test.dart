@@ -173,7 +173,8 @@ void main() {
         ],
       );
       expect(masters.calls, ['bA']);
-      expect(menus.calls, ['p1']);
+      // D10: 브랜드 매장의 점포 한정 메뉴도 매장당 1회 읽는다 (s1, s2).
+      expect(menus.calls, ['p1', 's1', 's2']);
       expect(idx.hits.map((h) => '${h.storeId}:${h.menuItemId}'), [
         's1:m1',
         's2:m1',
@@ -243,7 +244,7 @@ void main() {
 
     test('전체 실패는 예외 (호출 측이 메뉴 섹션만 에러로 그린다)', () async {
       masters.failing.add('bA');
-      menus.failing.add('p1');
+      menus.failing.addAll(['p1', 's1']);
       expect(
         uc.buildIndex(
           candidateStores: [
@@ -270,6 +271,7 @@ void main() {
           storeId: 's',
           storeName: 'S',
           source: MenuHitSource.storeOwn,
+          basePrice: 4000,
         ),
         MenuSearchHitEntity(
           menuItemId: '2',
@@ -278,6 +280,7 @@ void main() {
           storeId: 's',
           storeName: 'S',
           source: MenuHitSource.storeOwn,
+          basePrice: 4000,
         ),
       ];
       expect(

@@ -8,6 +8,9 @@ abstract class MenuOverrideRepository {
   /// 특정 매장의 override 목록 실시간 감시.
   Stream<List<MenuOverrideEntity>> watchByStore(String storeId);
 
+  /// 매장 override 1회 조회 — 홈 검색 2단계 전용 (customer 읽기 경로, ownership 검증 없음).
+  Future<List<MenuOverrideEntity>> fetchByStoreOnce(String storeId);
+
   /// admin 승인 큐: status==pending override 전체 (collectionGroup query).
   Stream<List<MenuOverrideEntity>> watchPendingForAdmin();
 

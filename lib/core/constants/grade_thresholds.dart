@@ -38,6 +38,9 @@ class GradeThresholds {
   /// 메뉴 결과 표시 상한 (행).
   static const int menuSearchResultLimit = 30;
 
+  /// 메뉴 검색 2단계(override 검증) fan-out 상한 — 일치한 distinct 브랜드 매장 중 가까운 N곳만 읽는다 (최악 쿼리 천장).
+  static const int menuSearchVerifyStoreLimit = 10;
+
   /// 홈 `맞춤 추천` 미리보기 건수.
   static const int recommendedPreviewCount = 5;
 

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/errors/unauthenticated_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/store_menu_visibility.dart';
+import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/sub_category_entity.dart';
 import 'package:qradar/presentation/common/favorite_login_required_dialog.dart';
@@ -21,12 +24,18 @@ import 'package:qradar/presentation/customer/order/store/widgets/store_menu_head
 import 'package:qradar/presentation/customer/order/store/widgets/sub_category_chips.dart';
 import 'package:shimmer/shimmer.dart';
 
+/// 지금 열려 있는 `StoreMenuPage` 들의 storeId (열린 순서). 상세의 `_DeletedView` 가
+/// "아래 스택이 그 매장 화면인가" 를 판단하는 데 쓴다 (맞으면 pop, 아니면 매장 화면으로 교체).
+final List<String> openStoreMenuStoreIds = <String>[];
+
 class StoreMenuPage extends ConsumerStatefulWidget {
   const StoreMenuPage({
     super.key,
     required this.store,
     this.initialMainCategoryCode,
     this.highlightMenuItemId,
+    this.autoOpenMenuItemId,
+    this.seamlessEntry = false,
   });
 
   final StoreEntity store;
@@ -39,6 +48,13 @@ class StoreMenuPage extends ConsumerStatefulWidget {
   /// 목록에 없으면 `이 매장에서는 판매하지 않는 메뉴일 수 있어요` 띠.
   final String? highlightMenuItemId;
 
+  /// 검색에서 메뉴 행을 눌러 들어온 경우: 메뉴 목록이 확정된 뒤 그 메뉴가 **이 화면 목록에 있으면**(F5 단일 판정)
+  /// 그 위에 상세를 한 번만 올린다. 없으면 올리지 않고 안내 띠가 알린다. 뒤로가기로 나오면 다시 열리지 않는다.
+  final String? autoOpenMenuItemId;
+
+  /// 검색 메뉴 행 탭으로 연 경우 true: 상세가 덮을 때까지 아무것도 그리지 않는다 ([SeamlessStoreMenuRoute] 와 함께 쓴다).
+  final bool seamlessEntry;
+
   @override
   ConsumerState<StoreMenuPage> createState() => _StoreMenuPageState();
 }
@@ -47,6 +63,37 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
   /// 이 화면이 `selectedMainCategoryProvider` 를 바꿨는지 (바꿨다면 나갈 때 되돌려 다른 매장으로 새지 않게).
   bool _appliedInitialCategory = false;
   bool _highlightDismissed = false;
+
+  /// 자동 상세 push 는 딱 한 번 (뒤로 나온 뒤 재진입 금지).
+  bool _autoOpened = false;
+
+  // ── 전환 (seamlessEntry) ──
+  late bool _revealed = !widget.seamlessEntry;
+  bool _fadeIn = false;
+  bool _showScrim = false;
+  Timer? _scrimTimer;
+  Timer? _giveUpTimer;
+  Animation<double>? _secondary;
+
+  /// 매장 화면을 드러낸다. 드러내는 시점: 상세가 위를 완전히 덮은 뒤 / 상세를 올리지 않는 분기(페이드) / 3초 초과(폴백).
+  void _reveal({bool fade = false}) {
+    if (!mounted || _revealed) return;
+    _scrimTimer?.cancel();
+    _giveUpTimer?.cancel();
+    setState(() {
+      _fadeIn = fade;
+      _revealed = true;
+    });
+  }
+
+  void _onSecondaryStatus(AnimationStatus status) {
+    // 상세가 완전히 덮었거나(completed), 사용자가 상세에서 뒤로 가기 시작(reverse)하면 드러낸다.
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.reverse) {
+      _reveal();
+    }
+  }
+
   late final ProviderContainer _container;
 
   StoreEntity get store => widget.store;
@@ -55,6 +102,15 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
   void initState() {
     super.initState();
     _container = ProviderScope.containerOf(context, listen: false);
+    openStoreMenuStoreIds.add(widget.store.id);
+    if (widget.seamlessEntry) {
+      // 250ms 안에 끝나면 아무것도 안 보인다. 넘으면 검색 화면 위에 스크림 + 인디케이터.
+      _scrimTimer = Timer(const Duration(milliseconds: 250), () {
+        if (mounted && !_revealed) setState(() => _showScrim = true);
+      });
+      // 3초가 넘으면 중단하고 기존 매장 화면 상태(shimmer / 에러)를 그대로 보여 준다.
+      _giveUpTimer = Timer(const Duration(seconds: 3), _reveal);
+    }
     final code = widget.initialMainCategoryCode;
     if (code != null) {
       // 위젯 빌드 중 provider 수정은 금지 -> 첫 프레임 직후 적용. 첫 프레임은 메뉴 stream 로딩(shimmer) 구간이다.
@@ -70,6 +126,10 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
 
   @override
   void dispose() {
+    openStoreMenuStoreIds.remove(widget.store.id);
+    _scrimTimer?.cancel();
+    _giveUpTimer?.cancel();
+    _secondary?.removeStatusListener(_onSecondaryStatus);
     if (_appliedInitialCategory) {
       final container = _container;
       Future.microtask(() {
@@ -83,6 +143,43 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
     super.dispose();
   }
 
+  /// 목록 확정 후 1회: 검색한 메뉴가 이 화면 목록에 있으면 상세를 그 위에 올린다 (spec §15.8).
+  /// 빌드 중 Navigator 호출은 금지이므로 다음 프레임에 올린다.
+  void _maybeAutoOpen(List<MenuItemEntity> allItems, Set<String>? activeIds) {
+    final id = widget.autoOpenMenuItemId;
+    if (id == null || _autoOpened || activeIds == null) return;
+    _autoOpened = true; // 판정은 한 번 — 있든 없든 다시 시도하지 않는다
+    final found = allItems.any(
+      (m) =>
+          m.id == id &&
+          isMenuShownOnStoreScreen(
+            visible: m.visible,
+            mainCategoryCode: m.mainCategoryCode,
+            activeCategoryIds: activeIds,
+          ),
+    );
+    if (!found) {
+      // 상세를 올리지 않는 분기 — 매장 화면을 페이드 인 + 안내 띠.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(fade: true));
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 상세가 위를 덮는 애니메이션이 끝나면 비로소 매장 화면을 그린다.
+      _secondary = ModalRoute.of(context)?.secondaryAnimation
+        ?..addStatusListener(_onSecondaryStatus);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => MenuItemDetailPage(
+            storeId: store.id,
+            storeName: store.name,
+            menuItemId: id,
+          ),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final storeId = store.id;
@@ -94,10 +191,12 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
     final menuAsync = ref.watch(storeMenuItemsProvider(storeId));
     final selectedMain = ref.watch(selectedMainCategoryProvider);
     final selectedSubId = ref.watch(selectedSubCategoryIdProvider);
-    final availableMains =
-        ref.watch(storeAvailableMainCategoriesProvider(storeId));
-    final availableSubIds =
-        ref.watch(storeAvailableSubCategoryIdsProvider(storeId));
+    final availableMains = ref.watch(
+      storeAvailableMainCategoriesProvider(storeId),
+    );
+    final availableSubIds = ref.watch(
+      storeAvailableSubCategoryIdsProvider(storeId),
+    );
     final filtered = ref.watch(filteredMenuItemsProvider(storeId));
     final activeCategoryIds = ref
         .watch(mainCategoriesActiveProvider)
@@ -107,15 +206,19 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
         .toSet();
     final subCategoriesAsync = selectedMain == null
         ? const AsyncValue<List<SubCategoryEntity>>.data([])
-        : ref.watch(subCategoriesForStoreProvider(
-            (storeId: storeId, mainCategoryId: selectedMain),
-          ));
-    final filteredSubCategories = subCategoriesAsync.value
+        : ref.watch(
+            subCategoriesForStoreProvider((
+              storeId: storeId,
+              mainCategoryId: selectedMain,
+            )),
+          );
+    final filteredSubCategories =
+        subCategoriesAsync.value
             ?.where((sc) => availableSubIds.contains(sc.id))
             .toList(growable: false) ??
         const [];
 
-    return Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: AppColors.background,
       body: menuAsync.when(
         loading: () => _LoadingShimmer(store: liveStore),
@@ -124,6 +227,7 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
           onRetry: () => ref.invalidate(storeMenuItemsProvider(storeId)),
         ),
         data: (allItems) {
+          _maybeAutoOpen(allItems, activeCategoryIds);
           if (allItems.isEmpty) {
             return _EmptyView(store: liveStore);
           }
@@ -188,34 +292,32 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      // 0.78 이면 좁은 화면(예: iPhone 13 mini 너비) 에서
-                      // 카드 내부(이미지 정사각형 + 이름 + 가격) 높이를 못 담아
-                      // bottom overflow ~14px 발생. 0.7 로 안전 마진 확보.
-                      childAspectRatio: 0.7,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (_, i) {
-                        final item = filtered[i];
-                        return MenuItemCard(
-                          menuItem: item,
-                          highlighted: !_highlightDismissed &&
-                              item.id == widget.highlightMenuItemId,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => MenuItemDetailPage(
-                                storeId: storeId,
-                                storeName: store.name,
-                                menuItemId: item.id,
-                              ),
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          // 0.78 이면 좁은 화면(예: iPhone 13 mini 너비) 에서
+                          // 카드 내부(이미지 정사각형 + 이름 + 가격) 높이를 못 담아
+                          // bottom overflow ~14px 발생. 0.7 로 안전 마진 확보.
+                          childAspectRatio: 0.7,
+                        ),
+                    delegate: SliverChildBuilderDelegate((_, i) {
+                      final item = filtered[i];
+                      return MenuItemCard(
+                        menuItem: item,
+                        highlighted:
+                            !_highlightDismissed &&
+                            item.id == widget.highlightMenuItemId,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => MenuItemDetailPage(
+                              storeId: storeId,
+                              storeName: store.name,
+                              menuItemId: item.id,
                             ),
                           ),
-                        );
-                      },
-                      childCount: filtered.length,
-                    ),
+                        ),
+                      );
+                    }, childCount: filtered.length),
                   ),
                 ),
             ],
@@ -223,7 +325,70 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
         },
       ),
     );
+    return _wrapSeamless(scaffold);
   }
+
+  /// 전환 단계 (design §13-4). 검색의 메뉴 행 탭으로 열린 경우([StoreMenuPage.seamlessEntry])에만 쓴다:
+  /// 이 화면은 상세가 위를 덮을 때까지 **아무것도 그리지 않아** 검색 화면이 그대로 보이게 한다.
+  /// (목록 확정 전 shimmer 가 비치거나 슬라이드가 두 번 보이는 것을 막는다.)
+  Widget _wrapSeamless(Widget scaffold) {
+    if (!widget.seamlessEntry) return scaffold;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AnimatedOpacity(
+          opacity: _revealed ? 1 : 0,
+          duration: _fadeIn ? const Duration(milliseconds: 200) : Duration.zero,
+          child: IgnorePointer(ignoring: !_revealed, child: scaffold),
+        ),
+        if (!_revealed && _showScrim)
+          Semantics(
+            liveRegion: true,
+            label: '메뉴로 이동하고 있어요',
+            child: ColoredBox(
+              color: AppColors.background.withValues(alpha: 0.6),
+              child: const Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 검색 화면 위에 "보이지 않게" 깔리는 매장 화면 라우트. 정상 경로에서 보이는 슬라이드는 상세 하나뿐이다.
+/// - 앞으로 가는 전환 0ms, `opaque: false` (아래 검색 화면이 계속 그려진다)
+/// - 되돌아올 때는 표준 전환 (플랫폼 기본: `MaterialRouteTransitionMixin` 이므로 iOS 스와이프 백 포함)
+class SeamlessStoreMenuRoute<T> extends PageRoute<T>
+    with MaterialRouteTransitionMixin<T> {
+  SeamlessStoreMenuRoute({required this.builder});
+
+  /// `MaterialPageRoute` 는 생성자에서 `opaque` 를 assert 하므로 상속할 수 없다 — 같은 플랫폼 전환
+  /// (`MaterialRouteTransitionMixin`: iOS 스와이프 백 포함)을 쓰는 라우트를 직접 정의한다.
+  final WidgetBuilder builder;
+
+  @override
+  Widget buildContent(BuildContext context) => builder(context);
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 300);
+
+  @override
+  bool get opaque => false;
 }
 
 /// 검색에서 넘어온 메뉴 안내 띠. 목록에서 찾으면 `검색한 메뉴  {이름}`, 못 찾으면 판매하지 않을 수 있다는 정직한 안내.
@@ -236,9 +401,7 @@ class _SearchedMenuBand extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final found = foundName != null;
-    final text = found
-        ? '검색한 메뉴  $foundName'
-        : '이 매장에서는 판매하지 않는 메뉴일 수 있어요';
+    final text = found ? '검색한 메뉴  $foundName' : '이 매장에서는 판매하지 않는 메뉴일 수 있어요';
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       child: Container(
@@ -324,9 +487,7 @@ class _AppBar extends ConsumerWidget {
         ),
       ),
       centerTitle: false,
-      actions: [
-        _CartIconButton(count: cartCount),
-      ],
+      actions: [_CartIconButton(count: cartCount)],
       flexibleSpace: FlexibleSpaceBar(
         background: StoreMenuHeader(
           store: liveStore,
@@ -352,9 +513,9 @@ Future<void> _onToggleStoreFavorite(
     final wantsLogin = await showFavoriteLoginRequiredDialog(context);
     if (!context.mounted) return;
     if (wantsLogin) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const LoginPage()),
-      );
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const LoginPage()));
     }
     return;
   }
@@ -366,9 +527,9 @@ Future<void> _onToggleStoreFavorite(
     final wantsLogin = await showFavoriteLoginRequiredDialog(context);
     if (!context.mounted) return;
     if (wantsLogin) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const LoginPage()),
-      );
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const LoginPage()));
     }
   } catch (_) {
     if (!context.mounted) return;
@@ -388,9 +549,9 @@ class _CartIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const CartPage()),
-      ),
+      onPressed: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const CartPage())),
       icon: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -408,10 +569,7 @@ class _CartIconButton extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.error,
                   borderRadius: BorderRadius.circular(9),
-                  border: Border.all(
-                    color: AppColors.background,
-                    width: 1.5,
-                  ),
+                  border: Border.all(color: AppColors.background, width: 1.5),
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -440,7 +598,11 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get _height => showSubChips ? 48.0 + 56.0 : 48.0;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(color: AppColors.background, child: child);
   }
 
@@ -471,9 +633,7 @@ class _LoadingShimmer extends StatelessWidget {
             height: 48,
             decoration: const BoxDecoration(
               color: AppColors.background,
-              border: Border(
-                bottom: BorderSide(color: AppColors.border),
-              ),
+              border: Border(bottom: BorderSide(color: AppColors.border)),
             ),
           ),
         ),
@@ -507,10 +667,7 @@ class _LoadingShimmer extends StatelessWidget {
 }
 
 class _ErrorView extends StatelessWidget {
-  const _ErrorView({
-    required this.store,
-    required this.onRetry,
-  });
+  const _ErrorView({required this.store, required this.onRetry});
   final StoreEntity store;
   final VoidCallback onRetry;
 
@@ -626,4 +783,3 @@ class _FilteredEmpty extends StatelessWidget {
     );
   }
 }
-

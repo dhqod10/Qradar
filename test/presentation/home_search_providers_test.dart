@@ -8,6 +8,8 @@ import 'package:qradar/data/repositories/store_repository_impl.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/main_category_entity.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
+import 'package:qradar/domain/entities/menu_override_entity.dart';
+import 'package:qradar/domain/repositories/menu_override_repository.dart';
 import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
@@ -133,12 +135,14 @@ void main() {
     late _CountingStoreDs storeDs;
     late _CountingMenuRepo menuRepo;
     late _CountingMasterRepo masterRepo;
+    late _CountingOverrideRepo ovRepo;
     late ProviderContainer c;
 
     setUp(() {
       storeDs = _CountingStoreDs(_fixtureStores());
       menuRepo = _CountingMenuRepo();
       masterRepo = _CountingMasterRepo();
+      ovRepo = _CountingOverrideRepo();
       c = ProviderContainer(
         overrides: [
           storeRepositoryProvider.overrideWithValue(
@@ -147,6 +151,7 @@ void main() {
           userLocationProvider.overrideWith(_FixedLocation.new),
           menuItemRepositoryProvider.overrideWithValue(menuRepo),
           masterMenuItemRepositoryProvider.overrideWithValue(masterRepo),
+          searchMenuOverrideRepositoryProvider.overrideWithValue(ovRepo),
           mainCategoriesActiveProvider.overrideWith(
             (ref) => Stream.value(const [
               MainCategoryEntity(id: 'coffee', label: '커피'),
@@ -156,6 +161,12 @@ void main() {
       );
       addTearDown(c.dispose);
     });
+
+    Future<void> settle() async {
+      for (var i = 0; i < 6; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
 
     Future<void> enterHome() async {
       c.listen(nearbyStoresProvider, (_, _) {});
@@ -196,32 +207,61 @@ void main() {
       expect(storeDs.fetchAllCalls, 1);
     });
 
-    test('홈 진입만으로는 메뉴 읽기 0 / 첫 메뉴 검색에서 출처당 1회 / 두 번째 검색 0', () async {
+    test(
+      '홈 진입만으로는 메뉴 읽기 0 / 첫 검색: 1단계 32쿼리(D10) + 2단계 / 같은 세션 재검색 0 / 재진입 시 2단계만 재조회',
+      () async {
+        await enterHome();
+        expect(menuRepo.calls + masterRepo.calls + ovRepo.calls, 0);
+
+        c.listen(searchViewModelProvider, (_, _) {});
+        c.read(searchQueryProvider.notifier).set('아메');
+        await c.read(menuSearchIndexProvider.future);
+        await settle();
+        final stage1 = menuRepo.calls + masterRepo.calls;
+        final stage1Docs = menuRepo.docs + masterRepo.docs;
+        // 후보 30곳: 브랜드 2개(마스터 2) + 개인 15(매장 자체 15) + 브랜드 매장 15(점포 한정, D10) = 32
+        expect(masterRepo.calls, 2);
+        expect(menuRepo.calls, 30);
+        expect(stage1, 32);
+        // 2단계: 일치한 브랜드 매장 15곳 중 fan-out 상한 10곳
+        expect(ovRepo.calls, 10);
+        final vm = c.read(searchViewModelProvider);
+        expect(vm.menu.fanOutTruncated, isTrue);
+        // ignore: avoid_print
+        print(
+          '[실측 2차] 첫 메뉴 검색  1단계 get()=$stage1 (매장 자체 ${menuRepo.calls} + 브랜드 마스터 ${masterRepo.calls}) docs=$stage1Docs'
+          ' / 2단계 override get()=${ovRepo.calls} docs=${ovRepo.docs} / 합계 ${stage1 + ovRepo.calls}',
+        );
+
+        // 같은 세션 안의 다른 질의 — 같은 매장이 다시 일치해도 0쿼리
+        final before = menuRepo.calls + masterRepo.calls + ovRepo.calls;
+        c.read(searchQueryProvider.notifier).set('브랜드메뉴1');
+        await settle();
+        c.read(searchQueryProvider.notifier).set('라떼'); // 개인 매장만 일치 -> 2단계 0
+        await settle();
+        expect(menuRepo.calls + masterRepo.calls + ovRepo.calls, before);
+
+        // 검색 화면 재진입 = override 캐시 폐기 (SearchPage.dispose 가 하는 일) -> 1단계 0 / 2단계 다시
+        c.invalidate(storeMenuOverridesProvider);
+        c.read(searchQueryProvider.notifier).set('아메');
+        await settle();
+        expect(
+          menuRepo.calls + masterRepo.calls,
+          stage1,
+          reason: '1단계 인덱스는 세션 캐시',
+        );
+        expect(ovRepo.calls, 20, reason: '재진입 시 2단계는 다시 조회');
+      },
+    );
+
+    test('개인 매장(점포 한정 포함)만 일치하면 2단계는 0쿼리', () async {
       await enterHome();
-      expect(menuRepo.calls + masterRepo.calls, 0);
-
       c.listen(searchViewModelProvider, (_, _) {});
-      c.read(searchQueryProvider.notifier).set('아메');
-      await c.read(menuSearchIndexProvider.future);
-      final firstSources = menuRepo.calls + masterRepo.calls;
-      final firstDocs = menuRepo.docs + masterRepo.docs;
-      // ignore: avoid_print
-      print(
-        '[실측] 첫 메뉴 검색  출처 get()=$firstSources (개인 ${menuRepo.calls} + 브랜드 ${masterRepo.calls}) docs=$firstDocs',
-      );
-      // 후보 30곳: 브랜드 2개(출처 2) + 개인 매장 15곳 = 17
-      expect(masterRepo.calls, 2);
-      expect(menuRepo.calls, 15);
-      expect(firstSources, 17);
-
       c.read(searchQueryProvider.notifier).set('라떼');
-      c.read(searchQueryProvider.notifier).set('카푸');
-      await Future<void>.delayed(Duration.zero);
-      // ignore: avoid_print
-      print(
-        '[실측] 두 번째 이후 검색 추가 get()=${menuRepo.calls + masterRepo.calls - firstSources}',
-      );
-      expect(menuRepo.calls + masterRepo.calls, firstSources);
+      await c.read(menuSearchIndexProvider.future);
+      await settle();
+      expect(ovRepo.calls, 0);
+      expect(c.read(searchViewModelProvider).menuTotal, 15);
     });
 
     test('1글자 질의는 메뉴 인덱스를 구독하지 않는다 (읽기 0)', () async {
@@ -229,7 +269,7 @@ void main() {
       c.listen(searchViewModelProvider, (_, _) {});
       c.read(searchQueryProvider.notifier).set('아');
       await Future<void>.delayed(Duration.zero);
-      expect(menuRepo.calls + masterRepo.calls, 0);
+      expect(menuRepo.calls + masterRepo.calls + ovRepo.calls, 0);
     });
 
     test('후보는 10km 이내 가까운 30곳으로 제한된다', () async {
@@ -280,6 +320,7 @@ void main() {
       c.read(searchQueryProvider.notifier).set('아메');
       await c.read(menuSearchIndexProvider.future);
       await c.read(mainCategoriesActiveProvider.future);
+      await settle();
       final vm = c.read(searchViewModelProvider);
       expect(vm.menu.isPartial, isTrue);
       expect(vm.menuTotal, greaterThan(0));
@@ -400,6 +441,26 @@ class _CountingMasterRepo implements MasterMenuItemRepository {
           status: EntityApprovalStatus.approved,
         ),
     ];
+    docs += r.length;
+    return r;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation i) =>
+      throw UnimplementedError('${i.memberName}');
+}
+
+class _CountingOverrideRepo implements MenuOverrideRepository {
+  int calls = 0;
+  int docs = 0;
+  final Set<String> failing = {};
+  final Map<String, List<MenuOverrideEntity>> byStore = {};
+
+  @override
+  Future<List<MenuOverrideEntity>> fetchByStoreOnce(String storeId) async {
+    calls++;
+    if (failing.contains(storeId)) throw StateError('boom');
+    final r = byStore[storeId] ?? const <MenuOverrideEntity>[];
     docs += r.length;
     return r;
   }

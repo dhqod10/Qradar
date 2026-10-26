@@ -7,9 +7,13 @@ import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/cart_item_entity.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/option_group_entity.dart';
+import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/selected_option.dart';
 import 'package:qradar/presentation/common/favorite_login_required_dialog.dart';
 import 'package:qradar/presentation/common/quantity_stepper.dart';
+import 'package:qradar/presentation/common/sold_out_overlay.dart';
+import 'package:qradar/presentation/customer/order/store/store_menu_page.dart';
+import 'package:qradar/presentation/customer/review/providers/store_review_providers.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/auth/login_page.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
@@ -64,7 +68,9 @@ class MenuItemDetailPage extends ConsumerWidget {
               ref.invalidate(menuItemDetailProvider(_key)),
         ),
         data: (item) {
-          if (item == null) return const _DeletedView();
+          if (item == null) {
+            return _DeletedView(storeId: storeId);
+          }
           return _Body(
             menuItem: item,
             menuItemKey: _key,
@@ -116,7 +122,13 @@ class _Body extends ConsumerWidget {
         SliverToBoxAdapter(
           child: _InfoSection(menuItem: menuItem),
         ),
-        groupsAsync.when(
+        SliverOpacity(
+          opacity: menuItem.soldOut ? 0.45 : 1,
+          sliver: SliverIgnorePointer(
+            ignoring: menuItem.soldOut,
+            sliver: SliverSemantics(
+              label: menuItem.soldOut ? '품절이라 선택할 수 없어요' : null,
+              sliver: groupsAsync.when(
           loading: () => const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(20),
@@ -199,6 +211,9 @@ class _Body extends ConsumerWidget {
               ),
             );
           },
+              ),
+            ),
+          ),
         ),
         SliverToBoxAdapter(
           child: Padding(
@@ -215,6 +230,7 @@ class _Body extends ConsumerWidget {
                   ),
                 ),
                 QuantityStepper(
+                  enabled: !menuItem.soldOut,
                   value: quantity,
                   onChanged: (v) => ref
                       .read(menuItemQuantityProvider(menuItem.id).notifier)
@@ -280,6 +296,14 @@ class _ImageHeader extends ConsumerWidget {
                   size: 64,
                   color: AppColors.textMuted,
                 ),
+              ),
+            ),
+          // 품절: 이미지 위 오버레이 (그라데이션·버튼보다 아래). 카드와 같은 위젯.
+          if (menuItem.soldOut)
+            const Positioned.fill(
+              child: SoldOutOverlay(
+                fontSize: 14,
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             ),
           Positioned(
@@ -415,19 +439,27 @@ class _InfoSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final desc = menuItem.description;
+    final soldOut = menuItem.soldOut;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            menuItem.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textHeading,
+          Semantics(
+            container: true,
+            label:
+                '${menuItem.name}${soldOut ? ', 품절' : ''}, ${PriceFormatter.formatKrw(menuItem.basePrice)}',
+            child: ExcludeSemantics(
+              child: Text(
+                menuItem.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: soldOut ? AppColors.textMuted : AppColors.textHeading,
+                ),
+              ),
             ),
           ),
           if (desc != null && desc.isNotEmpty) ...[
@@ -445,12 +477,42 @@ class _InfoSection extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             PriceFormatter.formatKrw(menuItem.basePrice),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: AppColors.primary,
+              color: soldOut ? AppColors.textMuted : AppColors.primary,
             ),
           ),
+          if (soldOut) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: AppColors.textMuted,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '지금은 품절이에요. 다시 판매되면 담을 수 있어요',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textBody,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           Container(height: 1, color: AppColors.border),
           const SizedBox(height: 8),
@@ -483,7 +545,10 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
     final ready = ref.watch(menuItemAddToCartReadyProvider(widget.menuItemKey));
     final missing =
         ref.watch(menuItemMissingRequiredGroupsProvider(widget.menuItemKey));
-    final enabled = ready && !_busy;
+    // 판정 순서: ① soldOut ② _busy ③ required 미선택. 품절은 최우선이며 토스트를 띄우지 않는다.
+    final soldOut = widget.menuItem.soldOut;
+    final enabled = !soldOut && ready && !_busy;
+    final active = !soldOut && ready;
 
     return SafeArea(
       top: false,
@@ -516,10 +581,10 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
                 ),
                 Text(
                   PriceFormatter.formatKrw(price),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
+                    color: soldOut ? AppColors.textMuted : AppColors.primary,
                   ),
                 ),
               ],
@@ -532,19 +597,27 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
                 onPressed: enabled ? () => _onAddPressed(missing) : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      ready ? AppColors.primary : AppColors.surface,
+                      active ? AppColors.primary : AppColors.surface,
                   foregroundColor:
-                      ready ? AppColors.onPrimary : AppColors.textMuted,
+                      active ? AppColors.onPrimary : AppColors.textMuted,
                   disabledBackgroundColor:
-                      ready ? AppColors.primary : AppColors.surface,
+                      active ? AppColors.primary : AppColors.surface,
                   disabledForegroundColor:
-                      ready ? AppColors.onPrimary : AppColors.textMuted,
+                      active ? AppColors.onPrimary : AppColors.textMuted,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: _busy
+                child: soldOut
+                    ? const Text(
+                        '품절',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                    : _busy
                     ? const SizedBox(
                         width: 20,
                         height: 20,
@@ -569,6 +642,11 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
   }
 
   Future<void> _onAddPressed(List<String> missing) async {
+    // 선택 도중 품절로 바뀌는 경쟁 상태 방어 — 품절이면 토스트 없이 즉시 종료.
+    if (ref.read(menuItemDetailProvider(widget.menuItemKey)).value?.soldOut ??
+        widget.menuItem.soldOut) {
+      return;
+    }
     final ready = ref.read(menuItemAddToCartReadyProvider(widget.menuItemKey));
     if (!ready) {
       final names = missing.join(', ');
@@ -735,33 +813,102 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-class _DeletedView extends StatelessWidget {
-  const _DeletedView();
+/// 이 매장에서 판매하지 않는 메뉴(excluded) / 삭제된 메뉴. "삭제됨" 과 "안 팖" 의 구별은 후속(F9) —
+/// 문구는 두 경우 모두에 참이도록 썼다. 에러는 이 화면이 아니라 `_ErrorView` 다.
+class _DeletedView extends ConsumerWidget {
+  const _DeletedView({required this.storeId});
+  final String storeId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final store = ref.watch(watchedStoreProvider(storeId)).asData?.value;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.search_off_rounded,
-              color: AppColors.textMuted, size: 56),
-          const SizedBox(height: 12),
-          const Text(
-            '메뉴를 찾을 수 없어요',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textHeading,
-            ),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Semantics(
+          container: true,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.storefront_outlined,
+                color: AppColors.textMuted,
+                size: 56,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '이 매장에서는 판매하지 않는 메뉴예요',
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textHeading,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '메뉴가 내려갔거나 판매가 중단됐을 수 있어요',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              if (store != null) ...[
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () => _openStoreMenu(context, store),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(200, 48),
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      '매장 메뉴 보기',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text(
+                  '뒤로가기',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            child: const Text('뒤로가기'),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+
+  /// 바로 아래 스택이 그 매장의 `StoreMenuPage` 면 pop, 아니면 이 화면을 매장 화면으로 교체한다.
+  void _openStoreMenu(BuildContext context, StoreEntity store) {
+    if (openStoreMenuStoreIds.isNotEmpty &&
+        openStoreMenuStoreIds.last == store.id) {
+      Navigator.of(context).pop();
+      return;
+    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(builder: (_) => StoreMenuPage(store: store)),
     );
   }
 }

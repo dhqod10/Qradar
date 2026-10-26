@@ -385,12 +385,6 @@ void main() {
       expect(menuScopeSentence(0), '10km 이내에 메뉴를 찾아볼 매장이 없어요');
       expect(menuScopeSentence(0), isNot(contains('찾았어요')));
     });
-
-    test('고정 안내는 L1(매장 한정 메뉴)과 가격·판매 여부를 함께 알린다', () {
-      expect(menuScopeCaveat, contains('매장 한정 메뉴'));
-      expect(menuScopeCaveat, contains('가격'));
-      expect(menuScopeCaveat, contains('판매 여부'));
-    });
   });
 
   group('당겨서 새로고침 읽기 횟수 (⑤) — 실제 UserLocationNotifier', () {

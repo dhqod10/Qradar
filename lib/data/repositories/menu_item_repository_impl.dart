@@ -9,6 +9,7 @@ import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/menu_item_scope.dart';
 import 'package:qradar/domain/entities/menu_override_entity.dart';
 import 'package:qradar/domain/repositories/menu_item_repository.dart';
+import 'package:qradar/core/utils/store_menu_visibility.dart';
 import 'package:rxdart/rxdart.dart';
 
 /// [MenuItemRepository] 구현체.
@@ -110,36 +111,16 @@ class MenuItemRepositoryImpl implements MenuItemRepository {
             m.status == EntityApprovalStatus.approved && m.visible)
         .toList();
 
-    // 모든 override (status 무관) — 운영 필드 머지용
-    final allOverrideMap = {
+    final overrideMap = {
       for (final o in overrides) o.masterMenuItemId: o,
     };
-    // approved override 만 — 핵심 필드 (priceOverride / excluded) 머지용
-    final approvedOverrideMap = {
-      for (final o in overrides
-          .where((o) => o.status == EntityApprovalStatus.approved))
-        o.masterMenuItemId: o,
-    };
 
-    // 2. master 메뉴에 override 적용
-    //    - excluded (핵심): approved 만
-    //    - priceOverride (핵심): approved 만
-    //    - soldOut / disabledOption* (운영): status 무관 즉시 적용
-    final mergedMaster = approvedMaster
-        .where((m) => !(approvedOverrideMap[m.id]?.excluded ?? false))
-        .map((m) {
-          final approvedOv = approvedOverrideMap[m.id];
-          final allOv = allOverrideMap[m.id];
-          return m.copyWith(
-            basePrice: approvedOv?.priceOverride ?? m.basePrice,
-            soldOut: allOv?.soldOut ?? m.soldOut,
-            disabledOptionGroupIds:
-                allOv?.disabledOptionGroupIds ?? m.disabledOptionGroupIds,
-            disabledOptionItemIds:
-                allOv?.disabledOptionItemIds ?? m.disabledOptionItemIds,
-          );
-        })
-        .toList();
+    // 2. master 메뉴에 override 적용 — 규칙(approved 만 핵심 / 운영은 즉시)은
+    //    `applyOverrideForCustomer` 가 유일한 구현이다 (검색·상세와 공유, 복제 금지).
+    final mergedMaster = <MenuItemEntity>[
+      for (final m in approvedMaster)
+        ?applyOverrideForCustomer(master: m, override: overrideMap[m.id]),
+    ];
 
     // 3. 점포 한정 추가 메뉴 append + displayOrder 정렬
     final merged = [...mergedMaster, ...approvedStoreOnly];
@@ -164,11 +145,30 @@ class MenuItemRepositoryImpl implements MenuItemRepository {
       if (brandId == null || brandId.isEmpty) return storeStream;
       final masterStream =
           masterDs.streamById(brandId, menuItemId).map((m) => m?.toEntity());
-      return Rx.combineLatest2<MenuItemEntity?, MenuItemEntity?,
-          MenuItemEntity?>(
+      final overrideDs = _menuOverrideDataSource;
+      if (overrideDs == null) {
+        return Rx.combineLatest2<MenuItemEntity?, MenuItemEntity?,
+            MenuItemEntity?>(
+          storeStream,
+          masterStream,
+          (s, m) => s ?? m,
+        );
+      }
+      // D13: 이 매장의 override 문서 1건을 함께 구독해 목록 카드와 **같은 함수**로 적용한다.
+      // override 스트림 실패는 에러로 전파된다 (마스터 값으로 조용히 폴백하지 않는다).
+      final overrideStream = overrideDs
+          .streamByStoreAndMaster(storeId, menuItemId)
+          .map((o) => o?.toEntity());
+      return Rx.combineLatest3<MenuItemEntity?, MenuItemEntity?,
+          MenuOverrideEntity?, MenuItemEntity?>(
         storeStream,
         masterStream,
-        (s, m) => s ?? m,
+        overrideStream,
+        (s, m, o) {
+          if (s != null) return s;
+          if (m == null) return null;
+          return applyOverrideForCustomer(master: m, override: o);
+        },
       );
     });
   }

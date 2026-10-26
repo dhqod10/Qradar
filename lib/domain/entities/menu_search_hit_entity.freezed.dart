@@ -17,7 +17,8 @@ mixin _$MenuSearchHitEntity {
 /// 메뉴 문서 ID (브랜드 마스터면 마스터 ID — 매장 화면 머지 목록의 id 와 같다).
  String get menuItemId; String get menuName;/// 없으면 `''`.
  String get menuImageUrl; String get mainCategoryCode; String get storeId; String get storeName;/// 스냅샷의 값 그대로.
- double? get distanceKm; MenuHitSource get source;
+ double? get distanceKm; MenuHitSource get source;/// 매장 메뉴 화면 카드와 같은 값 (검증 후 override 적용분). 표기는 `PriceFormatter.formatKrw` 한 곳.
+ int get basePrice; bool get soldOut;
 /// Create a copy of MenuSearchHitEntity
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +29,16 @@ $MenuSearchHitEntityCopyWith<MenuSearchHitEntity> get copyWith => _$MenuSearchHi
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is MenuSearchHitEntity&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuName, menuName) || other.menuName == menuName)&&(identical(other.menuImageUrl, menuImageUrl) || other.menuImageUrl == menuImageUrl)&&(identical(other.mainCategoryCode, mainCategoryCode) || other.mainCategoryCode == mainCategoryCode)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.distanceKm, distanceKm) || other.distanceKm == distanceKm)&&(identical(other.source, source) || other.source == source));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MenuSearchHitEntity&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuName, menuName) || other.menuName == menuName)&&(identical(other.menuImageUrl, menuImageUrl) || other.menuImageUrl == menuImageUrl)&&(identical(other.mainCategoryCode, mainCategoryCode) || other.mainCategoryCode == mainCategoryCode)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.distanceKm, distanceKm) || other.distanceKm == distanceKm)&&(identical(other.source, source) || other.source == source)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.soldOut, soldOut) || other.soldOut == soldOut));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,menuItemId,menuName,menuImageUrl,mainCategoryCode,storeId,storeName,distanceKm,source);
+int get hashCode => Object.hash(runtimeType,menuItemId,menuName,menuImageUrl,mainCategoryCode,storeId,storeName,distanceKm,source,basePrice,soldOut);
 
 @override
 String toString() {
-  return 'MenuSearchHitEntity(menuItemId: $menuItemId, menuName: $menuName, menuImageUrl: $menuImageUrl, mainCategoryCode: $mainCategoryCode, storeId: $storeId, storeName: $storeName, distanceKm: $distanceKm, source: $source)';
+  return 'MenuSearchHitEntity(menuItemId: $menuItemId, menuName: $menuName, menuImageUrl: $menuImageUrl, mainCategoryCode: $mainCategoryCode, storeId: $storeId, storeName: $storeName, distanceKm: $distanceKm, source: $source, basePrice: $basePrice, soldOut: $soldOut)';
 }
 
 
@@ -48,7 +49,7 @@ abstract mixin class $MenuSearchHitEntityCopyWith<$Res>  {
   factory $MenuSearchHitEntityCopyWith(MenuSearchHitEntity value, $Res Function(MenuSearchHitEntity) _then) = _$MenuSearchHitEntityCopyWithImpl;
 @useResult
 $Res call({
- String menuItemId, String menuName, String menuImageUrl, String mainCategoryCode, String storeId, String storeName, double? distanceKm, MenuHitSource source
+ String menuItemId, String menuName, String menuImageUrl, String mainCategoryCode, String storeId, String storeName, double? distanceKm, MenuHitSource source, int basePrice, bool soldOut
 });
 
 
@@ -65,7 +66,7 @@ class _$MenuSearchHitEntityCopyWithImpl<$Res>
 
 /// Create a copy of MenuSearchHitEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? menuItemId = null,Object? menuName = null,Object? menuImageUrl = null,Object? mainCategoryCode = null,Object? storeId = null,Object? storeName = null,Object? distanceKm = freezed,Object? source = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? menuItemId = null,Object? menuName = null,Object? menuImageUrl = null,Object? mainCategoryCode = null,Object? storeId = null,Object? storeName = null,Object? distanceKm = freezed,Object? source = null,Object? basePrice = null,Object? soldOut = null,}) {
   return _then(_self.copyWith(
 menuItemId: null == menuItemId ? _self.menuItemId : menuItemId // ignore: cast_nullable_to_non_nullable
 as String,menuName: null == menuName ? _self.menuName : menuName // ignore: cast_nullable_to_non_nullable
@@ -75,7 +76,9 @@ as String,storeId: null == storeId ? _self.storeId : storeId // ignore: cast_nul
 as String,storeName: null == storeName ? _self.storeName : storeName // ignore: cast_nullable_to_non_nullable
 as String,distanceKm: freezed == distanceKm ? _self.distanceKm : distanceKm // ignore: cast_nullable_to_non_nullable
 as double?,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
-as MenuHitSource,
+as MenuHitSource,basePrice: null == basePrice ? _self.basePrice : basePrice // ignore: cast_nullable_to_non_nullable
+as int,soldOut: null == soldOut ? _self.soldOut : soldOut // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 
@@ -160,10 +163,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String menuItemId,  String menuName,  String menuImageUrl,  String mainCategoryCode,  String storeId,  String storeName,  double? distanceKm,  MenuHitSource source)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String menuItemId,  String menuName,  String menuImageUrl,  String mainCategoryCode,  String storeId,  String storeName,  double? distanceKm,  MenuHitSource source,  int basePrice,  bool soldOut)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _MenuSearchHitEntity() when $default != null:
-return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCategoryCode,_that.storeId,_that.storeName,_that.distanceKm,_that.source);case _:
+return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCategoryCode,_that.storeId,_that.storeName,_that.distanceKm,_that.source,_that.basePrice,_that.soldOut);case _:
   return orElse();
 
 }
@@ -181,10 +184,10 @@ return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCat
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String menuItemId,  String menuName,  String menuImageUrl,  String mainCategoryCode,  String storeId,  String storeName,  double? distanceKm,  MenuHitSource source)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String menuItemId,  String menuName,  String menuImageUrl,  String mainCategoryCode,  String storeId,  String storeName,  double? distanceKm,  MenuHitSource source,  int basePrice,  bool soldOut)  $default,) {final _that = this;
 switch (_that) {
 case _MenuSearchHitEntity():
-return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCategoryCode,_that.storeId,_that.storeName,_that.distanceKm,_that.source);case _:
+return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCategoryCode,_that.storeId,_that.storeName,_that.distanceKm,_that.source,_that.basePrice,_that.soldOut);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -201,10 +204,10 @@ return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCat
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String menuItemId,  String menuName,  String menuImageUrl,  String mainCategoryCode,  String storeId,  String storeName,  double? distanceKm,  MenuHitSource source)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String menuItemId,  String menuName,  String menuImageUrl,  String mainCategoryCode,  String storeId,  String storeName,  double? distanceKm,  MenuHitSource source,  int basePrice,  bool soldOut)?  $default,) {final _that = this;
 switch (_that) {
 case _MenuSearchHitEntity() when $default != null:
-return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCategoryCode,_that.storeId,_that.storeName,_that.distanceKm,_that.source);case _:
+return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCategoryCode,_that.storeId,_that.storeName,_that.distanceKm,_that.source,_that.basePrice,_that.soldOut);case _:
   return null;
 
 }
@@ -216,7 +219,7 @@ return $default(_that.menuItemId,_that.menuName,_that.menuImageUrl,_that.mainCat
 
 
 class _MenuSearchHitEntity implements MenuSearchHitEntity {
-  const _MenuSearchHitEntity({required this.menuItemId, required this.menuName, this.menuImageUrl = '', required this.mainCategoryCode, required this.storeId, required this.storeName, this.distanceKm, required this.source});
+  const _MenuSearchHitEntity({required this.menuItemId, required this.menuName, this.menuImageUrl = '', required this.mainCategoryCode, required this.storeId, required this.storeName, this.distanceKm, required this.source, required this.basePrice, this.soldOut = false});
   
 
 /// 메뉴 문서 ID (브랜드 마스터면 마스터 ID — 매장 화면 머지 목록의 id 와 같다).
@@ -230,6 +233,9 @@ class _MenuSearchHitEntity implements MenuSearchHitEntity {
 /// 스냅샷의 값 그대로.
 @override final  double? distanceKm;
 @override final  MenuHitSource source;
+/// 매장 메뉴 화면 카드와 같은 값 (검증 후 override 적용분). 표기는 `PriceFormatter.formatKrw` 한 곳.
+@override final  int basePrice;
+@override@JsonKey() final  bool soldOut;
 
 /// Create a copy of MenuSearchHitEntity
 /// with the given fields replaced by the non-null parameter values.
@@ -241,16 +247,16 @@ _$MenuSearchHitEntityCopyWith<_MenuSearchHitEntity> get copyWith => __$MenuSearc
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _MenuSearchHitEntity&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuName, menuName) || other.menuName == menuName)&&(identical(other.menuImageUrl, menuImageUrl) || other.menuImageUrl == menuImageUrl)&&(identical(other.mainCategoryCode, mainCategoryCode) || other.mainCategoryCode == mainCategoryCode)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.distanceKm, distanceKm) || other.distanceKm == distanceKm)&&(identical(other.source, source) || other.source == source));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _MenuSearchHitEntity&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuName, menuName) || other.menuName == menuName)&&(identical(other.menuImageUrl, menuImageUrl) || other.menuImageUrl == menuImageUrl)&&(identical(other.mainCategoryCode, mainCategoryCode) || other.mainCategoryCode == mainCategoryCode)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.distanceKm, distanceKm) || other.distanceKm == distanceKm)&&(identical(other.source, source) || other.source == source)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.soldOut, soldOut) || other.soldOut == soldOut));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,menuItemId,menuName,menuImageUrl,mainCategoryCode,storeId,storeName,distanceKm,source);
+int get hashCode => Object.hash(runtimeType,menuItemId,menuName,menuImageUrl,mainCategoryCode,storeId,storeName,distanceKm,source,basePrice,soldOut);
 
 @override
 String toString() {
-  return 'MenuSearchHitEntity(menuItemId: $menuItemId, menuName: $menuName, menuImageUrl: $menuImageUrl, mainCategoryCode: $mainCategoryCode, storeId: $storeId, storeName: $storeName, distanceKm: $distanceKm, source: $source)';
+  return 'MenuSearchHitEntity(menuItemId: $menuItemId, menuName: $menuName, menuImageUrl: $menuImageUrl, mainCategoryCode: $mainCategoryCode, storeId: $storeId, storeName: $storeName, distanceKm: $distanceKm, source: $source, basePrice: $basePrice, soldOut: $soldOut)';
 }
 
 
@@ -261,7 +267,7 @@ abstract mixin class _$MenuSearchHitEntityCopyWith<$Res> implements $MenuSearchH
   factory _$MenuSearchHitEntityCopyWith(_MenuSearchHitEntity value, $Res Function(_MenuSearchHitEntity) _then) = __$MenuSearchHitEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String menuItemId, String menuName, String menuImageUrl, String mainCategoryCode, String storeId, String storeName, double? distanceKm, MenuHitSource source
+ String menuItemId, String menuName, String menuImageUrl, String mainCategoryCode, String storeId, String storeName, double? distanceKm, MenuHitSource source, int basePrice, bool soldOut
 });
 
 
@@ -278,7 +284,7 @@ class __$MenuSearchHitEntityCopyWithImpl<$Res>
 
 /// Create a copy of MenuSearchHitEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? menuItemId = null,Object? menuName = null,Object? menuImageUrl = null,Object? mainCategoryCode = null,Object? storeId = null,Object? storeName = null,Object? distanceKm = freezed,Object? source = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? menuItemId = null,Object? menuName = null,Object? menuImageUrl = null,Object? mainCategoryCode = null,Object? storeId = null,Object? storeName = null,Object? distanceKm = freezed,Object? source = null,Object? basePrice = null,Object? soldOut = null,}) {
   return _then(_MenuSearchHitEntity(
 menuItemId: null == menuItemId ? _self.menuItemId : menuItemId // ignore: cast_nullable_to_non_nullable
 as String,menuName: null == menuName ? _self.menuName : menuName // ignore: cast_nullable_to_non_nullable
@@ -288,7 +294,9 @@ as String,storeId: null == storeId ? _self.storeId : storeId // ignore: cast_nul
 as String,storeName: null == storeName ? _self.storeName : storeName // ignore: cast_nullable_to_non_nullable
 as String,distanceKm: freezed == distanceKm ? _self.distanceKm : distanceKm // ignore: cast_nullable_to_non_nullable
 as double?,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
-as MenuHitSource,
+as MenuHitSource,basePrice: null == basePrice ? _self.basePrice : basePrice // ignore: cast_nullable_to_non_nullable
+as int,soldOut: null == soldOut ? _self.soldOut : soldOut // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 
