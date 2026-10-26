@@ -17,9 +17,6 @@
  * 쓰는 필드: 매장/브랜드는 `qoinAccrualRate` 1개만 (status / updatedAt 불변 — 소유권 경계를 넘는 쓰기는 최소 필드).
  *   예외: 브랜드 scope 에서 `partial` 포인터가 있으면 같은 트랜잭션에서 옛 이력을 `superseded` 로 마감하고 포인터를
  *   `superseded` 로 전이한다 (spec §21.2 — 설정을 바꾸면 중단 안내가 저절로 닫힌다). 값이 같은 noop 은 닫지 않는다.
- *
- * TRANSITIONAL(spec §20.4.5 / §21.9-2): 대상의 현재 값이 레거시 `qoinAccrualRate: 0` 이면 덮어쓰지 않고 멈춘다.
- *   0 은 "적립 안 함" 이었으므로 숫자로 덮으면 의도적으로 꺼 둔 곳이 조용히 켜진다. 일괄 경로(applyBrandQoinRate)와 같은 보호.
  */
 
 import * as admin from "firebase-admin";
@@ -31,7 +28,6 @@ import {
   historyCollection,
   isBulkInProgress,
   isBulkUnfinished,
-  LEGACY_MESSAGE_PREFIX,
   parseReason,
   rateBeforeInfo,
   readPartialHistory,
@@ -123,13 +119,6 @@ export const setQoinAccrualRate = onCall({ region: REGION }, async (request) => 
       }
     }
     const rawBefore = snap.exists ? snap.get(field) : undefined;
-    // TRANSITIONAL(spec §20.4.5): 레거시 0 은 정책 판단 없이 멈춘다 (마이그레이션 선행).
-    if (classifyRate(rawBefore).kind === "legacyZero") {
-      throw new HttpsError("failed-precondition", `${LEGACY_MESSAGE_PREFIX} (1곳)`, {
-        legacyZeroCount: 1,
-        storeIds: s === "store" ? [targetId] : [],
-      });
-    }
     const beforeInfo = rateBeforeInfo(rawBefore, classifyRate(rawBefore).kind === "valid");
     const before = beforeInfo.before;
     // 무효였던 값(문자열 등)도 덮어써야 하므로 "같음" 판정은 number 일치로만 한다.

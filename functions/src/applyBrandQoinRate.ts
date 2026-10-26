@@ -29,8 +29,6 @@
  *
  * F5: 동시 실행 방지는 **브랜드 문서의 포인터**(`qoinBulkHistoryId/Status/At`)를 트랜잭션 안에서 검사해 직렬화한다
  *     (이미 읽는 문서라 read 증가 0). 재개는 포인터와 브랜드 현재 값이 이력과 일치하는지 재검증한다.
- * TRANSITIONAL(spec §20.4.5): 산하 매장·브랜드에 레거시 `qoinAccrualRate: 0` 이 있으면 정책 판단을 하지 않고
- *     `failed-precondition` 으로 멈춘다 (마이그레이션 선행).
  */
 
 import * as admin from "firebase-admin";
@@ -46,7 +44,6 @@ import {
   isBulkInProgress,
   isBulkUnfinished,
   isBulkTerminal,
-  LEGACY_MESSAGE_PREFIX,
   parseReason,
   rateBeforeInfo,
   readPartialHistory,
@@ -59,7 +56,6 @@ const LOG = "[applyBrandQoinRate]";
 // 매장 1건당 update 1 + 이력 create 1 = write 2. batch 500 한도 아래 (450 → 225).
 const CHUNK = 225;
 const PAGE = 450;
-const LEGACY_IDS_MAX = 50;
 
 // 산하 매장 조회는 `where brandId ==` 단독 + 기본(문서 ID) 정렬 + startAfter 페이징이다.
 // 명시적 orderBy(documentId) 를 두지 않는다 — 에뮬레이터는 인덱스를 강제하지 않아, 복합 인덱스가 필요한 쿼리를
@@ -78,12 +74,10 @@ interface Scan {
   total: number; // 산하 매장 수 (N)
   withOverride: number; // 개별 적립률(qoinAccrualRate 필드 존재)이 있는 매장 수 (M)
   disabledUntouched: number; // 스위치가 꺼진 매장 수 — 일괄 적용 후에도 적립되지 않는다 (보고만)
-  legacyZeroIds: string[]; // TRANSITIONAL(spec §20.4.5)
-  legacyZeroCount: number;
 }
 
 async function scanStores(db: admin.firestore.Firestore, brandId: string): Promise<Scan> {
-  const scan: Scan = { total: 0, withOverride: 0, disabledUntouched: 0, legacyZeroIds: [], legacyZeroCount: 0 };
+  const scan: Scan = { total: 0, withOverride: 0, disabledUntouched: 0 };
   let cursor: admin.firestore.QueryDocumentSnapshot | undefined;
   for (;;) {
     let q = db
@@ -99,25 +93,11 @@ async function scanStores(db: admin.firestore.Firestore, brandId: string): Promi
       const raw = d.get("qoinAccrualRate");
       if (raw !== undefined) scan.withOverride++;
       if (d.get("qoinAccrualEnabled") === false) scan.disabledUntouched++; // 집계 목적 읽기. 분기를 바꾸지 않는다.
-      if (classifyRate(raw).kind === "legacyZero") {
-        scan.legacyZeroCount++;
-        if (scan.legacyZeroIds.length < LEGACY_IDS_MAX) scan.legacyZeroIds.push(d.id);
-      }
     }
     cursor = page.docs[page.docs.length - 1];
     if (page.size < PAGE) break;
   }
   return scan;
-}
-
-/** TRANSITIONAL(spec §20.4.5): 레거시 0 이 하나라도 있으면 정책 판단 없이 멈춘다. */
-function legacyZeroGuard(scan: Scan, brandLegacy: boolean): void {
-  const count = scan.legacyZeroCount + (brandLegacy ? 1 : 0);
-  if (count === 0) return;
-  throw new HttpsError("failed-precondition", `${LEGACY_MESSAGE_PREFIX} (${count}곳)`, {
-    legacyZeroCount: count,
-    storeIds: scan.legacyZeroIds,
-  });
 }
 
 interface Progress {
@@ -159,10 +139,6 @@ async function clearOverrides(
       for (const d of targets) {
         const raw = d.get("qoinAccrualRate");
         const cell = classifyRate(raw);
-        if (cell.kind === "legacyZero") {
-          // 스캔 이후에 생긴 레거시 0 (사실상 불가능) — 정책 판단 없이 멈춘다. 호출부가 partial 로 마감한다.
-          throw new HttpsError("failed-precondition", LEGACY_MESSAGE_PREFIX, { legacyZeroCount: 1, storeIds: [d.id] });
-        }
         const info = rateBeforeInfo(raw, cell.kind === "valid");
         if (info.beforeState === "value") value++;
         else invalid++;
@@ -259,7 +235,6 @@ export const applyBrandQoinRate = onCall(
         if (curValue !== histAfter) {
           throw new HttpsError("failed-precondition", "브랜드 값이 그 뒤에 변경됐어요. 다시 적용하세요");
         }
-        legacyZeroGuard(scan, classifyRate(cur).kind === "legacyZero");
         const processed = typeof hs.get("processedCount") === "number" ? (hs.get("processedCount") as number) : 0;
         t.update(historyRef, {
           status: "in_progress",
@@ -312,7 +287,6 @@ export const applyBrandQoinRate = onCall(
       // partial 이 남아 있으면 옛 이력도 읽는다 — read 는 write 보다 앞서야 한다. partial 일 때만 +1 read (적립 경로 무관).
       const oldPartial = await readPartialHistory(t, snap, histCol, BULK_STALE_MS);
       const rawBefore = snap.get("qoinAccrualRate");
-      legacyZeroGuard(scan, classifyRate(rawBefore).kind === "legacyZero");
       const beforeInfo = rateBeforeInfo(rawBefore, classifyRate(rawBefore).kind === "valid");
       const sameValue =
         (rawBefore === undefined && after === null) || (rawBefore !== undefined && rawBefore === after);

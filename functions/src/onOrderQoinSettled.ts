@@ -280,7 +280,6 @@ export const onOrderQoinSettled = onDocumentUpdated(
           source: resolved.source,
           storeId,
           brandId,
-          ...(resolved.legacy ? { legacy: true } : {}), // TRANSITIONAL(spec §20.4.5)
         });
         return;
       }

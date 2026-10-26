@@ -225,59 +225,28 @@ void main() {
       }
     });
 
-    test('과도기 자산: 마이그레이션 카드는 한 파일, 허브에는 마운트 한 줄만', () {
-      final hub = read(
-        File('lib/presentation/admin/qoin/admin_qoin_settings_page.dart'),
-      );
-      expect(
-        RegExp(r'const AdminQoinMigrationCard\(\)').allMatches(hub),
-        hasLength(1),
-      );
-      // 카드의 상태·provider·UseCase 호출은 카드 파일 안에 있다.
-      final card = read(
-        File(
-          'lib/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart',
-        ),
-      );
-      expect(card.contains('qoinZeroMigrationUseCaseProvider'), isTrue);
-      // 다른 곳에서 카드 파일이나 마이그레이션 UseCase 를 쓰지 않는다.
-      for (final f in dartFiles('lib')) {
-        if (f.path.endsWith('admin_qoin_migration_card.dart') ||
-            f.path.endsWith('admin_qoin_settings_page.dart')) {
-          continue;
+    test(
+      '정리 완료: 마이그레이션 자산(카드·use case·repository·결과)과 레거시 0 호환 분기가 lib 에 없다',
+      () {
+        const gone = [
+          'AdminQoinMigrationCard',
+          'MigrateQoinZeroRatesUseCase',
+          'QoinZeroMigration',
+          'qoin_zero_migration',
+          'isLegacyZero',
+          'legacyZero',
+        ];
+        for (final f in dartFiles('lib')) {
+          final t = read(f);
+          for (final g in gone) {
+            expect(t.contains(g), isFalse, reason: '$g in ${f.path}');
+          }
         }
-        final t = read(f);
-        if (f.path.contains('qoin_zero_migration') ||
-            f.path.endsWith('migrate_qoin_zero_rates_use_case.dart')) {
-          continue;
-        }
-        expect(
-          t.contains('admin_qoin_migration_card'),
-          isFalse,
-          reason: f.path,
-        );
-        expect(
-          t.contains('MigrateQoinZeroRatesUseCase'),
-          isFalse,
-          reason: f.path,
-        );
-      }
-    });
-
-    test('TRANSITIONAL 표식이 정리 커밋의 grep 대상으로 모여 있다', () {
-      final marked = <String>[];
-      for (final f in dartFiles('lib')) {
-        if (read(f).contains('TRANSITIONAL(spec §20.4.5)')) marked.add(f.path);
-      }
-      expect(
-        marked,
-        containsAll([
-          'lib/core/utils/qoin_rate_resolver.dart',
-          'lib/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart',
-          'lib/domain/usecases/migrate_qoin_zero_rates_use_case.dart',
-        ]),
-      );
-    });
+        // 0 은 어느 범위에서도 적립률이 아니다 — 저장된 0 은 무효로 분류된다.
+        final resolver = read(File('lib/core/utils/qoin_rate_resolver.dart'));
+        expect(resolver.contains('isValidRate(d)'), isTrue);
+      },
+    );
 
     test('QoinReenableHint 문장을 위젯에서 조립하지 않는다 (resolver 결과로만)', () {
       for (final f in qoinFiles()) {
@@ -304,7 +273,6 @@ void main() {
       'LEGACY_MESSAGE_PREFIX',
       'migrateQoinZeroRates',
       'migratedFromRate',
-      'auditBrandLinks',
     ];
     const scanDirs = [
       'lib',
@@ -316,49 +284,10 @@ void main() {
     // 이 테스트 파일 자신은 토큰을 선언하므로 제외한다. 생성 파일(freezed/g)은 원본(.dart)이 마커를 가진다.
     const selfPath = 'test/presentation/qoin_architecture_guard_test.dart';
 
-    /// **허용 목록** — 정리 커밋(spec §20.4.5 6·7 / 보안 task §8-A2)에서 토큰을 제거하면서 이 목록을 빈 집합으로 만든다.
+    /// **허용 목록** — 정리 커밋(spec §20.4.5 6·7)에서 토큰을 제거하며 **빈 집합**이 됐다. 다시 레거시 분기를 만들려면
+    /// 이 목록에 파일을 올리고 마커를 붙여야 하며, 그 순간 다음 정리 대상이 된다. (`auditBrandLinks` 는 상시 도구로 승격돼 토큰에서 뺐다.)
     /// 새 파일에 레거시 분기를 넣으면 이 목록에 추가해야 테스트가 통과하고, 추가하는 순간 마커도 요구받는다.
-    const allowed = <String>[
-      'functions/src/applyBrandQoinRate.ts',
-      'functions/src/auditBrandLinks.ts',
-      'functions/src/index.ts',
-      'functions/src/migrateQoinZeroRates.ts',
-      'functions/src/onOrderQoinSettled.ts',
-      'functions/src/qoinAdmin.ts',
-      'functions/src/qoinRate.ts',
-      'functions/src/setQoinAccrualRate.ts',
-      'functions/test/emulator.test.mjs',
-      'functions/test/qoinRate.test.mjs',
-      'lib/core/errors/qoin_rate_exception.dart',
-      'lib/core/utils/qoin_rate_resolver.dart',
-      'lib/data/datasources/remote/brand_link_audit_remote_data_source.dart',
-      'lib/data/datasources/remote/qoin_callable.dart',
-      'lib/data/datasources/remote/qoin_zero_migration_remote_data_source.dart',
-      'lib/data/models/qoin_config_model.dart',
-      'lib/data/models/qoin_rate_change_model.dart',
-      'lib/data/repositories/brand_link_audit_repository_impl.dart',
-      'lib/data/repositories/qoin_zero_migration_repository_impl.dart',
-      'lib/domain/entities/brand_link_audit_result.dart',
-      'lib/domain/entities/qoin_rate_change_entity.dart',
-      'lib/domain/entities/qoin_zero_migration_result.dart',
-      'lib/domain/repositories/brand_link_audit_repository.dart',
-      'lib/domain/repositories/qoin_zero_migration_repository.dart',
-      'lib/domain/usecases/audit_brand_links_use_case.dart',
-      'lib/domain/usecases/migrate_qoin_zero_rates_use_case.dart',
-      'lib/presentation/admin/qoin/admin_qoin_settings_page.dart',
-      'lib/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart',
-      'lib/presentation/admin/qoin/widgets/qoin_admin_ui.dart',
-      'lib/presentation/admin/qoin/widgets/qoin_rate_chain.dart',
-      'lib/presentation/admin/widgets/admin_brand_link_audit_card.dart',
-      'lib/presentation/common/widgets/qoin/qoin_rate_labels.dart',
-      'lib/presentation/common/widgets/qoin/qoin_reenable_hint.dart',
-      'test/data/qoin_rate_models_test.dart',
-      'test/domain/qoin_rate_resolution_test.dart',
-      'test/presentation/brand_link_audit_card_test.dart',
-      'test/presentation/qoin_history_tile_test.dart',
-      'test/presentation/qoin_hub_states_test.dart',
-      'test_fixtures/qoin_rate_truth_table.json',
-    ];
+    const allowed = <String>[];
     final markerRe = RegExp(
       r'TRANSITIONAL\(spec §20\.4\.5\)|TRANSITIONAL\(brand_authorization_hardening §4\)',
     );
@@ -477,7 +406,6 @@ void main() {
             wholeFile.add(f.path.substring('lib/'.length));
           }
         }
-        expect(wholeFile, isNotEmpty);
         final offenders = <String>[];
         for (final f in dartFiles('test')) {
           if (f.path == selfPath) continue;
@@ -490,16 +418,6 @@ void main() {
         expect(offenders, isEmpty);
       },
     );
-
-    test('truth table 의 _transitional 메타 키는 정리 대상(배열·키)을 가리킨다', () {
-      final t = read(File('test_fixtures/qoin_rate_truth_table.json'));
-      expect(t.contains('"resolve_legacy"'), isTrue);
-      expect(t.contains('"transitionalExpect"'), isTrue);
-      final meta = RegExp(r'"_transitional"\s*:\s*\{[^}]*\}').firstMatch(t);
-      expect(meta, isNotNull);
-      expect(meta!.group(0)!.contains('resolve_legacy'), isTrue);
-      expect(meta.group(0)!.contains('transitionalExpect'), isTrue);
-    });
   });
 
   group('S1/R3: 중단 판정은 판정 함수 한 곳에서만', () {

@@ -1615,6 +1615,10 @@ resolve: legacyZero 를 disabled 와 **동일 취급** (source 유지, 이슈 �
 5. admin 허브의 마이그레이션 카드
 6. 이 절(§20.4)에 완료일과 이전 건수를 기록
 
+> **정리 완료 (2026-10-26)**: 운영 배포 후 마이그레이션 dry-run **0건**(운영에 `qoinAccrualRate: 0` 인 매장·브랜드 없음) 확인 뒤 1~5 를 한 커밋으로 삭제했다. 이전(실행) 건수는 0건이다 — 실행한 적이 없다. `legacyZero` / `isLegacyZero` / `resolve_legacy` / `transitionalExpect` / `legacyZeroCount` / `LEGACY_MESSAGE_PREFIX` / `migrateQoinZeroRates` / `migratedFromRate` 는 저장소에 0건이고, 가드 테스트(`qoin_architecture_guard_test`)의 허용 목록은 **빈 집합**이다 (양방향 단언이 그대로 남아 재도입을 막는다). R16b/R16c 가 활성화됐다 (저장된 0 = `invalid_store` / `invalid_brand`).
+> 예외: `auditBrandLinks` 와 브랜드 링크 점검 카드는 `brand_authorization_hardening §4` 의 임시 자산이었으나 **상시 운영 도구로 승격**했다 (읽기 전용·쓰기 0·인자 없음, 데이터 유실 사고의 복구 검증에서 값을 했다). TRANSITIONAL 목록에서 뺐다.
+
+
 ---
 
 ## 20.5 쓰기 권한과 이력

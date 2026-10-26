@@ -55,14 +55,13 @@ class QoinReenableHint {
     if (target == QoinRateScope.global) return null;
 
     if (target == QoinRateScope.brand) {
-      // TRANSITIONAL(spec §20.4.5): 레거시 0 은 꺼진 것으로 읽는다 (아래 3곳 포함). 정리 후 isLegacyZero 분기 삭제.
-      final brandOff = e.brandSwitch.isDisabled || e.brand.isLegacyZero;
+      final brandOff = e.brandSwitch.isDisabled;
       if (!brandOff) return null;
       final r = _rerun(e, enableBrand: true, brandHere: true);
       return _forTurnOn(r, brandScreen: true);
     }
 
-    final storeOff = e.storeSwitch.isDisabled || e.store.isLegacyZero;
+    final storeOff = e.storeSwitch.isDisabled;
     if (storeOff) {
       final r = _rerun(e, enableStore: true);
       return _forTurnOn(r, brandScreen: false);
@@ -83,7 +82,7 @@ class QoinReenableHint {
     return null;
   }
 
-  /// 스위치를 켠다고 가정한 해석. 레거시 0(TRANSITIONAL)은 켜는 순간 "숫자 없음" 이 된다.
+  /// 스위치를 켠다고 가정한 해석.
   static EffectiveQoinRate _rerun(
     EffectiveQoinRate e, {
     bool enableStore = false,
@@ -91,13 +90,9 @@ class QoinReenableHint {
     bool brandHere = false,
   }) {
     return resolveEffectiveQoinRate(
-      store: enableStore && e.store.isLegacyZero
-          ? QoinRateSetting.absent
-          : e.store,
+      store: e.store,
       storeSwitch: enableStore ? QoinSwitchSetting.enabled : e.storeSwitch,
-      brand: enableBrand && e.brand.isLegacyZero
-          ? QoinRateSetting.absent
-          : e.brand,
+      brand: e.brand,
       brandSwitch: enableBrand ? QoinSwitchSetting.enabled : e.brandSwitch,
       global: e.global,
       hasBrand: e.hasBrand,

@@ -26,8 +26,6 @@ export { setQoinAccrualRate } from "./setQoinAccrualRate";
 export { setQoinAccrualEnabled } from "./setQoinAccrualEnabled";
 export { applyBrandQoinRate } from "./applyBrandQoinRate";
 export { onQoinConfigWritten } from "./onQoinConfigWritten";
-// TRANSITIONAL(spec §20.4.5): 마이그레이션 0건 확인 후 정리 커밋에서 삭제
-export { migrateQoinZeroRates } from "./migrateQoinZeroRates";
 export { claimSubmittedBrand } from "./claimSubmittedBrand";
-// TRANSITIONAL(brand_authorization_hardening §4): 정리 커밋에서 삭제
+// 읽기 전용 운영 점검 도구 (상시) — 쓰기 0, 인자 없음. 데이터 사고 복구 검증에서 값을 했다.
 export { auditBrandLinks } from "./auditBrandLinks";

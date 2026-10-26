@@ -7,7 +7,6 @@ import 'package:qradar/domain/repositories/brand_link_audit_repository.dart';
 import 'package:qradar/domain/usecases/audit_brand_links_use_case.dart';
 import 'package:qradar/presentation/admin/widgets/admin_brand_link_audit_card.dart';
 
-// TRANSITIONAL(brand_authorization_hardening §4): 임시 점검 카드 테스트. 정리 커밋에서 이 파일째 삭제한다.
 
 class _Repo implements BrandLinkAuditRepository {
   int calls = 0;
@@ -93,7 +92,7 @@ void main() {
       big(t);
       await t.pumpWidget(host());
       expect(find.text('브랜드 링크 점검'), findsOneWidget);
-      expect(find.text('임시'), findsOneWidget);
+      expect(find.text('임시'), findsNothing, reason: '상시 도구로 승격');
       expect(find.textContaining('읽기만 하고 아무것도 바꾸지 않아요'), findsOneWidget);
       expect(find.byType(OutlinedButton), findsOneWidget);
       expect(find.text('점검하기'), findsOneWidget);
@@ -172,7 +171,7 @@ void main() {
       expect(repo.calls, 2);
     });
 
-    testWidgets('전부 0: "연결 문제가 없어요" + 사라진다는 안내. 판단 필요 항목이 있으면 이 문구를 쓰지 않는다', (
+    testWidgets('전부 0: "연결 문제가 없어요". 판단 필요 항목이 있으면 이 문구를 쓰지 않는다', (
       t,
     ) async {
       big(t);
@@ -183,7 +182,7 @@ void main() {
       await t.tap(find.text('점검하기'));
       await t.pumpAndSettle();
       expect(find.text('연결 문제가 없어요'), findsOneWidget);
-      expect(find.textContaining('이 카드는 이후 업데이트에서 사라져요'), findsOneWidget);
+      expect(find.textContaining('사라져요'), findsNothing, reason: '상시 도구 — 사라진다고 말하지 않는다');
 
       repo.result = BrandLinkAuditRemoteDataSource.parse(
         _resp(

@@ -146,8 +146,7 @@ await until(async () => { try { const r = await call('setQoinAccrualRate', {}, u
 // A. 진리표 E2E (CH1~CH10 + 확장). 같은 JSON 을 Dart/TS 단위 테스트도 읽는다.
 // ═════════════════════════════════════════════════════════════════════════
 console.log('\n── A. 진리표 E2E ──');
-/** 픽스처 expect → 기대 (TRANSITIONAL(spec §20.4.5): transitionalExpect 우선, 정리 커밋에서 삭제) */
-const expectOf = (row) => row.transitionalExpect ?? row.expect;
+const expectOf = (row) => row.expect;
 const ISSUE_OF = {
   store: ['invalid_rate', 'store'], brand: ['invalid_rate', 'brand'], global: ['invalid_rate', 'global'],
   store_enabled: ['invalid_enabled', 'store'], brand_enabled: ['invalid_enabled', 'brand'],
@@ -832,75 +831,29 @@ await check('Q2 소급은 만들지 않는다: 설정을 고쳐도 기록된 주
 });
 
 // ═════════════════════════════════════════════════════════════════════════
-// I. 레거시 0 호환 · 마이그레이션 (경로 #20, 임시 — 정리 커밋에서 이 섹션 삭제)
+// I. 0 은 어느 범위에서도 적립률이 아니다 (정리 커밋 후: 레거시 0 호환 분기·마이그레이션 삭제)
 // ═════════════════════════════════════════════════════════════════════════
-// TRANSITIONAL(spec §20.4.5): 섹션 I(레거시 0 · migrateQoinZeroRates)와 K9(단건 레거시 0 가드)는 정리 커밋에서 삭제한다.
-// TRANSITIONAL(brand_authorization_hardening §4): 섹션 L 의 CF7/CF8(auditBrandLinks)도 정리 커밋에서 삭제한다.
-console.log('\n── I. 레거시 0 · migrateQoinZeroRates ──');
-await check('MG-0 과도기 호환 판독: 레거시 0 은 사용 안 함처럼 동작 — 적립 0 · 이슈 미기록 (TRANSITIONAL)', async () => {
+console.log('\n── I. 저장된 0 = 무효 ──');
+await check('I-1 매장의 저장값 0 은 무효다: 적립이 멈추고 invalid_rate 이슈가 기록된다 (사용 안 함으로 읽지 않는다)', async () => {
   const { uid, storeId } = await brandWorld({ brandDoc: { qoinAccrualRate: 0.05 }, storeDoc: { qoinAccrualRate: 0 } });
   const oid = nid('o');
-  ok((await completeOrder({ orderId: oid, uid, storeId, expectLedger: false })) === null, '레거시 0 매장 적립됨');
-  ok((await issueDoc(oid)) === null, '의도된 중단을 누락 사건으로 오기록');
+  ok((await completeOrder({ orderId: oid, uid, storeId, expectLedger: false })) === null, '무효 값인데 적립됨');
+  const i = await issueDoc(oid);
+  ok(i && i.reason === 'invalid_rate', `이슈 기록: ${JSON.stringify(i)}`);
+  eq(i.scope, 'store');
 });
-await check('MG-1 레거시 0 매장이 있는 브랜드의 일괄 적용은 failed-precondition 으로 거부 (details: legacyZeroCount, storeIds) · 쓰기 0', async () => {
+await check('I-2 일괄 적용은 저장값 0 을 막지 않는다: 무효 값으로 세어 지운다 (clearedInvalidCount)', async () => {
   const { brandId, storeId } = await brandWorld({ brandDoc: { qoinAccrualRate: 0.02 }, storeDoc: { qoinAccrualRate: 0 } });
-  for (const mode of ['preserve', 'overwrite']) {
-    const r = await call('applyBrandQoinRate', { brandId, rate: 0.06, mode }, ADMIN);
-    eq(r.error, 'FAILED_PRECONDITION', mode);
-    const det = Array.isArray(r.details) ? r.details[0] : r.details;
-    eq([det?.legacyZeroCount, det?.storeIds], [1, [storeId]], `details (${mode})`);
-  }
-  eq((await db.collection('brands').doc(brandId).get()).get('qoinAccrualRate'), 0.02, '브랜드 값 불변');
-  eq((await brandHist(brandId).get()).size, 0, '이력 없음');
-  eq((await db.collection('stores').doc(storeId).get()).get('qoinAccrualRate'), 0, '매장 값 불변 (정책 판단 없음)');
+  const r = await call('applyBrandQoinRate', { brandId, rate: 0.06, mode: 'overwrite' }, ADMIN);
+  eq([r.result.changed, r.result.clearedCount, r.result.clearedInvalidCount, r.result.clearedValueCount], [true, 1, 1, 0]);
+  eq((await db.collection('stores').doc(storeId).get()).get('qoinAccrualRate'), undefined);
 });
-await check('MG-2 dry-run: 쓰기 0, 0% 목록 · 무효 목록 반환 (무효 값은 보고만)', async () => {
-  const tag = nid('mg');
-  const z1 = `${tag}_z1`; const z2 = `${tag}_z2`; const bad = `${tag}_bad`; const okS = `${tag}_ok`;
-  await db.collection('stores').doc(z1).set({ name: 'Z1', qoinAccrualRate: 0 });
-  await db.collection('stores').doc(z2).set({ name: 'Z2', qoinAccrualRate: 0, qoinAccrualEnabled: false });
-  await db.collection('stores').doc(bad).set({ name: 'BAD', qoinAccrualRate: '3' });
-  await db.collection('stores').doc(okS).set({ name: 'OK', qoinAccrualRate: 0.05 });
-  const zb = `${tag}_zb`; await db.collection('brands').doc(zb).set({ name: 'ZB', qoinAccrualRate: 0 });
-  eq((await call('migrateQoinZeroRates', { dryRun: true }, NONADMIN)).error, 'PERMISSION_DENIED');
-  eq((await call('migrateQoinZeroRates', { dryRun: 'true' }, ADMIN)).error, 'INVALID_ARGUMENT');
-  const r = await call('migrateQoinZeroRates', { dryRun: true }, ADMIN);
-  const ids = (a) => a.map((x) => x.id);
-  ok(ids(r.result.zeroStores).includes(z1) && ids(r.result.zeroStores).includes(z2), 'zeroStores');
-  ok(ids(r.result.zeroBrands).includes(zb), 'zeroBrands');
-  const badRow = r.result.invalidStores.find((x) => x.id === bad);
-  eq([badRow?.raw, badRow?.name], ['"3"', 'BAD'], 'invalidStores.raw 는 JSON 텍스트');
-  ok(!ids(r.result.zeroStores).includes(okS) && !ids(r.result.invalidStores).includes(okS), '정상 매장은 대상 아님');
-  eq([r.result.dryRun, r.result.migrated, r.result.skipped], [true, 0, 0]);
-  eq((await db.collection('stores').doc(z1).get()).get('qoinAccrualRate'), 0, 'dry-run 쓰기 0');
-  eq((await storeHist(z1).get()).size, 0, 'dry-run 이력 0');
-});
-await check('MG-3 실행: 0 삭제 + 스위치 off + 이력(source migration, 행위자, migratedFromRate 0) · 무효 값은 손대지 않음 · 멱등(재실행 이력 0)', async () => {
-  const tag = nid('mx');
-  const z1 = `${tag}_z1`; const bad = `${tag}_bad`; const zb = `${tag}_zb`;
-  await db.collection('stores').doc(z1).set({ name: 'Z1', status: 'approved', qoinAccrualRate: 0 });
-  await db.collection('stores').doc(bad).set({ name: 'BAD', qoinAccrualRate: '3' });
-  await db.collection('brands').doc(zb).set({ name: 'ZB', qoinAccrualRate: 0 });
-  const r = await call('migrateQoinZeroRates', { dryRun: false }, ADMIN);
-  ok(r.result.migrated >= 2, `migrated ${r.result.migrated}`);
-  let d = (await db.collection('stores').doc(z1).get()).data();
-  eq([d.qoinAccrualRate, d.qoinAccrualEnabled, d.status], [undefined, false, 'approved']);
-  d = (await db.collection('brands').doc(zb).get()).data(); eq([d.qoinAccrualRate, d.qoinAccrualEnabled], [undefined, false]);
-  const h = (await histories(storeHist(z1)));
-  eq(h.length, 1);
-  eq([h[0].field, h[0].op, h[0].before, h[0].beforeState, h[0].after, h[0].source, h[0].changedBy, h[0].changedByRole, h[0].migratedFromRate, h[0].scope],
-     ['accrualEnabled', 'set', null, 'absent', false, 'migration', ADMIN, 'admin', 0, 'store']);
-  ok(h[0].reason && h[0].reason.includes('Q1'), 'reason');
-  eq((await histories(brandHist(zb))).length, 1, '브랜드 이력');
-  eq((await db.collection('stores').doc(bad).get()).get('qoinAccrualRate'), '3', '무효 값 자동 변환 금지');
-  // 멱등: 재실행 — 이미 이전된 건 skip, 이력도 안 씀
-  const r2 = await call('migrateQoinZeroRates', { dryRun: false }, ADMIN);
-  ok(!r2.result.zeroStores.some((x) => x.id === z1) && !r2.result.zeroBrands.some((x) => x.id === zb), '재스캔에서 이미 이전된 건 대상 아님');
-  eq((await storeHist(z1).get()).size, 1, '재실행 후에도 이력 1건'); eq((await brandHist(zb).get()).size, 1);
-  // 이전 후 적립 해석: 사용 안 함으로 동작 (호환 분기 없이)
-  const dry = await call('migrateQoinZeroRates', { dryRun: true }, ADMIN);
-  eq(dry.result.zeroStores.length + dry.result.zeroBrands.length >= 0, true);
+await check('I-3 단건 설정도 저장값 0 을 막지 않는다: beforeState invalid + beforeRaw 로 박제하고 덮어쓴다', async () => {
+  const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'Z', qoinAccrualRate: 0 });
+  const r = await call('setQoinAccrualRate', { scope: 'store', targetId: storeId, rate: 0.05 }, ADMIN);
+  eq(r.result.changed, true);
+  const h = (await histories(storeHist(storeId)))[0];
+  eq([h.before, h.beforeState, h.beforeRaw, h.after], [null, 'invalid', '0', 0.05]);
 });
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -932,10 +885,10 @@ await check('F3-2 전역 accrualRate Console 편집 시 beforeState/beforeRaw (�
 });
 
 // ═════════════════════════════════════════════════════════════════════════
-// K. 중단 포인터의 상태 기계 (spec §21.2 S2) + 오래된 스캔 가드 (§21.3-a S3) + 단건 레거시 0 가드 (§21.9-2)
+// K. 중단 포인터의 상태 기계 (spec §21.2 S2) + 오래된 스캔 가드 (§21.3-a S3)
 //    "이력을 문서 수로 센다" — 이전 단언(clearedCount>0 만 셈)은 빈 이력을 통과시켰다.
 // ═════════════════════════════════════════════════════════════════════════
-console.log('\n── K. 포인터 종결 · staleScan · 단건 레거시 0 ──');
+console.log('\n── K. 포인터 종결 · staleScan ──');
 const ptr = async (brandId) => {
   const d = (await db.collection('brands').doc(brandId).get());
   return { id: d.get('qoinBulkHistoryId'), st: d.get('qoinBulkStatus'), at: d.get('qoinBulkAt') };
@@ -1092,22 +1045,6 @@ await check('K10 stale in_progress 도 partial 과 같이 종결된다 (3차 F-2
   await db.collection('brands').doc(b).update({ qoinBulkAt: Timestamp.fromMillis(Date.now() - 60 * 1000) });
   eq((await call('setQoinAccrualRate', { scope: 'brand', targetId: b, rate: 0.05 }, ADMIN)).error, 'FAILED_PRECONDITION');
   eq((await ptr(b)).st, 'in_progress');
-});
-await check('K9 단건 setQoinAccrualRate 레거시 0 가드 (매장·브랜드, 변경/초기화 모두): FAILED_PRECONDITION + details, 쓰기 0 (TRANSITIONAL)', async () => {
-  const brandId = nid('kb9'); await db.collection('brands').doc(brandId).set({ name: 'K9', status: 'approved', qoinAccrualRate: 0 });
-  const storeId = nid('st9'); await db.collection('stores').doc(storeId).set({ name: 'S9', brandId, qoinAccrualRate: 0 });
-  for (const body of [{ rate: 0.05 }, { clear: true }]) {
-    const rs = await call('setQoinAccrualRate', { scope: 'store', targetId: storeId, ...body }, ADMIN);
-    eq(rs.error, 'FAILED_PRECONDITION', `store ${JSON.stringify(body)}`);
-    const det = Array.isArray(rs.details) ? rs.details[0] : rs.details;
-    eq([det?.legacyZeroCount, det?.storeIds], [1, [storeId]]);
-    eq((await call('setQoinAccrualRate', { scope: 'brand', targetId: brandId, ...body }, ADMIN)).error, 'FAILED_PRECONDITION', `brand ${JSON.stringify(body)}`);
-  }
-  eq([(await db.collection('stores').doc(storeId).get()).get('qoinAccrualRate'), (await db.collection('brands').doc(brandId).get()).get('qoinAccrualRate')], [0, 0], '값 불변');
-  eq([(await storeHist(storeId).get()).size, (await brandHist(brandId).get()).size], [0, 0], '이력 0');
-  // 정상 값(무효 문자열 포함)은 가드 대상이 아니다
-  const s2 = nid('st9b'); await db.collection('stores').doc(s2).set({ name: 'S9b', qoinAccrualRate: '3' });
-  eq((await call('setQoinAccrualRate', { scope: 'store', targetId: s2, rate: 0.05 }, ADMIN)).result.changed, true);
 });
 
 // ═════════════════════════════════════════════════════════════════════════

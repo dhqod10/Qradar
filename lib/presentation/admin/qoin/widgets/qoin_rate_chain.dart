@@ -3,6 +3,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
+import 'package:qradar/core/utils/korean_particle.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_labels.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_reenable_hint.dart';
 
@@ -51,7 +52,8 @@ class QoinRateChain extends StatelessWidget {
 
     final spoken = StringBuffer('지금 적용되는 값.');
     for (final r in rows) {
-      spoken.write(' ${r.label}은 ${_spokenValue(r)}');
+      // 받침 유무로 조사를 고른다 (`브랜드는` / `매장은` / `전역은`) — 라벨을 끼워 넣을 때 `브랜드은` 이 되지 않게.
+      spoken.write(' ${KoreanParticle.withTopic(r.label)} ${_spokenValue(r)}');
       if (r.scope == winner) spoken.write(', 적용 중');
       spoken.write('.');
     }
@@ -116,9 +118,8 @@ class _Row {
   final QoinRateSetting setting;
   final QoinSwitchSetting switchSetting;
 
-  /// 이 줄이 꺼져 있는가 (스위치 off, 또는 TRANSITIONAL 레거시 0).
-  // TRANSITIONAL(spec §20.4.5): 레거시 0 도 꺼진 것으로 센다. 정리 후 `|| setting.isLegacyZero` 삭제.
-  bool get off => switchSetting.isDisabled || setting.isLegacyZero;
+  /// 이 줄이 꺼져 있는가 (스위치 off).
+  bool get off => switchSetting.isDisabled;
   bool get switchInvalid => switchSetting.isInvalid;
 }
 

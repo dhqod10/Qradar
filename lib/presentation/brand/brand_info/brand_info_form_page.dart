@@ -18,6 +18,42 @@ final _bizRegNoRegex = RegExp(r'^\d{3}-\d{2}-\d{5}$');
 // 전화번호: 00-0000-0000 ~ 000-0000-0000 등
 final _phoneRegex = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
 
+/// 제출을 막고 있는 필수 항목의 이름 목록 (화면의 라벨과 같은 이름, 순서도 화면 순서). 비면 제출 가능.
+///
+/// "필수 항목을 모두 올바르게 입력해주세요" 만 띄우면 **어느 항목인지 알 수 없다** — 로고처럼 라벨에 `*` 가 없던 항목에서
+/// 실제로 막힌 사례가 있다. 아무 일도 안 일어난 것을 설명 없이 두지 않는다.
+List<String> missingBrandFormFields({
+  required bool hasLogo,
+  required String name,
+  required String companyName,
+  required String bizRegNo,
+  required String contactName,
+  required String contactPhone,
+}) {
+  final out = <String>[];
+  if (!hasLogo) out.add('브랜드 로고');
+  if (name.trim().isEmpty) out.add('브랜드 이름');
+  if (companyName.trim().isEmpty) out.add('회사명');
+  final biz = bizRegNo.trim();
+  if (biz.isEmpty) {
+    out.add('사업자등록번호');
+  } else if (!_bizRegNoRegex.hasMatch(biz)) {
+    out.add('사업자등록번호(000-00-00000 형식)');
+  }
+  if (contactName.trim().isEmpty) out.add('담당자 이름');
+  final phone = contactPhone.trim();
+  if (phone.isEmpty) {
+    out.add('담당자 연락처');
+  } else if (!_phoneRegex.hasMatch(phone)) {
+    out.add('담당자 연락처(010-1234-5678 형식)');
+  }
+  return out;
+}
+
+/// 빠진 항목을 지목하는 안내 문구.
+String missingBrandFormFieldsMessage(List<String> missing) =>
+    '다음 항목을 확인해주세요: ${missing.join(', ')}';
+
 /// 브랜드 등록(brand == null) / 수정(brand != null) 통합 폼.
 class BrandInfoFormPage extends ConsumerStatefulWidget {
   final BrandEntity? brand;
@@ -47,19 +83,20 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
 
   bool get _isEditMode => widget.brand != null;
 
-  bool get _bizRegNoValid =>
-      _bizRegNoRegex.hasMatch(_bizRegNoCtrl.text.trim());
+  bool get _bizRegNoValid => _bizRegNoRegex.hasMatch(_bizRegNoCtrl.text.trim());
 
-  bool get _phoneValid =>
-      _phoneRegex.hasMatch(_contactPhoneCtrl.text.trim());
+  bool get _phoneValid => _phoneRegex.hasMatch(_contactPhoneCtrl.text.trim());
 
-  bool get _canSubmit =>
-      (_logoFile != null || (_logoUrl != null && _logoUrl!.isNotEmpty)) &&
-      _nameCtrl.text.trim().isNotEmpty &&
-      _companyNameCtrl.text.trim().isNotEmpty &&
-      _bizRegNoValid &&
-      _contactNameCtrl.text.trim().isNotEmpty &&
-      _phoneValid;
+  List<String> get _missing => missingBrandFormFields(
+    hasLogo: _logoFile != null || (_logoUrl != null && _logoUrl!.isNotEmpty),
+    name: _nameCtrl.text,
+    companyName: _companyNameCtrl.text,
+    bizRegNo: _bizRegNoCtrl.text,
+    contactName: _contactNameCtrl.text,
+    contactPhone: _contactPhoneCtrl.text,
+  );
+
+  bool get _canSubmit => _missing.isEmpty;
 
   @override
   void initState() {
@@ -68,14 +105,17 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
     _nameCtrl = TextEditingController(text: b?.name ?? '');
     _descCtrl = TextEditingController(text: b?.description ?? '');
     _companyNameCtrl = TextEditingController(text: b?.companyName ?? '');
-    _bizRegNoCtrl =
-        TextEditingController(text: b?.businessRegistrationNumber ?? '');
+    _bizRegNoCtrl = TextEditingController(
+      text: b?.businessRegistrationNumber ?? '',
+    );
     _contactNameCtrl = TextEditingController(text: b?.contactName ?? '');
     _contactPhoneCtrl = TextEditingController(text: b?.contactPhone ?? '');
-    _headOfficeAddressCtrl =
-        TextEditingController(text: b?.headOfficeAddress ?? '');
-    _representativeNameCtrl =
-        TextEditingController(text: b?.representativeName ?? '');
+    _headOfficeAddressCtrl = TextEditingController(
+      text: b?.headOfficeAddress ?? '',
+    );
+    _representativeNameCtrl = TextEditingController(
+      text: b?.representativeName ?? '',
+    );
     _logoUrl = b?.logoUrl;
 
     for (final c in [
@@ -149,7 +189,8 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
                         backgroundColor: AppColors.primary,
                         foregroundColor: AppColors.onPrimary,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       onPressed: () => Navigator.pop(ctx, true),
                       child: const Text('돌아가기'),
@@ -198,9 +239,10 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
   }
 
   Future<void> _submit() async {
-    if (!_canSubmit) {
+    final missing = _missing;
+    if (missing.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('필수 항목을 모두 올바르게 입력해주세요')),
+        SnackBar(content: Text(missingBrandFormFieldsMessage(missing))),
       );
       return;
     }
@@ -246,9 +288,9 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
       await ref.read(upsertBrandUseCaseProvider).call(brand);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('검토 요청을 보냈어요')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('검토 요청을 보냈어요')));
       // 수정 모드: push로 진입했으므로 pop.
       // 신규 등록 모드: 브랜드 문서가 만들어졌다. 연결(users.brandId)은 서버가 하며, 실패해도 이 폼이 남아 있으면
       //   사용자가 다시 저장해 같은 브랜드를 중복 등록할 수 있다 — 게이트를 다시 평가시켜 폼을 내리고
@@ -308,7 +350,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
             children: [
               const SizedBox(height: 24),
               // ── 브랜드 정보 섹션 ───────────────────────────────────────
-              _sectionLabel('브랜드 로고'),
+              _sectionLabel('브랜드 로고 *'),
               const SizedBox(height: 8),
               ImageUploadField(
                 initialUrl: _logoUrl,
@@ -324,8 +366,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
               TextFormField(
                 controller: _nameCtrl,
                 maxLength: 30,
-                style:
-                    const TextStyle(fontSize: 15, color: AppColors.textBody),
+                style: const TextStyle(fontSize: 15, color: AppColors.textBody),
                 decoration: _inputDecoration('브랜드 이름을 입력해주세요'),
               ),
               const SizedBox(height: 16),
@@ -335,8 +376,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
                 controller: _descCtrl,
                 maxLines: 5,
                 minLines: 3,
-                style:
-                    const TextStyle(fontSize: 15, color: AppColors.textBody),
+                style: const TextStyle(fontSize: 15, color: AppColors.textBody),
                 decoration: _inputDecoration('브랜드 설명을 입력해주세요'),
               ),
               // ── 사업자 정보 섹션 ───────────────────────────────────────
@@ -348,8 +388,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
               TextFormField(
                 controller: _companyNameCtrl,
                 maxLength: 60,
-                style:
-                    const TextStyle(fontSize: 15, color: AppColors.textBody),
+                style: const TextStyle(fontSize: 15, color: AppColors.textBody),
                 decoration: _inputDecoration('(주)스타벅스코리아'),
               ),
               const SizedBox(height: 16),
@@ -358,14 +397,13 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
               TextFormField(
                 controller: _bizRegNoCtrl,
                 keyboardType: TextInputType.number,
-                style:
-                    const TextStyle(fontSize: 15, color: AppColors.textBody),
+                style: const TextStyle(fontSize: 15, color: AppColors.textBody),
                 decoration: _inputDecorationWithError(
                   hint: '000-00-00000',
                   errorText:
                       _bizRegNoCtrl.text.trim().isNotEmpty && !_bizRegNoValid
-                          ? '올바른 사업자등록번호 형식이 아닙니다 (000-00-00000)'
-                          : null,
+                      ? '올바른 사업자등록번호 형식이 아닙니다 (000-00-00000)'
+                      : null,
                 ),
               ),
               const SizedBox(height: 16),
@@ -374,8 +412,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
               TextFormField(
                 controller: _contactNameCtrl,
                 maxLength: 30,
-                style:
-                    const TextStyle(fontSize: 15, color: AppColors.textBody),
+                style: const TextStyle(fontSize: 15, color: AppColors.textBody),
                 decoration: _inputDecoration('홍길동'),
               ),
               const SizedBox(height: 16),
@@ -384,14 +421,13 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
               TextFormField(
                 controller: _contactPhoneCtrl,
                 keyboardType: TextInputType.phone,
-                style:
-                    const TextStyle(fontSize: 15, color: AppColors.textBody),
+                style: const TextStyle(fontSize: 15, color: AppColors.textBody),
                 decoration: _inputDecorationWithError(
                   hint: '010-1234-5678',
                   errorText:
                       _contactPhoneCtrl.text.trim().isNotEmpty && !_phoneValid
-                          ? '올바른 연락처 형식이 아닙니다 (010-1234-5678)'
-                          : null,
+                      ? '올바른 연락처 형식이 아닙니다 (010-1234-5678)'
+                      : null,
                 ),
               ),
               const SizedBox(height: 16),
@@ -407,8 +443,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
               TextFormField(
                 controller: _representativeNameCtrl,
                 maxLength: 30,
-                style:
-                    const TextStyle(fontSize: 15, color: AppColors.textBody),
+                style: const TextStyle(fontSize: 15, color: AppColors.textBody),
                 decoration: _inputDecoration('김대표'),
               ),
               const SizedBox(height: 40),
@@ -458,8 +493,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
   InputDecoration _inputDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle:
-          const TextStyle(fontSize: 15, color: AppColors.textMuted),
+      hintStyle: const TextStyle(fontSize: 15, color: AppColors.textMuted),
       filled: true,
       fillColor: AppColors.surfaceElevated,
       border: OutlineInputBorder(
@@ -483,8 +517,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
   }) {
     return InputDecoration(
       hintText: hint,
-      hintStyle:
-          const TextStyle(fontSize: 15, color: AppColors.textMuted),
+      hintStyle: const TextStyle(fontSize: 15, color: AppColors.textMuted),
       errorText: errorText,
       errorStyle: const TextStyle(fontSize: 12, color: AppColors.error),
       filled: true,
@@ -513,10 +546,7 @@ class _AddressSearchTile extends StatelessWidget {
   final String address;
   final VoidCallback onTap;
 
-  const _AddressSearchTile({
-    required this.address,
-    required this.onTap,
-  });
+  const _AddressSearchTile({required this.address, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -544,8 +574,7 @@ class _AddressSearchTile extends StatelessWidget {
                 hasAddress ? address : '주소를 검색해주세요',
                 style: TextStyle(
                   fontSize: 15,
-                  color:
-                      hasAddress ? AppColors.textBody : AppColors.textMuted,
+                  color: hasAddress ? AppColors.textBody : AppColors.textMuted,
                 ),
               ),
             ),
@@ -589,8 +618,9 @@ class _SubmitButton extends StatelessWidget {
             child: ElevatedButton(
               onPressed: isLoading ? null : onTap,
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    canSubmit ? AppColors.primary : AppColors.surface,
+                backgroundColor: canSubmit
+                    ? AppColors.primary
+                    : AppColors.surface,
                 foregroundColor: canSubmit
                     ? AppColors.onPrimary
                     : AppColors.textMuted,

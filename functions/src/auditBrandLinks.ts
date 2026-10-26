@@ -1,8 +1,8 @@
 /**
  * auditBrandLinks — **임시** callable (admin 전용, **읽기 전용**). 브랜드 계정·브랜드·매장의 연결 상태를 분류해 보고한다.
  *
- * TRANSITIONAL(brand_authorization_hardening §4): `dangling` / `duplicate` 0건 확인 후 정리 커밋에서 이 파일과 `index.ts` export,
- * 허브 점검 카드를 삭제한다.
+ * **상시 운영 점검 도구다** (임시 자산에서 승격). 이유: 브랜드 링크는 admin 의 Console 편집·문서 삭제·데이터 복구로 언제든 다시
+ * 어긋날 수 있고, 데이터 유실 사고의 복구 검증에서 실제로 값을 했다. 읽기 전용(쓰기 0, 인자 없음)이라 유지 비용·위험이 작다.
  *
  * **쓰기 0. 요청 인자 자체가 없다 (dryRun 도 없다).** 자동 교정 금지 — 의도를 추측할 수 없으면 손대지 않는다.
  * `mismatch` 는 공격 증거가 아니다: admin 이 Console 로 수동 발급한 레거시 계정도 `submittedBy` 가 admin 이거나 부재다.

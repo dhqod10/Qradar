@@ -1,4 +1,3 @@
-// TRANSITIONAL(brand_authorization_hardening §4): 임시 점검 자산. 정리 커밋에서 이 파일째 삭제한다.
 
 /// `auditBrandLinks` 의 분류. 서버 코드와 같은 이름이다.
 enum BrandLinkClass {

@@ -456,3 +456,27 @@ Q1 수용(일괄 덮어쓰기 후 미적립) 재현 · N4 6건 · 회수 통과 
 
 - **F-1 의 서버 측 정밀화는 하지 않았다.** 리포트의 수정안 A(가드 분기에서 이력 1건을 읽어 `bulkMode == overwrite` 일 때만 발동)는 서버 동작을 바꾸므로 택하지 않고, 안 B(화면이 구분해 말함)만 했다. 가드는 여전히 preserve 완료 직후에도 발동할 수 있다(돈 영향 없음, 재시도로 해소).
 - 실기기에서 `details` 가 Map 으로 오는지는 여전히 확인 불가 — message `[reason]` 토큰이 이중 안전장치다.
+
+
+---
+
+# 정리 커밋 (spec §20.4.5) + 문구 버그 2건 — 2026-10-26
+
+운영 배포 완료, 마이그레이션 dry-run 0건 확인 뒤 **한 번에** 삭제했다 (쪼개지 않았다).
+
+| 삭제 | 내용 |
+|---|---|
+| 1 판독 호환 분기 | TS `classifyRate` 의 `legacyZero` / `Resolved.legacy` / `onOrderQoinSettled` 의 `legacy` 로그 필드. Dart `QoinRateCellKind.legacyZero` · `QoinRateSetting.legacyZero/isLegacyZero` · `EffectiveQoinRate.legacy` · resolver·labels·허브·사슬·재활성 힌트·설정 모델의 분기. 저장된 0 은 무효 |
+| 2 픽스처 | `resolve_legacy` 배열 · `transitionalExpect` 키 · `_transitional` 메타. R16b/R16c 활성 |
+| 3 레거시 가드 | `applyBrandQoinRate` 의 스캔·`legacyZeroGuard`·청크 가드, `setQoinAccrualRate` 의 단건 가드, `LEGACY_MESSAGE_PREFIX`, Dart `QoinRateException.legacyZeroCount` · `QoinCallable` details 파싱 · `QoinMessages.legacyZeroGuard` |
+| 4 마이그레이션 | `functions/src/migrateQoinZeroRates.ts` + `index.ts` export, Dart 5개(datasource · repository impl · repository · use case · result), 이력 `migratedFromRate` 필드 (옛 `source: migration` 이력 행 판독은 유지) |
+| 5 카드 | `admin_qoin_migration_card.dart` + 허브 마운트 한 줄. `formatRaw` 도 함께 삭제 |
+
+테스트: emulator 섹션 I(MG-0~3) → 신규 `I-1~3`(저장된 0 = 무효: 적립 중단 + `invalid_rate` 이슈 / 일괄이 0 을 `clearedInvalidCount` 로 지움 / 단건이 0 을 `beforeState:invalid` 로 박제하고 덮음), K9 삭제, 픽스처 행 수 테스트 갱신. 가드 테스트 허용 목록 **빈 집합**.
+
+**`auditBrandLinks` 판정 — 상시 도구로 승격.** 근거: ① 브랜드 링크는 Console 편집·문서 삭제·복구 작업으로 언제든 다시 어긋난다(방금 `users`·`brands` 전체 삭제 사고에서 복구 검증에 실제로 쓰였다) ② 읽기 전용(쓰기 0, 인자 없음, 가드 테스트가 쓰기 호출 부재를 단언)이라 유지 위험이 작다 ③ 지우면 다음 사고에서 같은 도구를 급히 다시 만들어야 한다. 조치: `TRANSITIONAL` 마커·`임시` 알약·"카드가 사라져요" 문구 제거, 가드 토큰 목록에서 `auditBrandLinks` 제외.
+
+## 문구 버그 2건
+
+- **조사**: 적립률 우선순위 사슬의 스크린리더 문장이 `${label}은` 으로 조립돼 `브랜드은` 이 나왔다. `KoreanParticle`(`core/utils/korean_particle.dart`, 받침 유무로 은/는·이/가·을/를·과/와)을 만들어 `withTopic` 으로 교체. 같은 패턴을 `lib` 전체 grep(`}은|는|이|가|을|를|과|와|으로|로`)으로 훑었다: 동적 값 뒤 조사는 이 1곳과 `${금액}이`(금액 문자열이 `원`으로 끝나 항상 맞음)뿐이고 나머지는 `곳은` 같은 고정 어휘였다.
+- **로고 필수 표시**: 라벨 `브랜드 로고 *`. 제출이 막히면 SnackBar 가 빠진 항목을 지목한다 (`다음 항목을 확인해주세요: 브랜드 로고, 회사명`, 형식 오류는 `사업자등록번호(000-00-00000 형식)`). `missingBrandFormFields` 순수 함수 1개를 `_canSubmit` 과 SnackBar 가 공유한다.

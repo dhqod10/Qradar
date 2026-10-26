@@ -82,9 +82,6 @@ class QoinRateValueLabel {
         return QoinPolicy.formatRatePercent(s.value!);
       case QoinRateCellKind.invalid:
         return QoinRateLabels.needsCheck;
-      // TRANSITIONAL(spec §20.4.5): 레거시 0 은 `사용 안 함` 으로 읽힌다.
-      case QoinRateCellKind.legacyZero:
-        return QoinRateLabels.switchOff;
     }
   }
 
@@ -138,9 +135,6 @@ class QoinRateValueLabel {
         return spokenRate(s.value!);
       case QoinRateCellKind.invalid:
         return QoinRateLabels.needsCheck;
-      // TRANSITIONAL(spec §20.4.5)
-      case QoinRateCellKind.legacyZero:
-        return QoinRateLabels.switchOff;
     }
   }
 

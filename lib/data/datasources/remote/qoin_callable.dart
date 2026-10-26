@@ -34,21 +34,7 @@ class QoinCallable {
   static QoinRateException _fromFunctionsException(
     FirebaseFunctionsException e,
   ) {
-    // TRANSITIONAL(spec §20.4.5): 일괄 적용 레거시 0 가드가 details 로 보낸 건수·ID.
-    int? legacyCount;
-    var legacyIds = const <String>[];
-    final d = e.details;
-    if (d is Map && d['legacyZeroCount'] is num) {
-      legacyCount = (d['legacyZeroCount'] as num).toInt();
-      final ids = d['storeIds'];
-      if (ids is List) legacyIds = ids.whereType<String>().toList();
-    }
-    return QoinRateException(
-      classify(e.code),
-      code: e.code,
-      legacyZeroCount: legacyCount,
-      legacyZeroStoreIds: legacyIds,
-    );
+    return QoinRateException(classify(e.code), code: e.code);
   }
 
   /// 확정 실패(서버가 거부, 반영되지 않음) vs 결과 불명(서버에서는 반영됐을 수 있음).

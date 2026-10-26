@@ -7,11 +7,7 @@ import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 
 /// 진리표는 TS 쪽(functions/test/qoinRate.test.mjs)과 **같은 파일**을 읽는다 (1차 F3 재발 방지):
 /// test_fixtures/qoin_rate_truth_table.json — Dart / TS 가 같은 케이스로 같은 결과를 내야 한다.
-/// 읽는 배열 6개: resolve(32) / resolve_legacy(3) / classify(13) / classifySwitch(7) / callable(12) / callableSwitch(4).
-///
-/// `transitionalExpect` 가 있는 행은 과도기 호환 분기(legacyZero)가 살아 있는 동안 `expect` 대신 그 값을 기대한다.
-/// TRANSITIONAL(spec §20.4.5): 정리 커밋에서 `resolve_legacy` 와 `transitionalExpect` 를 삭제하면 이 테스트의
-/// `_expectOf` 도 `row['expect']` 만 읽게 된다.
+/// 읽는 배열 5개: resolve(32) / classify(13) / classifySwitch(7) / callable(12) / callableSwitch(4).
 void main() {
   final table =
       jsonDecode(
@@ -52,9 +48,8 @@ void main() {
         global: rate(row['global']),
       );
 
-  /// 과도기에는 transitionalExpect 가 있으면 그것을 기대한다.
   Map<String, dynamic> expectOf(Map<String, dynamic> row) =>
-      (row['transitionalExpect'] ?? row['expect']) as Map<String, dynamic>;
+      row['expect'] as Map<String, dynamic>;
 
   void check(EffectiveQoinRate r, Map<String, dynamic> e) {
     if (e.containsKey('invalid')) {
@@ -73,7 +68,6 @@ void main() {
       expect(r.rate, isNull);
       expect(r.source, isNull);
       expect(r.disabledSource!.code, e['disabled']);
-      expect(r.legacy, e['legacy'] == true);
     } else {
       expect(r.isInvalid, isFalse);
       expect(r.isDisabled, isFalse);
@@ -83,10 +77,9 @@ void main() {
   }
 
   test(
-    '픽스처 행 수 (resolve 32 / legacy 3 / classify 13 / switch 7 / callable 12 / callableSwitch 4)',
+    '픽스처 행 수 (resolve 32 / classify 13 / switch 7 / callable 12 / callableSwitch 4)',
     () {
       expect(rows('resolve'), hasLength(32));
-      expect(rows('resolve_legacy'), hasLength(3));
       expect(rows('classify'), hasLength(13));
       expect(rows('classifySwitch'), hasLength(7));
       expect(rows('callable'), hasLength(12));
@@ -102,24 +95,15 @@ void main() {
     }
   });
 
-  // TRANSITIONAL(spec §20.4.5): 정리 커밋에서 이 그룹과 픽스처의 resolve_legacy 배열을 삭제한다.
-  group('resolve_legacy — 과도기 호환 (레거시 0 = 사용 안 함, legacy 표시)', () {
-    for (final row in rows('resolve_legacy')) {
-      test('${row['id']} ${row['note'] ?? ''}', () {
-        check(resolveRow(row), row['expect'] as Map<String, dynamic>);
-      });
-    }
-  });
-
   group(
-    'QoinRateSetting.fromRaw — 3값 분류 + 과도기 legacyZero (TS classifyRate 와 같은 JSON)',
+    'QoinRateSetting.fromRaw — 3값 분류 (TS classifyRate 와 같은 JSON)',
     () {
       for (final row in rows('classify')) {
         test(
-          '${row['raw']} -> ${row['transitionalExpect'] ?? row['expect']}',
+          '${row['raw']} -> ${row['expect']}',
           () {
             final s = rate(row['raw']);
-            expect(s.kind.name, row['transitionalExpect'] ?? row['expect']);
+            expect(s.kind.name, row['expect']);
           },
         );
       }

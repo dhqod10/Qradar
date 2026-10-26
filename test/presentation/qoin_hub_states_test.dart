@@ -1,5 +1,3 @@
-// TRANSITIONAL(spec §20.4.5): 이 파일은 임시 마이그레이션 카드·use case·repository·결과 엔티티를 import 하는 그룹을 가진다.
-// 정리 커밋에서 '임시 마이그레이션 카드' 그룹과 해당 import 를 삭제한다 (안 그러면 컴파일이 깨진다 — 가드 테스트가 이 파일을 목록으로 소유한다).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -12,15 +10,11 @@ import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/qoin_bulk_banner.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
-import 'package:qradar/domain/entities/qoin_zero_migration_result.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
-import 'package:qradar/domain/usecases/migrate_qoin_zero_rates_use_case.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_settings_page.dart';
 import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
-import 'package:qradar/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart';
 import 'package:qradar/presentation/common/providers/qoin_config_providers.dart';
 import 'package:qradar/presentation/common/providers/qoin_rate_providers.dart';
-import 'package:qradar/domain/repositories/qoin_zero_migration_repository.dart';
 
 /// 허브 3상태 (H-3): partial 배너 / 최근 변경은 로딩·에러·없음·데이터를 서로 다르게 그린다.
 /// 에러 때 사라지는 것("중단 없음" 과 "알 수 없음" 이 같아 보임)이 tester 가 결함으로 판정한 H-3 이다.
@@ -224,182 +218,4 @@ void main() {
       expect(find.text('변경 이력'), findsOneWidget);
     });
   });
-
-  group('임시 마이그레이션 카드 — dry-run -> 실행 -> 결과', () {
-    final target = QoinZeroMigrationResult(
-      dryRun: true,
-      zeroStores: const [
-        QoinMigrationTarget(id: 's1', name: '강남점'),
-        QoinMigrationTarget(id: 's2', name: '판교점'),
-      ],
-      zeroBrands: const [QoinMigrationTarget(id: 'b1', name: 'Q브루어리')],
-      invalidStores: const [
-        QoinMigrationTarget(id: 's9', name: '신촌점', raw: '"3"'),
-      ],
-      invalidBrands: const [
-        QoinMigrationTarget(id: 'b9', name: '카페온', raw: '0.5'),
-      ],
-      migrated: 0,
-      skipped: 0,
-    );
-
-    Widget host(_FakeMigration m) => ProviderScope(
-      overrides: [
-        qoinZeroMigrationUseCaseProvider.overrideWithValue(
-          MigrateQoinZeroRatesUseCase(m),
-        ),
-      ],
-      child: const MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(child: AdminQoinMigrationCard()),
-        ),
-      ),
-    );
-
-    testWidgets('idle -> 확인 중 -> 확인 결과(목록+무효 값 plate) -> 다이얼로그 -> 결과', (
-      t,
-    ) async {
-      final m = _FakeMigration();
-      await t.pumpWidget(host(m));
-      expect(find.text('Qoin 설정 이전'), findsOneWidget);
-      expect(find.text('임시'), findsOneWidget);
-      expect(m.calls, isEmpty, reason: '열기만 해서는 호출하지 않는다');
-
-      final c = Completer<QoinZeroMigrationResult>();
-      m.next = () => c.future;
-      await t.tap(find.text('대상 확인하기'));
-      await t.pump();
-      expect(find.text('대상을 확인하고 있어요'), findsOneWidget);
-      c.complete(target);
-      await t.pumpAndSettle();
-      expect(m.calls, [true], reason: 'dryRun: true 로 호출');
-      expect(find.text('매장 2곳 · 브랜드 1곳'), findsOneWidget);
-      expect(find.text('· 강남점'), findsOneWidget);
-      expect(find.text('· 브랜드 Q브루어리'), findsOneWidget);
-      expect(find.text('확인이 필요한 값 2곳'), findsOneWidget);
-      expect(find.textContaining('값 "3"'), findsOneWidget);
-      expect(find.textContaining('값 0.5'), findsOneWidget);
-      expect(find.text('이전 실행'), findsOneWidget);
-
-      m.next = () => Future.value(
-        const QoinZeroMigrationResult(
-          dryRun: false,
-          zeroStores: [],
-          zeroBrands: [],
-          invalidStores: [],
-          invalidBrands: [],
-          migrated: 3,
-          skipped: 0,
-        ),
-      );
-      await t.tap(find.text('이전 실행'));
-      await t.pumpAndSettle();
-      expect(find.text('Qoin 설정을 이전할까요?'), findsOneWidget);
-      expect(
-        find.text('매장 2곳 · 브랜드 1곳의 ‘적립률 0%’ 를 지우고 ‘적립 사용 안 함’ 으로 바꿔요'),
-        findsOneWidget,
-      );
-      await t.tap(
-        find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.text('이전 실행'),
-        ),
-      );
-      await t.pumpAndSettle();
-      expect(m.calls, [true, false]);
-      expect(find.text('이전을 마쳤어요'), findsOneWidget);
-      expect(find.text('옮긴 곳 3곳'), findsOneWidget);
-      expect(find.text('건너뛴 곳 0곳'), findsNothing, reason: '0 이면 숨김');
-    });
-
-    testWidgets('대상 0건: 이전할 대상이 없어요 + 다시 확인만 (실행 버튼 없음)', (t) async {
-      final m = _FakeMigration()
-        ..next = () => Future.value(
-          const QoinZeroMigrationResult(
-            dryRun: true,
-            zeroStores: [],
-            zeroBrands: [],
-            invalidStores: [],
-            invalidBrands: [],
-            migrated: 0,
-            skipped: 0,
-          ),
-        );
-      await t.pumpWidget(host(m));
-      await t.tap(find.text('대상 확인하기'));
-      await t.pumpAndSettle();
-      expect(find.text('이전할 대상이 없어요'), findsOneWidget);
-      expect(find.text('다시 확인'), findsOneWidget);
-      expect(find.text('이전 실행'), findsNothing);
-    });
-
-    testWidgets('확인 실패: 실행 버튼 없음 + 다시 시도', (t) async {
-      final m = _FakeMigration()..next = () => Future.error(StateError('x'));
-      await t.pumpWidget(host(m));
-      await t.tap(find.text('대상 확인하기'));
-      await t.pumpAndSettle();
-      expect(find.text('대상을 확인하지 못했어요'), findsOneWidget);
-      expect(find.text('이전 실행'), findsNothing);
-      expect(find.text('다시 시도'), findsOneWidget);
-    });
-
-    testWidgets('실행 실패: 곧바로 재실행 버튼을 주지 않고 dry-run 으로 돌아가게 한다', (t) async {
-      final m = _FakeMigration()..next = () => Future.value(target);
-      await t.pumpWidget(host(m));
-      await t.tap(find.text('대상 확인하기'));
-      await t.pumpAndSettle();
-      m.next = () => Future.error(StateError('boom'));
-      await t.tap(find.text('이전 실행'));
-      await t.pumpAndSettle();
-      await t.tap(
-        find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.text('이전 실행'),
-        ),
-      );
-      await t.pumpAndSettle();
-      expect(find.text('이전 결과를 확인하지 못했어요'), findsOneWidget);
-      expect(find.text('이미 일부가 옮겨졌을 수 있어요. 대상을 다시 확인해 주세요'), findsOneWidget);
-      expect(find.text('이전 실행'), findsNothing, reason: '재실행 버튼 없음');
-      expect(find.text('대상 다시 확인하기'), findsOneWidget);
-    });
-  });
-
-  group('마이그레이션 카드 raw 표시 (describeRaw 타입 보존)', () {
-    test('서버가 보낸 JSON 표기는 따옴표를 더하지 않고 그대로 보인다', () {
-      for (final raw in [
-        '"3"', // 문자열 3
-        '0.5',
-        '-1',
-        'true',
-        'false',
-        'null',
-        '[1,2]',
-        '{"a":1}',
-        'NaN',
-        'Infinity',
-        '(absent)',
-      ]) {
-        expect(AdminQoinMigrationCard.formatRaw(raw), raw, reason: raw);
-      }
-    });
-    test('잘린(100자) 문자열·배열도 그대로, 해석 불가 문자열만 따옴표', () {
-      final long = '"${'a' * 99}';
-      expect(AdminQoinMigrationCard.formatRaw(long), long);
-      expect(AdminQoinMigrationCard.formatRaw('[1,2,3'), '[1,2,3');
-      expect(AdminQoinMigrationCard.formatRaw('hello'), '"hello"');
-      expect(AdminQoinMigrationCard.formatRaw(null), 'null');
-    });
-  });
-}
-
-class _FakeMigration implements QoinZeroMigrationRepository {
-  final List<bool> calls = [];
-  Future<QoinZeroMigrationResult> Function()? next;
-
-  @override
-  Future<QoinZeroMigrationResult> migrate({required bool dryRun}) {
-    calls.add(dryRun);
-    return next?.call() ?? Future.error(StateError('no stub'));
-  }
 }

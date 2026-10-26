@@ -198,5 +198,3 @@ export function supersededPointerFields(): Record<string, unknown> {
   return { qoinBulkStatus: BULK_STATUS.superseded, qoinBulkAt: FieldValue.serverTimestamp() };
 }
 
-// TRANSITIONAL(spec §20.4.5): 레거시 `qoinAccrualRate: 0` 가드 문구 — 일괄·단건 두 경로가 공유한다 (보호가 한 경로에만 걸리지 않게).
-export const LEGACY_MESSAGE_PREFIX = "레거시 0% 매장이 있어요. Qoin 설정 허브에서 마이그레이션을 먼저 실행하세요";

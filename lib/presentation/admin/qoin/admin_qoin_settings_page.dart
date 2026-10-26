@@ -12,7 +12,6 @@ import 'package:qradar/presentation/admin/qoin/admin_qoin_global_rate_page.dart'
 import 'package:qradar/presentation/admin/qoin/admin_qoin_rate_history_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_store_rates_page.dart';
 import 'package:qradar/presentation/admin/qoin/providers/qoin_admin_providers.dart';
-import 'package:qradar/presentation/admin/qoin/widgets/admin_qoin_migration_card.dart';
 import 'package:qradar/presentation/admin/widgets/admin_brand_link_audit_card.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_admin_ui.dart';
 import 'package:qradar/presentation/admin/qoin/widgets/qoin_current_rate_card.dart';
@@ -88,9 +87,7 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // TRANSITIONAL(spec §20.4.5): 임시 마이그레이션 카드. 정리 커밋에서 이 한 줄과 import 를 삭제한다.
-            const AdminQoinMigrationCard(),
-            // TRANSITIONAL(brand_authorization_hardening §4): 임시 브랜드 링크 점검 카드. 정리 커밋에서 이 한 줄과 import 를 삭제한다.
+            // 브랜드 링크 점검 (읽기 전용 운영 도구, 상시).
             const AdminBrandLinkAuditCard(),
             const _PartialSection(),
             // 전역 카드 + 비상 정지: config 상태에만 묶인다.
@@ -208,11 +205,10 @@ class _AdminQoinSettingsPageState extends ConsumerState<AdminQoinSettingsPage> {
         : '브랜드 ${brands.length}곳';
   }
 
-  // TRANSITIONAL(spec §20.4.5): 레거시 0 도 꺼진 것으로 센다.
   static bool _brandOff(BrandEntity b) =>
-      b.qoinAccrualEnabled.isDisabled || b.qoinAccrualRate.isLegacyZero;
+      b.qoinAccrualEnabled.isDisabled;
   static bool _storeOff(StoreEntity s) =>
-      s.qoinAccrualEnabled.isDisabled || s.qoinAccrualRate.isLegacyZero;
+      s.qoinAccrualEnabled.isDisabled;
 
   /// 매장 자신의 스위치가 꺼진 수 — 해석이 필요 없는 사실이라 매장 스트림만으로 센다.
   String? _storeSubtitle(WidgetRef ref) {

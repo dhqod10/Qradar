@@ -20,25 +20,22 @@ export const BULK_STALE_MS = 5 * 60 * 1000;
 export type RateSource = "store" | "brand" | "global";
 
 /**
- * 저장된 적립률 1칸의 분류. **3값** (부재 / 유효 / 무효) + 과도기 `legacyZero`.
+ * 저장된 적립률 1칸의 분류. **3값** (부재 / 유효 / 무효).
  * 0 은 어느 범위에서도 적립률이 아니다 (Q1: "적립 안 함" 은 스위치로 분리됐다).
  */
 export type RateCell =
   | { kind: "absent" }
   | { kind: "valid"; rate: number }
-  | { kind: "invalid"; raw: unknown }
-  // TRANSITIONAL(spec §20.4.5): 마이그레이션 전 운영에 남은 `qoinAccrualRate: 0`. 판독 전용.
-  | { kind: "legacyZero" };
+  | { kind: "invalid"; raw: unknown };
 
 /**
  * 저장된 필드 값을 분류한다.
  * - `undefined` (필드 부재) → absent. `null` 은 무효 (null 상태를 만들지 않는다).
- * - 0 은 무효다. 단 과도기에는 `legacyZero` 로 읽는다 (TRANSITIONAL — 쓰기 측 예외는 없다).
+ * - 0 은 무효다 (어느 범위에서도 적립률이 아니다 — "적립 안 함" 은 스위치의 일이다).
  */
 export function classifyRate(raw: unknown): RateCell {
   if (raw === undefined) return { kind: "absent" };
   if (typeof raw !== "number" || !Number.isFinite(raw)) return { kind: "invalid", raw };
-  if (raw === 0) return { kind: "legacyZero" }; // TRANSITIONAL(spec §20.4.5): 정리 후 { kind: "invalid", raw }
   if (raw < MIN_RATE || raw > MAX_RATE) return { kind: "invalid", raw };
   return { kind: "valid", rate: raw };
 }
@@ -61,8 +58,8 @@ export type InvalidReason =
 
 export type Resolved =
   | { ok: true; disabled: false; rate: number; source: RateSource }
-  // 스위치가 꺼져 적립하지 않는다. `legacy` 는 과도기 `qoinAccrualRate: 0` 호환 (TRANSITIONAL).
-  | { ok: true; disabled: true; source: "store" | "brand"; legacy: boolean }
+  // 스위치가 꺼져 적립하지 않는다.
+  | { ok: true; disabled: true; source: "store" | "brand" }
   | { ok: false; reason: InvalidReason };
 
 /**
@@ -85,11 +82,8 @@ export function resolveEffectiveRate(
   globalRate: RateCell
 ): Resolved {
   // ── 1단계: 스위치 (숫자보다 먼저. 매장 → 브랜드, disabled → invalid) ──────
-  if (storeSwitch.kind === "disabled") return { ok: true, disabled: true, source: "store", legacy: false };
-  // TRANSITIONAL(spec §20.4.5): 레거시 0 은 같은 단계의 disabled 와 동일 취급 (이슈 기록 없음)
-  if (storeRate.kind === "legacyZero") return { ok: true, disabled: true, source: "store", legacy: true };
-  if (brandSwitch.kind === "disabled") return { ok: true, disabled: true, source: "brand", legacy: false };
-  if (brandRate.kind === "legacyZero") return { ok: true, disabled: true, source: "brand", legacy: true };
+  if (storeSwitch.kind === "disabled") return { ok: true, disabled: true, source: "store" };
+  if (brandSwitch.kind === "disabled") return { ok: true, disabled: true, source: "brand" };
   if (storeSwitch.kind === "invalid") return { ok: false, reason: "invalid_store_enabled" };
   if (brandSwitch.kind === "invalid") return { ok: false, reason: "invalid_brand_enabled" };
 

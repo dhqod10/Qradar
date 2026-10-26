@@ -194,7 +194,7 @@ void main() {
 
   group('QoinConfigModel — 전역 경계는 CF 와 같다 (F3 Dart 쪽)', () {
     test(
-      '0.5 / 1 / 0 / 음수 / NaN / 문자열 -> accrualRate null, 무효 setting (전역 0 도 무효, legacyZero 아님)',
+      '0.5 / 1 / 0 / 음수 / NaN / 문자열 -> accrualRate null, 무효 setting (전역 0 도 무효)',
       () {
         for (final v in <Object>[0.5, 1, 0, -0.1, double.nan, '0.03']) {
           final c = QoinConfigModel.fromMap({
@@ -308,8 +308,7 @@ void main() {
       expect(e.beforeRate, isNull);
     });
 
-    // TRANSITIONAL(spec §20.4.5): 아래 migratedFromRate · legacyZero 케이스는 정리 커밋에서 삭제한다.
-    test('migration: migratedFromRate 박제 + 무효 beforeState/beforeRaw', () {
+    test('migration: 옛 마이그레이션 이력 판독 + 무효 beforeState/beforeRaw', () {
       final e = QoinRateChangeModel.fromMap('h', {
         'scope': 'store',
         'targetId': 's',
@@ -318,12 +317,10 @@ void main() {
         'after': false,
         'source': 'migration',
         'op': 'set',
-        'migratedFromRate': 0,
         'beforeState': 'invalid',
         'beforeRaw': '"3"',
       })!;
       expect(e.source, QoinRateChangeSource.migration);
-      expect(e.migratedFromRate, 0);
       expect(e.beforeState, QoinBeforeState.invalid);
       expect(e.beforeRaw, '"3"');
     });
@@ -451,9 +448,9 @@ void main() {
       expect(none.qoinBulkStatus, isNull);
     });
 
-    test('매장 적립률 0 은 legacyZero (읽기 전용 호환), 전역 0 은 무효', () {
+    test('매장 적립률 0 은 무효 (어느 범위에서도 적립률이 아니다)', () {
       final s = StoreModel.fromFirestore(snap({...base, 'qoinAccrualRate': 0}));
-      expect(s.qoinAccrualRate.isLegacyZero, isTrue);
+      expect(s.qoinAccrualRate.isInvalid, isTrue);
     });
   });
 }

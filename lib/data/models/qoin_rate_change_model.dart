@@ -30,7 +30,6 @@ class QoinRateChangeModel {
     bool? flag(Object? v) => v is bool ? v : null;
     int? count(Object? v) => v is num ? v.toInt() : null;
     DateTime? ts(Object? v) => v is Timestamp ? v.toDate() : null;
-    double? asDouble(Object? v) => v is num ? v.toDouble() : null;
     final isRate = field == QoinRateField.accrualRate;
 
     return QoinRateChangeEntity(
@@ -63,8 +62,6 @@ class QoinRateChangeModel {
       bulkHistoryId: data['bulkHistoryId'] is String
           ? data['bulkHistoryId'] as String
           : null,
-      // TRANSITIONAL(spec §20.4.5): 마이그레이션 이력의 옛 숫자(0) 박제 필드. 정리 커밋에서 필드째 삭제한다 (읽기 호환만 잃는다).
-      migratedFromRate: asDouble(data['migratedFromRate']),
       resumedAt: ts(data['resumedAt']),
       resumeCount: count(data['resumeCount']),
       disabledUntouchedCount: count(data['disabledUntouchedCount']),

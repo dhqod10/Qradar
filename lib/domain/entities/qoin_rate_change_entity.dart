@@ -179,9 +179,6 @@ abstract class QoinRateChangeEntity with _$QoinRateChangeEntity {
     /// 매장별 `clearByBulk` 이력이 가리키는 브랜드 이력 ID (admin 용 상관 키 — 점주용 링크가 아니다, N8).
     String? bulkHistoryId,
 
-    /// 마이그레이션이 사라지게 한 옛 숫자(0). 박제용.
-    // TRANSITIONAL(spec §20.4.5): 정리 커밋에서 이 필드를 삭제한다 (freezed 재생성).
-    double? migratedFromRate,
     DateTime? resumedAt,
     int? resumeCount,
 

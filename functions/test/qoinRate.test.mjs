@@ -27,8 +27,6 @@ function decode(cell) {
   return cell;
 }
 
-/** TRANSITIONAL(spec §20.4.5): 과도기 호환 분기가 살아 있는 동안은 transitionalExpect 를 기대한다. 정리 후 삭제. */
-const expectOf = (row) => row.transitionalExpect ?? row.expect;
 
 /** resolve 5입력 해석 (fixture 행 → 결과). */
 function resolveRow(row) {
@@ -48,7 +46,6 @@ function assertResolved(r, exp) {
     assert.equal(r.ok, true);
     assert.equal(r.disabled, true);
     assert.equal(r.source, exp.disabled);
-    assert.equal(r.legacy, exp.legacy === true);
   } else {
     assert.equal(r.ok, true);
     assert.equal(r.disabled, false);
@@ -62,26 +59,20 @@ test('경계 상수는 화면(0.1~20%)과 같다', () => {
   assert.equal(MAX_RATE, 0.2);
 });
 
-test('진리표 행 수: resolve 32 / resolve_legacy 3 / classify 13 / classifySwitch 7 / callable 12 / callableSwitch 4', () => {
+test('진리표 행 수: resolve 32 / classify 13 / classifySwitch 7 / callable 12 / callableSwitch 4', () => {
   assert.deepEqual(
-    [table.resolve.length, table.resolve_legacy.length, table.classify.length, table.classifySwitch.length,
+    [table.resolve.length, table.classify.length, table.classifySwitch.length,
       table.callable.length, table.callableSwitch.length],
-    [32, 3, 13, 7, 12, 4]);
+    [32, 13, 7, 12, 4]);
 });
 
 for (const row of table.resolve) {
-  test(`resolve ${row.id}`, () => assertResolved(resolveRow(row), expectOf(row)));
-}
-
-// TRANSITIONAL(spec §20.4.5): resolve_legacy 배열째 삭제
-for (const row of table.resolve_legacy) {
-  test(`resolve_legacy ${row.id}`, () => assertResolved(resolveRow(row), row.expect));
+  test(`resolve ${row.id}`, () => assertResolved(resolveRow(row), row.expect));
 }
 
 for (const row of table.classify) {
   test(`classify ${row.raw}`, () => {
-    const exp = row.transitionalExpect === 'legacyZero' ? 'legacyZero' : row.expect;
-    assert.equal(classifyRate(decode(row.raw)).kind, exp);
+    assert.equal(classifyRate(decode(row.raw)).kind, row.expect);
   });
 }
 

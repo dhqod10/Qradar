@@ -20,8 +20,8 @@ class QoinConfigModel {
       data[FirestorePaths.qoinGlobalAccrualRateField],
       present: data.containsKey(FirestorePaths.qoinGlobalAccrualRateField),
     );
-    // 전역은 0 도 무효다 (R16). TRANSITIONAL(spec §20.4.5) legacyZero 는 store/brand 단계에만 적용된다.
-    final setting = parsed.isLegacyZero ? QoinRateSetting.invalid : parsed;
+    // 전역은 0 도 무효다 (R16) — fromRaw 가 0 을 무효로 분류한다.
+    final setting = parsed;
     return QoinConfigEntity(
       accrualRate: setting.isValid ? setting.value : null,
       accrualRateSetting: setting,

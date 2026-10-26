@@ -1,7 +1,7 @@
-// TRANSITIONAL(brand_authorization_hardening §4): 임시 브랜드 링크 점검 카드. 정리 커밋에서 이 파일째 삭제한다.
-// 정리 커밋 = 이 파일 삭제 + 허브의 마운트 한 줄 삭제 +
-//   audit_brand_links_use_case / brand_link_audit_* (domain·data) 삭제.
-// 상태·provider·UseCase 호출을 전부 이 파일 안에 둔다 (공용 위젯·공용 provider 재사용 금지, Qoin 마이그레이션 카드와 서로 참조 금지).
+// 브랜드 링크 점검 카드 (상시 운영 도구 — 임시 자산에서 승격). 브랜드 계정·브랜드·매장의 연결이 어긋났는지 읽기만 한다.
+// 승격 근거: 브랜드 링크는 Console 편집·문서 삭제·데이터 복구로 언제든 다시 어긋날 수 있고, 데이터 유실 사고의 복구 검증에서
+// 실제로 값을 했다. 읽기 전용이라 유지 비용·위험이 작다.
+// 상태·provider·UseCase 호출을 전부 이 파일 안에 둔다 (공용 위젯·공용 provider 재사용 금지 — 다른 화면과 서로 참조하지 않는다).
 //
 // 핵심 원칙: **쓰기 0.** 자동 교정 버튼이 없다 — `점검하기`(조회)와 ID 복사만 있다. `mismatch` 는 공격 증거가 아니다
 // (admin 이 수동 발급한 레거시 계정도 submittedBy 가 admin 이거나 없다). 화면 어디에도 `의심`/`공격`/`사칭` 을 쓰지 않는다.
@@ -124,23 +124,6 @@ class _AdminBrandLinkAuditCardState
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textHeading,
-                    ),
-                  ),
-                ),
-                Container(
-                  height: 20,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppColors.textMuted.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Text(
-                    '임시',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textBody,
                     ),
                   ),
                 ),
@@ -279,11 +262,6 @@ class _AdminBrandLinkAuditCardState
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            '다시 점검해서 0건이 유지되면 이 카드는 이후 업데이트에서 사라져요',
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ] else ...[
           Text(

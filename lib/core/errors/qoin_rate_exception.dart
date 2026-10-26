@@ -8,20 +8,11 @@ class QoinRateException implements Exception {
   const QoinRateException(
     this.kind, {
     this.code,
-    this.legacyZeroCount,
-    this.legacyZeroStoreIds = const [],
   });
   final QoinRateFailureKind kind;
 
   /// 서버 에러 코드 (`permission-denied` 등).
   final String? code;
-
-  /// TRANSITIONAL(spec §20.4.5): 일괄 적용 레거시 가드(`failed-precondition`)가 담아 보낸 레거시 0 매장 수.
-  final int? legacyZeroCount;
-  final List<String> legacyZeroStoreIds;
-
-  // TRANSITIONAL(spec §20.4.5)
-  bool get isLegacyZeroGuard => legacyZeroCount != null;
 
   bool get isUnknownOutcome => kind == QoinRateFailureKind.unknownOutcome;
 

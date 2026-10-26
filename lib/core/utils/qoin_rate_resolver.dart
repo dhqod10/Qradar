@@ -5,15 +5,12 @@ import 'package:qradar/core/utils/qoin_policy.dart';
 /// - [absent]     필드 부재 = 상위 설정 상속
 /// - [valid]      0.001~0.2 의 명시 값
 /// - [invalid]    비number / NaN / 범위 밖 / **0** — 상위로 폴백하지 않고 멈춘다 (fail-closed)
-/// - [legacyZero] TRANSITIONAL(spec §20.4.5): 마이그레이션 전 운영에 남은 `0`. 읽기 전용 호환 — 해석에서 `사용 안 함` 과 같다.
 ///
 /// "적립 안 함" 은 적립률이 아니다. 별도 스위치([QoinSwitchSetting])가 가진다 (spec §20).
 enum QoinRateCellKind {
   absent,
   valid,
   invalid,
-  // TRANSITIONAL(spec §20.4.5): 정리 커밋에서 삭제
-  legacyZero,
 }
 
 class QoinRateSetting {
@@ -28,12 +25,6 @@ class QoinRateSetting {
   /// 무효 값 (원본은 보관하지 않는다 — 화면은 `설정 확인 필요` 만 말한다).
   static const QoinRateSetting invalid = QoinRateSetting._(
     QoinRateCellKind.invalid,
-    null,
-  );
-
-  // TRANSITIONAL(spec §20.4.5): 정리 커밋에서 삭제
-  static const QoinRateSetting legacyZero = QoinRateSetting._(
-    QoinRateCellKind.legacyZero,
     null,
   );
 
@@ -52,8 +43,7 @@ class QoinRateSetting {
     if (raw is! num) return invalid;
     final d = raw.toDouble();
     if (!d.isFinite) return invalid;
-    // TRANSITIONAL(spec §20.4.5): 0 은 원래 무효다. 마이그레이션 전까지만 legacyZero 로 읽는다.
-    if (d == 0) return legacyZero;
+    // 0 은 어느 범위에서도 적립률이 아니다 — isValidRate 가 거부한다 ("적립 안 함" 은 스위치의 일).
     if (!QoinPolicy.isValidRate(d)) return invalid;
     return QoinRateSetting._(QoinRateCellKind.valid, d);
   }
@@ -66,9 +56,6 @@ class QoinRateSetting {
   bool get isAbsent => kind == QoinRateCellKind.absent;
   bool get isValid => kind == QoinRateCellKind.valid;
   bool get isInvalid => kind == QoinRateCellKind.invalid;
-
-  // TRANSITIONAL(spec §20.4.5)
-  bool get isLegacyZero => kind == QoinRateCellKind.legacyZero;
 
   /// 누군가 이 범위에서 적립률을 정했는가 (유효 값). 무효·레거시 0 은 "정했다" 로 세지 않는다.
   bool get isExplicit => isValid;
@@ -172,7 +159,6 @@ class EffectiveQoinRate {
     required this.source,
     required this.disabledSource,
     required this.invalidScope,
-    this.legacy = false,
   });
 
   final QoinRateSetting store;
@@ -196,19 +182,16 @@ class EffectiveQoinRate {
   /// 해석 불가일 때 원인. 아니면 null.
   final QoinRateInvalidScope? invalidScope;
 
-  // TRANSITIONAL(spec §20.4.5): 레거시 0 으로 인한 사용 안 함인가.
-  final bool legacy;
-
   bool get isDisabled => disabledSource != null;
   bool get isInvalid => invalidScope != null;
   bool get isActive => rate != null;
 
   /// "스위치가 켜져 있다면 적용될 값". 확인 다이얼로그가 변경 전·후를 이 값끼리 비교하고,
   /// 상속 설명(`브랜드 5% 를 따라요`)이 이 값을 쓴다 — 스위치와 숫자는 독립인 두 축이다.
-  /// 무효 스위치도 켜진 것으로 본다(숫자 축만 보기 위함). TRANSITIONAL: 레거시 0 은 숫자 없음으로 본다.
+  /// 무효 스위치도 켜진 것으로 본다(숫자 축만 보기 위함).
   EffectiveQoinRate asIfEnabled() => resolveEffectiveQoinRate(
-    store: store.isLegacyZero ? QoinRateSetting.absent : store,
-    brand: brand.isLegacyZero ? QoinRateSetting.absent : brand,
+    store: store,
+    brand: brand,
     global: global,
     hasBrand: hasBrand,
   );
@@ -236,7 +219,6 @@ EffectiveQoinRate resolveEffectiveQoinRate({
     QoinRateSource? source,
     QoinRateSource? disabled,
     QoinRateInvalidScope? invalid,
-    bool legacy = false,
   }) => EffectiveQoinRate(
     store: store,
     brand: brand,
@@ -248,20 +230,15 @@ EffectiveQoinRate resolveEffectiveQoinRate({
     source: source,
     disabledSource: disabled,
     invalidScope: invalid,
-    legacy: legacy,
   );
   EffectiveQoinRate ok(double rate, QoinRateSource source) =>
       build(rate: rate, source: source);
-  EffectiveQoinRate off(QoinRateSource at, {bool legacy = false}) =>
-      build(disabled: at, legacy: legacy);
+  EffectiveQoinRate off(QoinRateSource at) => build(disabled: at);
   EffectiveQoinRate bad(QoinRateInvalidScope scope) => build(invalid: scope);
 
   // ── 1단계: 스위치 (숫자보다 먼저. 매장 → 브랜드) ──────────────────────────
   if (storeSwitch.isDisabled) return off(QoinRateSource.store);
-  // TRANSITIONAL(spec §20.4.5): 레거시 0 은 그 단계의 스위치 off 와 같다 (명시적 off 가 있으면 위에서 이미 반환).
-  if (store.isLegacyZero) return off(QoinRateSource.store, legacy: true);
   if (brandSwitch.isDisabled) return off(QoinRateSource.brand);
-  if (brand.isLegacyZero) return off(QoinRateSource.brand, legacy: true);
   if (storeSwitch.isInvalid) return bad(QoinRateInvalidScope.storeEnabled);
   if (brandSwitch.isInvalid) return bad(QoinRateInvalidScope.brandEnabled);
 

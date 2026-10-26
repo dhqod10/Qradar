@@ -52,10 +52,6 @@ class QoinMessages {
   /// 재개 시 브랜드 값이 그 사이 바뀌었다 (`failed-precondition`).
   static const String resumeStale = '브랜드 값이 그 뒤에 변경됐어요. 다시 적용하세요';
 
-  /// TRANSITIONAL(spec §20.4.5): 일괄 적용 레거시 0 가드.
-  static String legacyZeroGuard(int count) =>
-      '레거시 0% 매장 $count곳이 있어요. Qoin 설정 허브에서 마이그레이션을 먼저 실행하세요';
-
   // ── `changed == false` ("바뀐 것이 없음", spec §21.3-b / design §19-2) ───────────────────────────────────
   // 이 문구들은 **성공을 뜻하는 동사를 쓰지 않는다** (변경했어요 · 적용했어요 · 마쳤어요 · 시작했어요 · 중단했어요).
   // 돈의 값을 바꿨다는 거짓 문장이 운영자를 "바뀐 줄 알고" 화면을 떠나게 하기 때문이다. 상태를 말하고 바뀐 것이 없음을 덧붙인다.
@@ -127,8 +123,6 @@ class QoinMessages {
   }) {
     if (e is QoinRateException && e.isUnknownOutcome) return unknownOutcome;
     if (e is QoinRateException && e.code == 'failed-precondition') {
-      // TRANSITIONAL(spec §20.4.5): 레거시 0 가드
-      if (e.isLegacyZeroGuard) return legacyZeroGuard(e.legacyZeroCount!);
       return resume ? resumeStale : bulkInProgress;
     }
     if (resume) return resumeFailed;
