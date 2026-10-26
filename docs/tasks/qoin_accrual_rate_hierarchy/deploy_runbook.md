@@ -134,3 +134,50 @@ admin → Qoin 설정 → **마이그레이션** 카드 → `대상 확인(dry-r
 - ④ 이후 점주의 브랜드 등록이 거부된다 ← **즉시 rules 롤백**
 - ⑤ 점검 결과가 기준선과 다르다
 - ⑥ dry-run 에 무효 값이 나온다
+
+---
+
+## 실제 배포 기록 (2026-10-26)
+
+### 막혔던 곳 3개 — 다음에 같은 함정을 피하려고 남긴다
+
+**1. 모든 함수가 "Container Healthcheck failed" 로 실패했다.**
+`firebase-functions` 가 6.6.0(10개월 전)으로 묵어 있었다. 컨테이너 로그가 끝까지 **비어
+있어서** 원인을 못 봤고, 새 코드를 하나도 import 하지 않는 함수 1개만 올려도 같은 증상이라
+우리 코드가 아니라는 것만 확인됐다. 7.4.0 으로 올리니 바로 풀렸다 (`tsconfig` 에
+`esModuleInterop: true` 필요, 코드 변경 0).
+
+**CLI 가 매 배포마다 띄우던 `outdated version of firebase-functions` 경고가 진짜 원인을
+가리키고 있었다.** 배포 경고는 먼저 털고 들어간다.
+
+**2. 실패한 배포가 반쪽짜리 함수를 남긴다.**
+`onQoinConfigWritten` 이 트리거 연결 없이 `https` 로 등록돼, 재배포 시
+"Changing from an HTTPS function to a background triggered function is not allowed" 가 났다.
+`functions:delete` 로 지우고 다시 배포해야 한다. **한 번도 뜬 적 없는 함수라 삭제는 안전하다**
+(`functions:list` 에서 메모리가 `---` 면 활성 리비전이 없다는 뜻).
+
+**3. 새로 만든 callable 함수는 "공개 호출 허용" 이 빠진다.**
+증상은 앱에서 `점검하지 못했어요` 같은 실패이고, CF 로그에
+`The request was not authorized to invoke this service` 가 찍힌다. Firebase callable 은 그
+아래 Cloud Run 서비스가 `allUsers` 에게 **Cloud Run 호출자** 를 줘야 한다(인증은 함수 안에서
+Firebase 토큰으로 한다). 이 설정은 **함수 생성 시**에만 붙는데, 1번 때문에 생성이 깨지면서
+빠졌다. Cloud Run Console 에서 서비스 여러 개를 체크해 한 번에 부여할 수 있다.
+**IAM 전파에 1~2분 걸린다** — 바로 재시도하면 여전히 실패한다.
+
+### 결과
+
+- ① 인덱스 ✅ · ② Functions 17/17 ✅ · ③ 앱(Android·iOS) ✅ · ④ Rules ✅
+- ⑤ 브랜드 링크 점검 — **기준선과 정확히 일치**(ok 2 / orphan_brand 1 / 나머지 0)
+- ⑥ 마이그레이션 dry-run — **대상 0건**. 운영에 0% 매장이 없어 실행 불필요
+- ⑦ 라이브 검증
+  - 비상 정지 토글 쓰기 **거부 없음**, 이력에 `변경자` 기록 (2차 F3 수정분이 실제로 동작)
+  - 브랜드 5% 저장 → 산하 매장이 `브랜드 상속 5%` 로, 나머지 6곳은 `전역 3%` 유지
+    → **F1(브랜드 단계가 한 번도 적용되지 않던 결함) 라이브 증명**
+  - 이력에 누가/언제/범위/before→after/일괄 영향 범위가 전부 기록
+  - 원상복구까지 확인 (ChaCha → 상위 설정 따르기)
+- 미확인 1건: 점주의 **브랜드 전환**(D1 `claimSubmittedBrand`) 라이브 경로.
+  `flow.test.mjs` 가 전 구간을 덮지만 실물로는 지나보지 않았다.
+
+### 발견한 문구 버그
+
+`지금 적용되는 값` 블록의 `브랜드은 설정 없음` — 조사 오류(`브랜드는`). 정리 커밋 때 수정.
