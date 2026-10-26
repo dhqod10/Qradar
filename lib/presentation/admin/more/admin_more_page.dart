@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
-// RECOVERY(2026-10-26): 브랜드 복구 트리거. 복구 확인 후 이 import 와 아래 래퍼를 뗀다.
-import 'package:qradar/dev/seed/brand_recovery_trigger.dart';
 import 'package:qradar/presentation/admin/menu_categories/admin_main_category_list_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_settings_page.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
@@ -66,16 +64,10 @@ class AdminMorePage extends ConsumerWidget {
             title: '로그아웃',
             onTap: () => ref.read(authProvider.notifier).signOut(),
           ),
-          // RECOVERY(2026-10-26): brands 복구 시드를 admin 으로 실행하기 위한 임시 래퍼.
-          // `brands` create 는 admin 이거나 본인 브랜드인 brand 계정만 가능해서
-          // (firestore.rules), 고객 더보기의 기존 트리거로는 복구를 돌릴 수 없다.
-          // 복구 확인 후 이 래퍼를 떼고 `const _Tile(...)` 로 되돌린다.
-          const BrandRecoveryTrigger(
-            child: _Tile(
-              icon: Icons.info_outline_rounded,
-              title: '앱 정보',
-              subtitle: 'Qradar v0.1.0',
-            ),
+          const _Tile(
+            icon: Icons.info_outline_rounded,
+            title: '앱 정보',
+            subtitle: 'Qradar v0.1.0',
           ),
         ],
       ),

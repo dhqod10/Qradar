@@ -133,16 +133,6 @@ Future<SeedResult> runPhase1Seed({
     batch.set(ref, data, SetOptions(merge: true));
   }
 
-  // RECOVERY(2026-10-26): 삭제된 운영 브랜드 2건 복원. 확인 후 이 블록을 삭제한다.
-  // merge 로 쓰므로 이미 복원돼 있으면 덮어쓰기만 하고 매장 연결은 건드리지 않는다.
-  Phase1SeedData.recoveryBrandDocs().forEach((id, data) {
-    batch.set(
-      db.collection(FirestorePaths.brands).doc(id),
-      data,
-      SetOptions(merge: true),
-    );
-  });
-
   // brand store
   final brandStoreRef =
       db.collection(FirestorePaths.stores).doc(Phase1SeedData.brandStoreId);
