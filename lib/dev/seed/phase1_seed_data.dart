@@ -32,6 +32,64 @@ class Phase1SeedData {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
+  // ── RECOVERY(2026-10-26): 컬렉션 삭제 사고로 날아간 운영 브랜드 2건 ──────
+  //
+  // Console 에서 `brands` 컬렉션을 통째로 삭제해 ChaCha / 낫심플 문서가 사라졌다.
+  // PITR 과 예약 백업이 꺼져 있어 자동 복구가 불가능했고, 남아 있던 스크린샷과
+  // `docs/tasks/brand_authorization_hardening/spec.md` §11 의 기준선으로 재구성한다.
+  //
+  // **문서 ID 를 원본과 같게 유지하는 것이 핵심이다.** `stores.brandId` 가 살아
+  // 있으므로 같은 ID 로 만들면 매장 연결이 그대로 복원된다.
+  //
+  // 복원한 값: name / description / headOfficeAddress / representativeName /
+  //            status / submittedBy / submittedAt
+  // 임의로 채운 값: brandKey / companyName / businessRegistrationNumber /
+  //            contactName / contactPhone / logoUrl (원본을 모른다 — 테스트
+  //            데이터라 사용자가 임의값을 승인했다)
+  //
+  // **복구 확인 후 이 절과 `recoveryBrandDocs()` 호출부를 삭제한다.**
+  static Map<String, Map<String, dynamic>> recoveryBrandDocs() =>
+      <String, Map<String, dynamic>>{
+        'M2aQWF5fl3TlkSeDSw2D': <String, dynamic>{
+          'name': 'ChaCha',
+          'description': 'ChaChaCoffe.',
+          'logoUrl': '',
+          'status': 'approved',
+          'brandKey': 'BR-CHACHA01',
+          'submittedBy': 'kakao_4831227666',
+          'submittedAt': Timestamp.fromDate(DateTime.utc(2026, 5, 3, 4, 55, 7)),
+          'companyName': '(주)차차커피',
+          'businessRegistrationNumber': '000-00-00001',
+          'contactName': '김철수',
+          'contactPhone': '010-0000-0001',
+          'representativeName': '김철수',
+          'headOfficeAddress': '서울시 강북구 인수동',
+          'rejectedReason': null,
+          'createdAt': Timestamp.fromDate(DateTime.utc(2026, 5, 3, 4, 55, 7)),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        'dPIJwOOw6z9UAQEZ6edm': <String, dynamic>{
+          'name': '낫심플',
+          'description': '낫심플',
+          'logoUrl': '',
+          'status': 'approved',
+          'brandKey': 'BR-NOTSMPL1',
+          'submittedBy': 'Sm8uaPqk3iYmj9mj60vfWL303C92',
+          'submittedAt':
+              Timestamp.fromDate(DateTime.utc(2026, 5, 25, 12, 35, 0)),
+          'companyName': '(주)낫심플',
+          'businessRegistrationNumber': '000-00-00002',
+          'contactName': '김대표',
+          'contactPhone': '010-0000-0002',
+          'representativeName': '김대표',
+          'headOfficeAddress': '서울 동대문구 답십리로 288',
+          'rejectedReason': null,
+          'createdAt':
+              Timestamp.fromDate(DateTime.utc(2026, 5, 25, 12, 35, 0)),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      };
+
   // ── brand master menu items (`brands/{brandId}/menuItems`) ───────────────
   static List<Map<String, dynamic>> brandMasterMenuItems() =>
       <Map<String, dynamic>>[
