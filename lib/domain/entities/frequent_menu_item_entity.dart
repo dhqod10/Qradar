@@ -17,8 +17,12 @@ abstract class FrequentMenuItemEntity with _$FrequentMenuItemEntity {
     /// 메뉴 이미지 URL. 미존재 시 빈 문자열 (카드 fallback 아이콘).
     @Default('') String imageUrl,
 
-    /// 기준 가격 (옵션 미반영). 표시용.
-    @Default(0) int basePrice,
+    /// 기준 가격 (옵션 미반영). 표시용. **null = 이 매장의 현재 메뉴 목록에서 찾지 못했다**(스트림 미도달 ·
+    /// 제외 · 삭제) — 이때 가격 줄을 그리지 않는다 (`0원` 금지, design §13-7 F5-13).
+    int? basePrice,
+
+    /// 현재 품절인가 (목록에서 찾았을 때만 의미).
+    @Default(false) bool soldOut,
 
     /// 최근 lookbackDays 기간 내 매장-메뉴 페어 카운트.
     @Default(0) int orderCount,

@@ -96,6 +96,14 @@ final storeMenuOverridesProvider =
       retry: searchReadRetry,
     );
 
+/// 2단계 검증이 전멸했을 때 에러에 실리는 매장 id (재시도가 이 매장만 다시 읽는다).
+class MenuVerificationException implements Exception {
+  const MenuVerificationException(this.storeIds);
+  final List<String> storeIds;
+  @override
+  String toString() => 'MenuVerificationException($storeIds)';
+}
+
 /// 메뉴 검색 결과 — 인덱스 + 질의 + 2단계 검증.
 ///
 /// [total] 은 **검증을 통과한** 일치 수 (R5), [rows] 는 최대 `menuSearchResultLimit`.
@@ -107,6 +115,8 @@ class MenuSearchResults {
     this.searchedStoreCount = 0,
     this.fanOutTruncated = false,
     this.refreshing = false,
+    this.failedStoreIds = const [],
+    this.indexFailedCount = 0,
   });
 
   static const MenuSearchResults empty = MenuSearchResults(rows: [], total: 0);
@@ -117,6 +127,12 @@ class MenuSearchResults {
 
   /// 실제로 메뉴를 찾아본 후보 매장 수 — 범위 안내 문구의 근거 (고정 숫자를 말하지 않는다).
   final int searchedStoreCount;
+
+  /// 2단계 검증에 실패한 매장 id (부분 실패 `다시 시도` 가 이 매장만 다시 읽는다).
+  final List<String> failedStoreIds;
+
+  /// 1단계 인덱스에서 실패한 출처 수.
+  final int indexFailedCount;
 
   /// 2단계 fan-out 상한(R4) 밖 브랜드 매장의 행이 버려졌다.
   final bool fanOutTruncated;
@@ -134,6 +150,8 @@ class MenuSearchResults {
     searchedStoreCount: searchedStoreCount,
     fanOutTruncated: fanOutTruncated,
     refreshing: true,
+    failedStoreIds: failedStoreIds,
+    indexFailedCount: indexFailedCount,
   );
 }
 
@@ -150,9 +168,9 @@ final menuSearchResultsProvider =
       }
       final indexAsync = ref.watch(menuSearchIndexProvider);
       // 자동 재시도 중(isLoading)에는 에러로 확정하지 않는다 — 에러가 잠깐 비쳤다 사라지는 깜빡임 방지.
-      if (indexAsync.hasError &&
-          !indexAsync.hasValue &&
-          !indexAsync.isLoading) {
+      // 최종 실패(재시도까지 끝난 에러)는 직전 값이 남아 있어도 **에러로 본다**: 가격이 걸린 화면이라
+      // 낡았을 수 있는 값을 설명 없이 보이지 않는다 (Riverpod 3 은 에러 후에도 이전 값을 유지한다).
+      if (indexAsync.hasError && !indexAsync.isLoading) {
         return AsyncError(
           indexAsync.error!,
           indexAsync.stackTrace ?? StackTrace.empty,
@@ -169,7 +187,10 @@ final menuSearchResultsProvider =
               )
             : const AsyncLoading();
       }
-      if (!indexAsync.hasValue) return const AsyncLoading();
+      // 실패 후 재시도 중에는 낡은 값을 보이지 않고 로딩으로 둔다.
+      if (!indexAsync.hasValue || indexAsync.hasError) {
+        return const AsyncLoading();
+      }
       final index = indexAsync.requireValue;
       final activeIds = activeAsync.requireValue.map((c) => c.id).toSet();
 
@@ -198,15 +219,20 @@ final menuSearchResultsProvider =
       var refreshing = false;
       for (final storeId in plan.storeIds) {
         final a = ref.watch(storeMenuOverridesProvider(storeId));
-        if (a.hasValue) {
-          overrides[storeId] = a.requireValue;
-          if (a.isLoading) {
-            refreshing = true; // 재시도 중에도 직전 검증 결과는 유지 (hasValue 우선)
+        if (a.isLoading) {
+          if (a.hasValue && !a.hasError) {
+            // 정상 새로고침 중: 직전 검증 결과 유지 (이미 검증된 행을 지우지 않는다)
+            overrides[storeId] = a.requireValue;
+            refreshing = true;
+          } else {
+            pending = true; // 첫 로딩 또는 실패 후 재시도 중 — 아직 모른다 (낡은 값을 보이지 않는다)
           }
-        } else if (a.isLoading || !a.hasError) {
-          pending = true; // 로딩 또는 자동 재시도 중 — 아직 모른다
-        } else {
+        } else if (a.hasError) {
+          // 최종 실패. 직전 값이 남아 있어도 쓰지 않는다: 가격이 걸려 있어 낡았을 수 있는 값을 설명 없이
+          // 보이지 않는다 (R6 과 같은 규칙 — 검증 못 한 행은 그리지 않고 부분 실패로 알린다).
           failedStores.add(storeId);
+        } else {
+          overrides[storeId] = a.requireValue;
         }
       }
       if (pending) return const AsyncLoading(); // R1: 검증 전 행은 그리지 않는다
@@ -227,7 +253,7 @@ final menuSearchResultsProvider =
           failedStores.length == plan.storeIds.length &&
           verified.hits.isEmpty) {
         return AsyncError(
-          StateError('menu verification failed'),
+          MenuVerificationException(failedStores.toList(growable: false)),
           StackTrace.empty,
         );
       }
@@ -240,6 +266,8 @@ final menuSearchResultsProvider =
         failedSourceCount: index.failedSourceCount + verified.failedStoreCount,
         searchedStoreCount: index.searchedStoreCount,
         fanOutTruncated: verified.truncated,
+        failedStoreIds: failedStores.toList(growable: false),
+        indexFailedCount: index.failedSourceCount,
       );
       // 인덱스 새로고침 중이면 whenData 가 isLoading 플래그를 실어 준다 (부분 실패 재시도 스피너용).
       final carried = indexAsync.whenData((_) => results);
@@ -304,6 +332,12 @@ enum SearchView {
   s10UnifiedEmpty,
   s11NoStoresMenuError,
   s12UnifiedEmptyPartial,
+
+  /// 13: 매장 일치 O + 메뉴 검증 통과 0 + **fan-out 상한 밖 매장을 읽지 못했다** — "없다" 고 단정하지 않는다.
+  s13StoresMenuTruncatedEmpty,
+
+  /// 13': 매장 일치 X + 같은 조건 (통합 빈 상태 아님).
+  s13UnifiedTruncatedEmpty,
 }
 
 /// 모든 상태를 결정하는 **유일한** 함수. 통합 빈 상태(s10/s12)는 메뉴가 확정(데이터 0 또는 부분 실패)일 때만 나온다.
@@ -346,6 +380,12 @@ SearchView resolveSearchView(
         : SearchView.s11NoStoresMenuError;
   }
   final m = menu!;
+  // 새 축 `fanOutTruncated` x 빈 결과: 상한 때문에 못 본 매장이 있으면 "없다" 는 확정이 아니다.
+  if (m.total == 0 && m.fanOutTruncated) {
+    return hasStores
+        ? SearchView.s13StoresMenuTruncatedEmpty
+        : SearchView.s13UnifiedTruncatedEmpty;
+  }
   if (hasStores) {
     if (m.isPartial) return SearchView.s7StoresMenuPartial;
     return m.total > 0

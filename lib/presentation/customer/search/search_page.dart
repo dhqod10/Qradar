@@ -308,6 +308,32 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           MenuErrorCard(onRetry: _retryMenu),
         ];
 
+      case SearchView.s13StoresMenuTruncatedEmpty:
+        // 상한 밖 매장을 읽지 못했다 — "없다" 고 말하지 않는다.
+        return [
+          ..._storeSection(vm, q),
+          const SizedBox(height: 12),
+          SearchOneLiner(
+            "'${_echo(q)}' 와 일치하는 메뉴를 아직 찾지 못했어요. "
+            '가까운 매장 일부만 확인했으니 검색어를 더 구체적으로 입력해 보세요',
+          ),
+          if (vm.menu.isPartial)
+            MenuPartialFailureRow(
+              onRetry: _retryMenu,
+              retrying: vm.menuRefreshing,
+            ),
+        ];
+
+      case SearchView.s13UnifiedTruncatedEmpty:
+        return [
+          SearchTruncatedEmpty(query: q),
+          if (vm.menu.isPartial)
+            MenuPartialFailureRow(
+              onRetry: _retryMenu,
+              retrying: vm.menuRefreshing,
+            ),
+        ];
+
       case SearchView.s12UnifiedEmptyPartial:
         return [
           SearchUnifiedEmpty(
@@ -325,11 +351,26 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   /// 질의 echo — 최대 20자 후 말줄임.
   String _echo(String q) => q.length > 20 ? '${q.substring(0, 20)}…' : q;
 
+  /// 부분 실패/메뉴 에러의 `다시 시도` — **실패한 것만** 다시 읽는다 (최대 10쿼리).
+  /// 1단계 인덱스(32쿼리)는 인덱스가 실패했을 때만, 2단계는 실패한 매장만, 활성 카테고리는 실패했을 때만.
   void _retryMenu() {
-    ref.invalidate(menuSearchIndexProvider);
-    ref.invalidate(storeMenuOverridesProvider);
-    // 결과 필터가 쓰는 활성 카테고리도 실패했을 수 있다.
-    ref.invalidate(mainCategoriesActiveProvider);
+    final index = ref.read(menuSearchIndexProvider);
+    if (index.hasError || (index.value?.isPartial ?? false)) {
+      ref.invalidate(menuSearchIndexProvider);
+    }
+    final menu = ref.read(menuSearchResultsProvider);
+    final error = menu.error;
+    final failed =
+        menu.value?.failedStoreIds ??
+        (error is MenuVerificationException
+            ? error.storeIds
+            : const <String>[]);
+    for (final id in failed) {
+      ref.invalidate(storeMenuOverridesProvider(id));
+    }
+    if (ref.read(mainCategoriesActiveProvider).hasError) {
+      ref.invalidate(mainCategoriesActiveProvider);
+    }
   }
 
   Widget _storeErrorBlock(Object? error) {

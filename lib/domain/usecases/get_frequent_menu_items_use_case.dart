@@ -27,8 +27,7 @@ class GetFrequentMenuItemsUseCase {
   static String pairKey({
     required String storeId,
     required String menuItemId,
-  }) =>
-      '${storeId}_$menuItemId';
+  }) => '${storeId}_$menuItemId';
 
   /// 정적 합성 헬퍼. Provider 단에서 호출.
   static List<FrequentMenuItemEntity> compute({
@@ -66,7 +65,8 @@ class GetFrequentMenuItemsUseCase {
       final k = entry.key;
       final orderCount = entry.value;
       final isFav = favoriteMenuItemKeys.contains(k);
-      final score = orderCount +
+      final score =
+          orderCount +
           (isFav ? RecommendationThresholds.favoriteScoreBoost : 0);
       if (score < RecommendationThresholds.frequentMenuPairMinVisits) continue;
 
@@ -74,13 +74,15 @@ class GetFrequentMenuItemsUseCase {
       final menuItemId = menuItemIdByPair[k]!;
       // menuItems lookup 으로 imageUrl / basePrice 보강
       String imageUrl = '';
-      int basePrice = 0;
+      int? basePrice;
+      var soldOut = false;
       final list = menuItemsByStore[storeId];
       if (list != null) {
         for (final m in list) {
           if (m.id == menuItemId) {
             imageUrl = m.imageUrl;
             basePrice = m.basePrice;
+            soldOut = m.soldOut;
             break;
           }
         }
@@ -94,6 +96,7 @@ class GetFrequentMenuItemsUseCase {
           menuItemName: menuNameByPair[k] ?? '',
           imageUrl: imageUrl,
           basePrice: basePrice,
+          soldOut: soldOut,
           orderCount: orderCount,
           isFavorite: isFav,
           score: score,
@@ -109,9 +112,8 @@ class GetFrequentMenuItemsUseCase {
 
     final take =
         results.length > RecommendationThresholds.frequentMenuPairMaxItems
-            ? results.sublist(
-                0, RecommendationThresholds.frequentMenuPairMaxItems)
-            : results;
+        ? results.sublist(0, RecommendationThresholds.frequentMenuPairMaxItems)
+        : results;
     return List<FrequentMenuItemEntity>.unmodifiable(take);
   }
 

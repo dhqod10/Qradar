@@ -362,3 +362,50 @@ class SearchUnifiedEmpty extends StatelessWidget {
     );
   }
 }
+
+/// 통합 빈 상태의 "확정 아님" 판 — fan-out 상한 때문에 읽지 못한 매장이 있어 **없다고 단정하지 않는다**.
+class SearchTruncatedEmpty extends StatelessWidget {
+  const SearchTruncatedEmpty({super.key, required this.query});
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final echo = query.length > 20 ? '${query.substring(0, 20)}…' : query;
+    return Semantics(
+      label: '$echo 검색 결과를 모두 확인하지 못했어요. 검색 범위를 좁혀 보세요',
+      child: Padding(
+        padding: const EdgeInsets.only(top: 64),
+        child: Column(
+          children: [
+            const Icon(
+              Icons.manage_search_rounded,
+              size: 48,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "'$echo' 검색 결과를 모두 확인하지 못했어요",
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textHeading,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '가까운 매장 일부의 메뉴만 확인했어요',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+            const Text(
+              '검색 범위를 좁혀 보세요',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

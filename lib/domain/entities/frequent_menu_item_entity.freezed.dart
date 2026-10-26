@@ -15,8 +15,10 @@ T _$identity<T>(T value) => value;
 mixin _$FrequentMenuItemEntity {
 
  String get storeId; String get storeName; String get menuItemId; String get menuItemName;/// 메뉴 이미지 URL. 미존재 시 빈 문자열 (카드 fallback 아이콘).
- String get imageUrl;/// 기준 가격 (옵션 미반영). 표시용.
- int get basePrice;/// 최근 lookbackDays 기간 내 매장-메뉴 페어 카운트.
+ String get imageUrl;/// 기준 가격 (옵션 미반영). 표시용. **null = 이 매장의 현재 메뉴 목록에서 찾지 못했다**(스트림 미도달 ·
+/// 제외 · 삭제) — 이때 가격 줄을 그리지 않는다 (`0원` 금지, design §13-7 F5-13).
+ int? get basePrice;/// 현재 품절인가 (목록에서 찾았을 때만 의미).
+ bool get soldOut;/// 최근 lookbackDays 기간 내 매장-메뉴 페어 카운트.
  int get orderCount;/// 사용자가 (storeId, menuItemId) 페어를 즐겨찾기로 등록했는지.
  bool get isFavorite;/// `orderCount + (isFavorite ? favoriteScoreBoost : 0)`.
  int get score;
@@ -30,16 +32,16 @@ $FrequentMenuItemEntityCopyWith<FrequentMenuItemEntity> get copyWith => _$Freque
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is FrequentMenuItemEntity&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuItemName, menuItemName) || other.menuItemName == menuItemName)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.orderCount, orderCount) || other.orderCount == orderCount)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.score, score) || other.score == score));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FrequentMenuItemEntity&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuItemName, menuItemName) || other.menuItemName == menuItemName)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.soldOut, soldOut) || other.soldOut == soldOut)&&(identical(other.orderCount, orderCount) || other.orderCount == orderCount)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.score, score) || other.score == score));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,storeId,storeName,menuItemId,menuItemName,imageUrl,basePrice,orderCount,isFavorite,score);
+int get hashCode => Object.hash(runtimeType,storeId,storeName,menuItemId,menuItemName,imageUrl,basePrice,soldOut,orderCount,isFavorite,score);
 
 @override
 String toString() {
-  return 'FrequentMenuItemEntity(storeId: $storeId, storeName: $storeName, menuItemId: $menuItemId, menuItemName: $menuItemName, imageUrl: $imageUrl, basePrice: $basePrice, orderCount: $orderCount, isFavorite: $isFavorite, score: $score)';
+  return 'FrequentMenuItemEntity(storeId: $storeId, storeName: $storeName, menuItemId: $menuItemId, menuItemName: $menuItemName, imageUrl: $imageUrl, basePrice: $basePrice, soldOut: $soldOut, orderCount: $orderCount, isFavorite: $isFavorite, score: $score)';
 }
 
 
@@ -50,7 +52,7 @@ abstract mixin class $FrequentMenuItemEntityCopyWith<$Res>  {
   factory $FrequentMenuItemEntityCopyWith(FrequentMenuItemEntity value, $Res Function(FrequentMenuItemEntity) _then) = _$FrequentMenuItemEntityCopyWithImpl;
 @useResult
 $Res call({
- String storeId, String storeName, String menuItemId, String menuItemName, String imageUrl, int basePrice, int orderCount, bool isFavorite, int score
+ String storeId, String storeName, String menuItemId, String menuItemName, String imageUrl, int? basePrice, bool soldOut, int orderCount, bool isFavorite, int score
 });
 
 
@@ -67,15 +69,16 @@ class _$FrequentMenuItemEntityCopyWithImpl<$Res>
 
 /// Create a copy of FrequentMenuItemEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? storeId = null,Object? storeName = null,Object? menuItemId = null,Object? menuItemName = null,Object? imageUrl = null,Object? basePrice = null,Object? orderCount = null,Object? isFavorite = null,Object? score = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? storeId = null,Object? storeName = null,Object? menuItemId = null,Object? menuItemName = null,Object? imageUrl = null,Object? basePrice = freezed,Object? soldOut = null,Object? orderCount = null,Object? isFavorite = null,Object? score = null,}) {
   return _then(_self.copyWith(
 storeId: null == storeId ? _self.storeId : storeId // ignore: cast_nullable_to_non_nullable
 as String,storeName: null == storeName ? _self.storeName : storeName // ignore: cast_nullable_to_non_nullable
 as String,menuItemId: null == menuItemId ? _self.menuItemId : menuItemId // ignore: cast_nullable_to_non_nullable
 as String,menuItemName: null == menuItemName ? _self.menuItemName : menuItemName // ignore: cast_nullable_to_non_nullable
 as String,imageUrl: null == imageUrl ? _self.imageUrl : imageUrl // ignore: cast_nullable_to_non_nullable
-as String,basePrice: null == basePrice ? _self.basePrice : basePrice // ignore: cast_nullable_to_non_nullable
-as int,orderCount: null == orderCount ? _self.orderCount : orderCount // ignore: cast_nullable_to_non_nullable
+as String,basePrice: freezed == basePrice ? _self.basePrice : basePrice // ignore: cast_nullable_to_non_nullable
+as int?,soldOut: null == soldOut ? _self.soldOut : soldOut // ignore: cast_nullable_to_non_nullable
+as bool,orderCount: null == orderCount ? _self.orderCount : orderCount // ignore: cast_nullable_to_non_nullable
 as int,isFavorite: null == isFavorite ? _self.isFavorite : isFavorite // ignore: cast_nullable_to_non_nullable
 as bool,score: null == score ? _self.score : score // ignore: cast_nullable_to_non_nullable
 as int,
@@ -163,10 +166,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String storeId,  String storeName,  String menuItemId,  String menuItemName,  String imageUrl,  int basePrice,  int orderCount,  bool isFavorite,  int score)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String storeId,  String storeName,  String menuItemId,  String menuItemName,  String imageUrl,  int? basePrice,  bool soldOut,  int orderCount,  bool isFavorite,  int score)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _FrequentMenuItemEntity() when $default != null:
-return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemName,_that.imageUrl,_that.basePrice,_that.orderCount,_that.isFavorite,_that.score);case _:
+return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemName,_that.imageUrl,_that.basePrice,_that.soldOut,_that.orderCount,_that.isFavorite,_that.score);case _:
   return orElse();
 
 }
@@ -184,10 +187,10 @@ return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemNam
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String storeId,  String storeName,  String menuItemId,  String menuItemName,  String imageUrl,  int basePrice,  int orderCount,  bool isFavorite,  int score)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String storeId,  String storeName,  String menuItemId,  String menuItemName,  String imageUrl,  int? basePrice,  bool soldOut,  int orderCount,  bool isFavorite,  int score)  $default,) {final _that = this;
 switch (_that) {
 case _FrequentMenuItemEntity():
-return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemName,_that.imageUrl,_that.basePrice,_that.orderCount,_that.isFavorite,_that.score);case _:
+return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemName,_that.imageUrl,_that.basePrice,_that.soldOut,_that.orderCount,_that.isFavorite,_that.score);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -204,10 +207,10 @@ return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemNam
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String storeId,  String storeName,  String menuItemId,  String menuItemName,  String imageUrl,  int basePrice,  int orderCount,  bool isFavorite,  int score)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String storeId,  String storeName,  String menuItemId,  String menuItemName,  String imageUrl,  int? basePrice,  bool soldOut,  int orderCount,  bool isFavorite,  int score)?  $default,) {final _that = this;
 switch (_that) {
 case _FrequentMenuItemEntity() when $default != null:
-return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemName,_that.imageUrl,_that.basePrice,_that.orderCount,_that.isFavorite,_that.score);case _:
+return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemName,_that.imageUrl,_that.basePrice,_that.soldOut,_that.orderCount,_that.isFavorite,_that.score);case _:
   return null;
 
 }
@@ -219,7 +222,7 @@ return $default(_that.storeId,_that.storeName,_that.menuItemId,_that.menuItemNam
 
 
 class _FrequentMenuItemEntity implements FrequentMenuItemEntity {
-  const _FrequentMenuItemEntity({required this.storeId, required this.storeName, required this.menuItemId, required this.menuItemName, this.imageUrl = '', this.basePrice = 0, this.orderCount = 0, this.isFavorite = false, this.score = 0});
+  const _FrequentMenuItemEntity({required this.storeId, required this.storeName, required this.menuItemId, required this.menuItemName, this.imageUrl = '', this.basePrice, this.soldOut = false, this.orderCount = 0, this.isFavorite = false, this.score = 0});
   
 
 @override final  String storeId;
@@ -228,8 +231,11 @@ class _FrequentMenuItemEntity implements FrequentMenuItemEntity {
 @override final  String menuItemName;
 /// 메뉴 이미지 URL. 미존재 시 빈 문자열 (카드 fallback 아이콘).
 @override@JsonKey() final  String imageUrl;
-/// 기준 가격 (옵션 미반영). 표시용.
-@override@JsonKey() final  int basePrice;
+/// 기준 가격 (옵션 미반영). 표시용. **null = 이 매장의 현재 메뉴 목록에서 찾지 못했다**(스트림 미도달 ·
+/// 제외 · 삭제) — 이때 가격 줄을 그리지 않는다 (`0원` 금지, design §13-7 F5-13).
+@override final  int? basePrice;
+/// 현재 품절인가 (목록에서 찾았을 때만 의미).
+@override@JsonKey() final  bool soldOut;
 /// 최근 lookbackDays 기간 내 매장-메뉴 페어 카운트.
 @override@JsonKey() final  int orderCount;
 /// 사용자가 (storeId, menuItemId) 페어를 즐겨찾기로 등록했는지.
@@ -247,16 +253,16 @@ _$FrequentMenuItemEntityCopyWith<_FrequentMenuItemEntity> get copyWith => __$Fre
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _FrequentMenuItemEntity&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuItemName, menuItemName) || other.menuItemName == menuItemName)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.orderCount, orderCount) || other.orderCount == orderCount)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.score, score) || other.score == score));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _FrequentMenuItemEntity&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&(identical(other.menuItemId, menuItemId) || other.menuItemId == menuItemId)&&(identical(other.menuItemName, menuItemName) || other.menuItemName == menuItemName)&&(identical(other.imageUrl, imageUrl) || other.imageUrl == imageUrl)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.soldOut, soldOut) || other.soldOut == soldOut)&&(identical(other.orderCount, orderCount) || other.orderCount == orderCount)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.score, score) || other.score == score));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,storeId,storeName,menuItemId,menuItemName,imageUrl,basePrice,orderCount,isFavorite,score);
+int get hashCode => Object.hash(runtimeType,storeId,storeName,menuItemId,menuItemName,imageUrl,basePrice,soldOut,orderCount,isFavorite,score);
 
 @override
 String toString() {
-  return 'FrequentMenuItemEntity(storeId: $storeId, storeName: $storeName, menuItemId: $menuItemId, menuItemName: $menuItemName, imageUrl: $imageUrl, basePrice: $basePrice, orderCount: $orderCount, isFavorite: $isFavorite, score: $score)';
+  return 'FrequentMenuItemEntity(storeId: $storeId, storeName: $storeName, menuItemId: $menuItemId, menuItemName: $menuItemName, imageUrl: $imageUrl, basePrice: $basePrice, soldOut: $soldOut, orderCount: $orderCount, isFavorite: $isFavorite, score: $score)';
 }
 
 
@@ -267,7 +273,7 @@ abstract mixin class _$FrequentMenuItemEntityCopyWith<$Res> implements $Frequent
   factory _$FrequentMenuItemEntityCopyWith(_FrequentMenuItemEntity value, $Res Function(_FrequentMenuItemEntity) _then) = __$FrequentMenuItemEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String storeId, String storeName, String menuItemId, String menuItemName, String imageUrl, int basePrice, int orderCount, bool isFavorite, int score
+ String storeId, String storeName, String menuItemId, String menuItemName, String imageUrl, int? basePrice, bool soldOut, int orderCount, bool isFavorite, int score
 });
 
 
@@ -284,15 +290,16 @@ class __$FrequentMenuItemEntityCopyWithImpl<$Res>
 
 /// Create a copy of FrequentMenuItemEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? storeId = null,Object? storeName = null,Object? menuItemId = null,Object? menuItemName = null,Object? imageUrl = null,Object? basePrice = null,Object? orderCount = null,Object? isFavorite = null,Object? score = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? storeId = null,Object? storeName = null,Object? menuItemId = null,Object? menuItemName = null,Object? imageUrl = null,Object? basePrice = freezed,Object? soldOut = null,Object? orderCount = null,Object? isFavorite = null,Object? score = null,}) {
   return _then(_FrequentMenuItemEntity(
 storeId: null == storeId ? _self.storeId : storeId // ignore: cast_nullable_to_non_nullable
 as String,storeName: null == storeName ? _self.storeName : storeName // ignore: cast_nullable_to_non_nullable
 as String,menuItemId: null == menuItemId ? _self.menuItemId : menuItemId // ignore: cast_nullable_to_non_nullable
 as String,menuItemName: null == menuItemName ? _self.menuItemName : menuItemName // ignore: cast_nullable_to_non_nullable
 as String,imageUrl: null == imageUrl ? _self.imageUrl : imageUrl // ignore: cast_nullable_to_non_nullable
-as String,basePrice: null == basePrice ? _self.basePrice : basePrice // ignore: cast_nullable_to_non_nullable
-as int,orderCount: null == orderCount ? _self.orderCount : orderCount // ignore: cast_nullable_to_non_nullable
+as String,basePrice: freezed == basePrice ? _self.basePrice : basePrice // ignore: cast_nullable_to_non_nullable
+as int?,soldOut: null == soldOut ? _self.soldOut : soldOut // ignore: cast_nullable_to_non_nullable
+as bool,orderCount: null == orderCount ? _self.orderCount : orderCount // ignore: cast_nullable_to_non_nullable
 as int,isFavorite: null == isFavorite ? _self.isFavorite : isFavorite // ignore: cast_nullable_to_non_nullable
 as bool,score: null == score ? _self.score : score // ignore: cast_nullable_to_non_nullable
 as int,

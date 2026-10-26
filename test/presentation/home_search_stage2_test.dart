@@ -3,6 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/constants/recommendation_thresholds.dart';
+import 'package:qradar/domain/entities/frequent_menu_item_entity.dart';
+import 'package:qradar/domain/entities/order_log_entity.dart';
+import 'package:qradar/domain/usecases/get_frequent_menu_items_use_case.dart';
+import 'package:qradar/presentation/customer/home/widgets/frequent_menu_items_section.dart';
 import 'package:qradar/core/constants/grade_thresholds.dart';
 import 'package:qradar/core/constants/menu_categories.dart';
 import 'package:qradar/domain/entities/user_location.dart';
@@ -225,6 +230,211 @@ void main() {
       expect(card.basePrice, row.basePrice);
       expect(detail.basePrice, row.basePrice);
       expect([row.soldOut, card.soldOut, detail.soldOut], everyElement(isTrue));
+    });
+  });
+
+  group('FAIL-4: fan-out 상한 x 빈 결과 — 못 본 매장이 있으면 "없다" 고 단정하지 않는다 (실제 그래프)', () {
+    // s1..s12 (가까운 순). s1..s10 은 m1 을 approved excluded, s11·s12 는 판다.
+    void seed() {
+      for (var i = 1; i <= 12; i++) {
+        w.addBrandStore('s$i', 0.1 * i);
+        if (i <= 10) {
+          w.overrides['s$i'] = [_ov('m1', 's$i', 'approved', excluded: true)];
+        }
+      }
+    }
+
+    test('truncated x empty -> s13 (통합 빈 상태 s10 이 아니다)', () async {
+      seed();
+      final c = container();
+      await search(c, '아이스');
+      final vm = c.read(searchViewModelProvider);
+      expect(vm.menu.total, 0);
+      expect(vm.menu.fanOutTruncated, isTrue);
+      expect(vm.view, SearchView.s13UnifiedTruncatedEmpty);
+    });
+
+    test('같은 조건에서 상한에 걸리지 않으면(10곳 전부 excluded) 확정적 빈 상태 s10', () async {
+      for (var i = 1; i <= 10; i++) {
+        w.addBrandStore('s$i', 0.1 * i);
+        w.overrides['s$i'] = [_ov('m1', 's$i', 'approved', excluded: true)];
+      }
+      final c = container();
+      await search(c, '아이스');
+      expect(c.read(searchViewModelProvider).view, SearchView.s10UnifiedEmpty);
+    });
+
+    testWidgets('화면: truncated 는 "없어요" 대신 확인하지 못했다고 말하고, 아닌 경우는 기존 문구', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      seed();
+      final c = container();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: const MaterialApp(home: SearchPage()),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '아이스');
+      await tester.pump(const Duration(milliseconds: 300));
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.textContaining('일치하는 매장이나 메뉴가 없어요'), findsNothing);
+      expect(find.text("'아이스' 검색 결과를 모두 확인하지 못했어요"), findsOneWidget);
+      expect(find.text('가까운 매장 일부의 메뉴만 확인했어요'), findsOneWidget);
+      expect(find.text('검색 범위를 좁혀 보세요'), findsOneWidget);
+    });
+  });
+
+  group('최종 실패 시 낡은 값을 쓰지 않는다 · 부분 실패 재시도는 실패한 것만', () {
+    test('정상 로드 후 재읽기가 최종 실패하면 그 매장의 행은 숨기고 부분 실패로 알린다', () async {
+      w.addBrandStore('s1', 0.5);
+      w.addBrandStore('s2', 1.0);
+      final c = container();
+      var rows = await search(c, '아이스');
+      expect(rows.map((r) => r.storeId), ['s1', 's2']);
+      // 새로고침/재시도에서 s1 의 override 읽기가 실패한다 (Riverpod 3 은 이전 값을 유지한다)
+      w.failOverrides.add('s1');
+      c.invalidate(storeMenuOverridesProvider('s1'));
+      await Future<void>.delayed(
+        const Duration(seconds: 2),
+      ); // 자동 재시도 1회 이후 최종 실패
+      final vm = c.read(searchViewModelProvider);
+      expect(vm.menu.rows.map((r) => r.storeId), [
+        's2',
+      ], reason: '낡은 s1 행(가격)을 보이지 않는다');
+      expect(vm.menu.isPartial, isTrue);
+      expect(vm.menu.failedStoreIds, ['s1']);
+    });
+
+    testWidgets('`다시 시도` 는 실패한 매장의 override 만 다시 읽는다 (1단계 인덱스 재읽기 0)', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      w.addBrandStore('s1', 0.5);
+      w.addBrandStore('s2', 1.0);
+      w.failOverrides.add('s1');
+      final c = container();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: const MaterialApp(home: SearchPage()),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '아이스');
+      await tester.pump(const Duration(milliseconds: 300));
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 100)); // 자동 재시도(0.8s) 이후
+      }
+      expect(find.text('일부 매장의 메뉴를 불러오지 못했어요'), findsOneWidget);
+      final index1 = (w.masterFetches, w.storeMenuFetches);
+      final ovBefore = w.overrideFetches.length;
+      w.failOverrides.clear();
+      await tester.tap(find.text('다시 시도'));
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(
+        (w.masterFetches, w.storeMenuFetches),
+        index1,
+        reason: '1단계 인덱스는 다시 읽지 않는다',
+      );
+      expect(
+        w.overrideFetches.length - ovBefore,
+        1,
+        reason: '실패한 s1 의 override 만',
+      );
+      expect(w.overrideFetches.last, 's1');
+      expect(find.text('일부 매장의 메뉴를 불러오지 못했어요'), findsNothing);
+    });
+  });
+
+  group('FAIL-5: 홈 자주 찾는 메뉴 — 못 찾은 가격은 0원이 아니라 숨긴다', () {
+    final log = OrderLogEntity(
+      id: 'l',
+      userId: 'u',
+      storeId: 's1',
+      storeName: '강남점',
+      total: 4000,
+      paidAt: DateTime.now(),
+      items: const [
+        OrderLogItem(
+          menuItemId: 'm1',
+          menuItemName: '아이스 아메리카노',
+          quantity: 1,
+          lineTotal: 4000,
+        ),
+      ],
+    );
+
+    List<FrequentMenuItemEntity> compute(
+      Map<String, List<MenuItemEntity>> menus,
+    ) => GetFrequentMenuItemsUseCase.compute(
+      logs: List.filled(
+        RecommendationThresholds.frequentMenuPairMinVisits,
+        log,
+      ),
+      favoriteMenuItemKeys: const {},
+      menuItemsByStore: menus,
+    );
+
+    test('현재 목록에서 못 찾으면 basePrice == null (스트림 미도달 · 제외 · 삭제)', () {
+      expect(compute(const {}).single.basePrice, isNull);
+      expect(compute({'s1': const []}).single.basePrice, isNull);
+    });
+
+    test('찾으면 가격과 품절을 싣는다', () {
+      final e = compute({
+        's1': [
+          const MenuItemEntity(
+            id: 'm1',
+            storeId: 's1',
+            name: 'x',
+            mainCategoryCode: 'coffee',
+            basePrice: 3500,
+            soldOut: true,
+          ),
+        ],
+      }).single;
+      expect(e.basePrice, 3500);
+      expect(e.soldOut, isTrue);
+    });
+
+    testWidgets('카드: 가격 null 이면 `0원` 을 그리지 않고, 찾았으면 가격(+품절)을 그린다', (
+      tester,
+    ) async {
+      Widget card(FrequentMenuItemEntity e) => MaterialApp(
+        home: Scaffold(
+          body: FrequentMenuCard(entity: e, onTap: () {}),
+        ),
+      );
+      await tester.pumpWidget(card(compute(const {}).single));
+      expect(find.textContaining('원'), findsNothing);
+      expect(find.text('0원'), findsNothing);
+      await tester.pumpWidget(
+        card(
+          compute({
+            's1': [
+              const MenuItemEntity(
+                id: 'm1',
+                storeId: 's1',
+                name: 'x',
+                mainCategoryCode: 'coffee',
+                basePrice: 3500,
+                soldOut: true,
+              ),
+            ],
+          }).single,
+        ),
+      );
+      expect(find.text('3,500원'), findsOneWidget);
+      expect(find.text('품절'), findsOneWidget);
     });
   });
 
@@ -595,6 +805,8 @@ class _World {
   final overrides = <String, List<MenuOverrideModel>>{};
   final failOverrides = <String>{};
   final overrideFetches = <String>[];
+  int masterFetches = 0;
+  int storeMenuFetches = 0;
   final _overrideDocControllers =
       <String, StreamController<MenuOverrideModel?>>{};
   bool failOverrideDoc = false;
@@ -606,7 +818,7 @@ class _World {
   final options = _Options();
 
   late final _storeDs = _StoreDs(this);
-  late final _menuDs = _MenuDs();
+  late final _menuDs = _MenuDs(this);
   late final _masterDs = _MasterDs(this);
   late final _ovDs = _OvDs(this);
 
@@ -687,8 +899,15 @@ const _m1 = MenuItemModel(
 );
 
 class _MenuDs implements MenuItemRemoteDataSource {
+  _MenuDs([this.world]);
+  final _World? world;
+
   @override
-  Future<List<MenuItemModel>> fetchByStore(String storeId) async => const [];
+  Future<List<MenuItemModel>> fetchByStore(String storeId) async {
+    world?.storeMenuFetches++;
+    return const [];
+  }
+
   @override
   Stream<List<MenuItemModel>> streamByStore(String storeId) =>
       Stream.value(const []);

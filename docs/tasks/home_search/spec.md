@@ -879,7 +879,7 @@ MenuItemEntity? applyOverrideForCustomer({
 
 ### 표시 조건 2개 (이것이 지켜지지 않으면 표시하지 않는다)
 
-- **조건 1 — 신선도를 방문 단위로 묶는다.** 1단계 인덱스는 세션 캐시를 유지하되(1차 L4 그대로), **2단계 override 캐시는 검색 화면 수명(`autoDispose`)** 으로 둔다. 화면을 다시 열면 일치 매장의 override 를 다시 읽는다 — 비용 1~3쿼리로 **가격·품절이 "이번 방문 시점" 기준**이 된다. 세션 내내 캐시하면 30분 전 가격을 숫자로 보여주게 되는데, 그건 1차가 금지한 상황과 실질적으로 같다 → 사용자 확인 **D12**
+- **조건 1 — 신선도를 방문 단위로 묶는다.** 1단계 인덱스는 세션 캐시를 유지하되(1차 L4 그대로), **2단계 override 캐시는 검색 화면 수명**(구현은 일반 family + 화면 dispose 시 invalidate — implementation.md §13.5)으로 둔다. 화면을 다시 열면 일치 매장의 override 를 다시 읽는다 — 비용 1~3쿼리로 **가격·품절이 "이번 방문 시점" 기준**이 된다. 세션 내내 캐시하면 30분 전 가격을 숫자로 보여주게 되는데, 그건 1차가 금지한 상황과 실질적으로 같다 → 사용자 확인 **D12**
 - **조건 2 — 검증 못 한 행에는 가격을 쓰지 않는다. 행 자체를 안 그린다.** R6 과 같은 규칙이다. "가격만 비우고 행은 보여주기" 를 허용하면 1차가 막은 구멍이 다시 열린다
 
 ### 함께 표시하는 것 / 하지 않는 것
@@ -1075,7 +1075,7 @@ case B(브랜드 매장): combineLatest2(store 메뉴 doc, brand 마스터 doc) 
 
 | 파일 | 변경 |
 |---|---|
-| `customer/search/providers/search_providers.dart` | ① `storeMenuOverridesProvider` **신규** — `FutureProvider.autoDispose.family<List<MenuOverrideEntity>, String>` (매장 단위 캐시, **검색 화면 수명**). 선례: `recommendation_providers.dart` 의 `_menuItemsByStoreProvider` 가 **동적 집합을 watch 하는 같은 패턴**이다 ② `menuSearchResultsProvider` 에 2단계 결합 — 1단계 filter 후 distinct 브랜드 매장(R4 상한)의 override 를 watch, **전부 도달 전에는 `AsyncLoading`**(R1) ③ `MenuSearchResults.total` 의 의미 변경(R5) + `failedSourceCount` 에 2단계 실패 합산(R6) |
+| `customer/search/providers/search_providers.dart` | ① `storeMenuOverridesProvider` **신규** — `FutureProvider.family<List<MenuOverrideEntity>, String>` (매장 단위 캐시, **검색 화면 수명** — autoDispose 가 아니라 일반 family + 화면 `dispose` 시 `invalidate`. 구현 근거: implementation.md §13.5). 선례: `recommendation_providers.dart` 의 `_menuItemsByStoreProvider` 가 **동적 집합을 watch 하는 같은 패턴**이다 ② `menuSearchResultsProvider` 에 2단계 결합 — 1단계 filter 후 distinct 브랜드 매장(R4 상한)의 override 를 watch, **전부 도달 전에는 `AsyncLoading`**(R1) ③ `MenuSearchResults.total` 의 의미 변경(R5) + `failedSourceCount` 에 2단계 실패 합산(R6) |
 | `customer/search/widgets/menu_search_result_tile.dart` | 가격 텍스트 추가(`PriceFormatter.formatKrw`, **`MenuItemCard` 와 같은 표기**) + `품절` 배지 + 품절 시 textMuted |
 | `customer/order/store/store_menu_page.dart` | `autoOpenMenuItemId` 파라미터 + `_autoOpened` 플래그 + 목록 확정 후 1회 push (§15.8). **품절 카드 탭 허용** (D9 확정 시) |
 | `customer/order/menu/menu_item_detail_page.dart` | 품절 UI 전면 (§15.6b) — 이미지 오버레이 / 텍스트 톤 / 옵션·수량 비활성 / `_BottomAction` 라벨 `품절` + 비활성 / `_DeletedView` 문구·액션 |
@@ -1146,7 +1146,7 @@ case B(브랜드 매장): combineLatest2(store 메뉴 doc, brand 마스터 doc) 
 - `_mergeForBrandStore` 의 **approved 분기(핵심 필드) vs status 무관(운영 필드)** 를 손으로 다시 쓰지 말 것. 함수 1개만 쓴다 (§15.2)
 - 2단계 override 조회에 **`where` 금지 / `collectionGroup` 금지** (§15.10)
 - **검증 전 행을 그리지 말 것** (R1). "일단 보여주고 거르기" 는 가격을 함께 띄우는 이번 개정에서 치명적이다
-- `storeMenuOverridesProvider` 는 **autoDispose** 다 (방문 단위 신선도). 1단계 `menuSearchIndexProvider` 는 **non-autoDispose 유지** — 섞지 말 것
+- `storeMenuOverridesProvider` 의 수명은 **검색 화면 수명**이다 (방문 단위 신선도; 일반 family + 화면 dispose 시 invalidate). 1단계 `menuSearchIndexProvider` 는 **non-autoDispose 유지** — 섞지 말 것
 - 자동 push 는 **목록 확정 후 1회**. `initState` 에서 올리면 shimmer 위에 쌓이고, 플래그가 없으면 뒤로가기가 막힌다 (§15.8)
 - 상세 `담기` 비활성 사유에 **`soldOut` 을 첫 조건으로**. required 미선택 토스트가 품절에 뜨면 안 된다
 - `flutter analyze` 무경고 / `flutter test` 통과

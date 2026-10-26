@@ -148,10 +148,7 @@ class FrequentMenuCard extends StatelessWidget {
                     topLeft: Radius.circular(16),
                     topRight: Radius.circular(16),
                   ),
-                  child: _MenuImage(
-                    url: entity.imageUrl,
-                    size: clampedWidth,
-                  ),
+                  child: _MenuImage(url: entity.imageUrl, size: clampedWidth),
                 ),
                 if (entity.orderCount > 0)
                   Positioned(
@@ -206,15 +203,35 @@ class FrequentMenuCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    PriceFormatter.formatKrw(entity.basePrice),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                  // 가격은 현재 메뉴 목록에서 찾았을 때만 그린다 — 못 찾으면 `0원` 대신 줄을 숨긴다 (F5-13).
+                  if (entity.basePrice != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(
+                          PriceFormatter.formatKrw(entity.basePrice!),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: entity.soldOut
+                                ? AppColors.textMuted
+                                : AppColors.primary,
+                          ),
+                        ),
+                        if (entity.soldOut) ...[
+                          const SizedBox(width: 6),
+                          const Text(
+                            '품절',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

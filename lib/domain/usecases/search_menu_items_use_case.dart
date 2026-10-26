@@ -10,13 +10,16 @@ import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/repositories/master_menu_item_repository.dart';
 import 'package:qradar/domain/repositories/menu_item_repository.dart';
 
-/// 홈 검색 — 메뉴 검색 (Lazy Menu Index, spec §2.2).
+/// 홈 검색 — 메뉴 검색 (Lazy Menu Index 1단계 + override 검증 2단계, spec §2.2 / §15).
 ///
-/// 인덱스는 후보 매장의 **출처 단위로 1회 `get()`** 해서 만든다:
+/// **1단계 `buildIndex`** — 후보 매장의 출처 단위로 1회 `get()`:
 /// - distinct `brandId` -> `brands/{id}/menuItems` (브랜드당 1회)
-/// - `brandId == null` -> `stores/{id}/menuItems` (매장당 1회)
+/// - 매장 자체 `stores/{id}/menuItems` (개인 매장 + 브랜드 매장의 점포 한정 메뉴, 매장당 1회 — D10)
 /// 쿼리는 기존 stream 과 같은 문장(`orderBy('displayOrder')`)이라 새 인덱스가 필요 없다.
-/// 인덱스는 override 를 읽지 않으므로 **가격 필드를 만들지 않는다** (`MenuSearchHitEntity` 참조).
+/// 1단계 값(마스터 가격·품절)은 override 가 적용되기 전이라 **화면에 쓰이지 않는다** — 2단계를 통과한 행만 그려진다.
+///
+/// **2단계 `planVerification` / `applyVerification`** (순수) — 일치한 브랜드 매장(거리순 상한)의 override 를
+/// 읽어 `applyOverrideForCustomer` 로 제외·가격·품절을 반영한다. 읽기(I/O)는 provider 가 맡는다.
 class SearchMenuItemsUseCase {
   final MenuItemRepository _menuRepository;
   final MasterMenuItemRepository _masterRepository;

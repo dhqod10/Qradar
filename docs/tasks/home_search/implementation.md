@@ -166,7 +166,7 @@
 | ⑤ | `storeMenuOverridesProvider` (매장 단위, 검색 화면 수명) + `menuSearchResultsProvider` 결합 (R1~R6) | `search_providers.dart` |
 | ⑥ | 메뉴 상세 품절 UI, `_DeletedView` 개정, `SoldOutOverlay` 공용화, `QuantityStepper.enabled` | `menu_item_detail_page.dart`, `common/` |
 | ⑦ | `autoOpenMenuItemId` + 1회 자동 push | `store_menu_page.dart` |
-| ⑧ | 검색 행 가격·품절 (`PriceFormatter.formatKrw` 한 곳), D9 매장 카드 품절 탭 허용 | `menu_search_result_tile.dart`, `menu_item_card.dart` |
+| ⑧ | 검색 행 가격·품절 (`PriceFormatter.formatKrw(basePrice)`), D9 매장 카드 품절 탭 허용 | `menu_search_result_tile.dart`, `menu_item_card.dart` |
 | 마지막 | 전환 애니메이션 (§13-4) | `SeamlessStoreMenuRoute`, `StoreMenuPage.seamlessEntry` |
 
 ### 12.2 핵심 결정
@@ -201,7 +201,7 @@
 | F5-10 `_DeletedView` | `watchById == null` 일 때만. 스트림 에러는 `_ErrorView` | 테스트 |
 | F5-11 자동 열림 판정 | 매장 화면의 `isMenuShownOnStoreScreen`. 로딩: 투명 + 250ms 스크림 / 3초 폴백 | 테스트 |
 | F5-12 카테고리 태그 | 해석 실패면 그리지 않음 (1차 그대로) | 1차 테스트 |
-| 교차 일치 | 검색 행 == 매장 카드 == 상세 == 담기 합계 기본가 (품절 판정 포함) | `home_search_stage2_test.dart` |
+| 교차 일치 | 검색 행 == 매장 카드 == 상세 == 담기 합계 기본가 (품절 판정 포함). **`formatKrw` 는 여러 위젯에서 각각 호출된다 — 값이 갈라지지 않는 이유는 한 곳에서 만들어서가 아니라 전부 같은 `basePrice`(같은 `applyOverrideForCustomer` 결과)를 넘기기 때문이다** | `home_search_stage2_test.dart` |
 
 ### 12.5 쿼리 실측 (카운팅 fake, 후보 30곳 = 개인 15 + 브랜드 매장 15 / 브랜드 2개)
 
@@ -230,3 +230,30 @@
 2. 상세에서 `담기` 를 막아도 장바구니·결제의 품절 검증은 없다 (backlog F8, 출시 전 점검 권장).
 3. 부분 실패 `다시 시도` 는 1단계 인덱스(32쿼리)까지 다시 읽는다 — 2단계 실패만 다시 읽는 세분화는 하지 않았다.
 4. design §13-5 의 150ms 페이드(shimmer -> 행)는 구현하지 않았다 (한 번에 교체; 행이 떴다 사라지는 일은 없다).
+
+---
+
+## 13. 2차 검증 후속 (FAIL-4 · FAIL-5 · 부수 4건)
+
+라이브 회귀 2건(`_mergeForBrandStore` 동치, 교차 일치)은 건드리지 않았다. 회귀 테스트는 `home_search_stage2_test.dart` — Firestore 데이터 소스만 대체한 실제 그래프(+FAIL-5 는 순수 `compute` + 카드 위젯).
+
+### 13.1 FAIL-4 — `fanOutTruncated` x 빈 결과 (13번째 상태)
+- 원인: R4 가 만든 `truncated` 축이 `resolveSearchView` 표에 없어, 가까운 10곳이 모두 `excluded` 하고 11번째가 파는 경우 `s10UnifiedEmpty`("없어요")가 나왔다. "통합 빈 상태는 메뉴가 **확정**됐을 때만" 원칙의 연장 — 상한 때문에 못 본 매장이 있으면 확정이 아니다.
+- 수정: `SearchView` 에 `s13StoresMenuTruncatedEmpty` / `s13UnifiedTruncatedEmpty` 추가. `resolveSearchView` 가 `total == 0 && fanOutTruncated` 를 s5/s10/s12 보다 먼저 판정. 문구는 "없다" 단정 없이 `아직 찾지 못했어요 · 가까운 매장 일부만 확인했어요 · 검색어를 더 구체적으로` (design F5-14 에 행 추가). 부분 실패 줄은 그대로 덧붙는다. 이 상태에서는 범위 안내 문구를 쓰지 않는다 (찾았다고 말하지 않기 위해).
+- 검증: 실제 그래프에서 같은 시나리오가 `s10` 이 아니라 `s13UnifiedTruncatedEmpty`, 상한에 걸리지 않는 10곳 전부 excluded 는 확정이라 기존 `s10`. 화면에 `일치하는 …없어요` 문구가 없다.
+
+### 13.2 FAIL-5 — 홈 `자주 찾는 메뉴` `0원`
+- `FrequentMenuItemEntity.basePrice` 를 `int?` 로 바꾸고 `soldOut` 추가. 현재 메뉴 목록에서 못 찾으면(스트림 미도달 · 제외 · 삭제) `null` -> 카드는 가격 줄을 그리지 않는다. 찾으면 가격(+품절 muted + `품절`). 인벤토리 **F5-13**(design §13-7) 추가.
+
+### 13.3 ① 최종 실패 시 낡은 값 — **숨긴다**
+- 판단: Riverpod 3 은 재읽기가 최종 실패해도 이전 값을 유지한다(`hasValue && hasError`). 이전에는 `hasValue` 를 먼저 봐서 `rows=4, fail=0` 으로 끝났다. 이제 **최종 실패(`hasError && !isLoading`)는 직전 값이 있어도 실패로 취급**해 그 매장의 행을 그리지 않고 부분 실패 줄로 알린다 (1단계 인덱스의 최종 실패도 메뉴 에러로).
+- 근거: 이 화면은 가격이 걸려 있다. "낡았지만 보여준다" 는 값이 틀릴 수 있다는 것을 사용자에게 설명할 방법이 없다(행마다 "낡음" 표기는 새 표현을 만든다). "숨기고 알린다" 는 R6("검증 못 한 행은 그리지 않는다")와 같은 규칙이라 규칙이 하나로 유지된다. 대가: 새로고침/재시도가 실패하면 보이던 행이 사라진다 — 단 사용자가 직접 새로고침했을 때만이고, 부분 실패 줄과 `다시 시도` 가 함께 나온다. 실패 후 재시도 중에는 낡은 값을 쓰지 않고 로딩(R1)으로 둔다. 정상 새로고침(에러 없음) 중에는 기존대로 직전 검증 행을 유지한다.
+
+### 13.4 ② 부분 실패 `다시 시도` 범위 좁힘
+- `_retryMenu` 가 **실패한 것만** 다시 읽는다: 1단계 인덱스는 인덱스가 실패(`hasError` 또는 `isPartial`)했을 때만, 2단계는 `MenuSearchResults.failedStoreIds`(전멸이면 `MenuVerificationException.storeIds`) 매장만, 활성 카테고리는 실패했을 때만. 재시도 1회 비용이 최대 42 -> 실패한 매장 수(최대 10)로 줄었다. 테스트: 재시도 후 1단계 호출 수 불변, override 읽기는 실패한 s1 한 건만.
+
+### 13.5 ③ `storeMenuOverridesProvider` — 일반 family + 수동 invalidate 가 맞다
+- 구현이 맞고 spec 을 고쳤다. `autoDispose.family` 로 두면 **질의가 바뀌어 그 매장이 더 이상 watch 되지 않는 순간 캐시가 사라져**, 같은 세션에서 같은 매장이 다시 일치할 때 0쿼리라는 §15.3.2 / 실측 요건이 깨진다. D12 가 원한 수명은 "검색 화면 수명" 이므로 일반 family 로 두고 `SearchPage.dispose` 에서 family 전체를 invalidate 한다 (spec §15.12·§15.5·§15.14 문구 수정). `search_menu_items_use_case.dart` 상단 주석도 2단계·D10 을 반영해 갱신했다.
+
+### 13.6 ④ 정정
+- 커밋 `726b671` 의 "`formatKrw` 를 한 곳에서만 만들어" 는 틀렸다. `formatKrw` 는 검색 행·매장 카드·상세·합계에서 각각 호출되고, 값이 갈라지지 않는 것은 전부 같은 `basePrice`(= `applyOverrideForCustomer` 결과)를 넘기기 때문이다. 위 표(§12.4)에 반영.
