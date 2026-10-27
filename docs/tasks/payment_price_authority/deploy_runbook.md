@@ -302,10 +302,10 @@ cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_PRICE_MODE=' function
 
 | 단계 | 일시 | 실행자 | 결과 / 기준선 숫자 |
 |---|---|---|---|
-| ① 감사 CF | | | |
-| ② 측정 ⓐ 주문 위반 | | | 스캔 __ / 위반 __ |
-| ② 측정 ⓑ self-approved | | | __ 건 (opsOnlyApproved __ 건) |
-| ② 측정 ⓒ store-scope 참조 | | | 참조 __ 건 / 영향 가맹점 쌍 __ |
+| ① 감사 CF | 2026-10-27 | dhqod10 | `auditOrderPriceIntegrity` 생성, `verifyTossPayment` 리비전 불변 |
+| ② 측정 ⓐ 주문 위반 | 2026-10-27 21:33 | dhqod10 | 스캔 24 / 위반 **0** (subtotalSum·amountEqTotal·totalEqSubtotal·lineMath 전부 0) |
+| ② 측정 ⓑ self-approved | 2026-10-27 21:33 | dhqod10 | **0** 건 (스캔 3, 운영 필드만 승인 문서는 정상) |
+| ② 측정 ⓒ store-scope 참조 | 2026-10-27 21:33 | dhqod10 | 참조 **0** 건 → P2(H-02 포함) 우선도 낮음 확인 |
 | ③ Rules | | | |
 | ④ ⓑ 처리 | | | |
 | ⑤ 본 CF (shadow) | | | `.env` 두 줄 확인: ☐ |
