@@ -138,6 +138,8 @@ C 가 중요한 이유: 지금의 `e.toString()` 기본 폴백은 C 에 속하�
 | 4-5 | admin `deleteStore` 실행 | `deleteStore` CF | 실패 사유 표시 + "중간에 멈췄어요" | 같은 매장 다시 삭제 (멱등) | 신규 |
 | 4-6 | Rules `stores.delete` | `isAdmin()` | — | — | 서버 |
 
+> **이어짐 (2026-10-27)**: 사실 5(옵션 선택 가능)·사실 6(금액 재계산) 행은 `docs/tasks/payment_price_authority/design.md` §3 에 있다. 표면을 추가할 때는 그 문서의 행을 함께 본다.
+
 ---
 
 ## 3. 결제 실패 화면 (`payment_result_page.dart` `_FailBody`)
@@ -172,6 +174,8 @@ PaymentFailure
 | `STORE_NOT_SELLABLE` | 지금은 이 매장에서 주문할 수 없어요 | 잠시 후 다시 시도하거나 다른 매장에서 주문해 주세요. 카트는 그대로 남아 있어요. | — | 없음 | `카트로 돌아가기` | `다른 매장 둘러보기` |
 | `STORE_NOT_FOUND` | 매장 정보를 찾을 수 없어요 | 이 매장에서는 더 이상 주문할 수 없어요. 카트를 비우고 다른 매장에서 담아 주세요. | — | 없음 | `카트 비우고 메뉴 보러가기` | `닫기` |
 | `READ_FAILED` | 일시적인 오류가 생겼어요 | 잠시 후 다시 시도해 주세요. 카트는 그대로 남아 있어요. | — | 없음 | `카트로 돌아가기` | — |
+
+> **사유 추가 (2026-10-27)**: `PRICE_MISMATCH`, `OPTION_UNAVAILABLE` 행은 `docs/tasks/payment_price_authority/design.md` §3.1 / §4 에 있다. 가격 거절의 주 버튼은 pop 이 아니라 재가격 동작이다.
 
 **spec §15 문구와 달라진 점과 이유**
 
