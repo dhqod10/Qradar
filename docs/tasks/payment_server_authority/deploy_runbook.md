@@ -89,7 +89,7 @@ cd /Users/Byeonguk/Developer/OrderApp && diff docs/tasks/payment_server_authorit
 임시로 교체한다.
 
 ```bash
-cd /Users/Byeonguk/Developer/OrderApp && cp firestore.rules /tmp/rules_head.rules && cp docs/tasks/payment_server_authority/firestore.rules.stage4 firestore.rules
+cd /Users/Byeonguk/Developer/OrderApp && { [ -f /tmp/rules_head.rules ] && echo '백업이 이미 있다 — 원복이 안 끝난 상태다. 먼저 원복하라.' ; } || { cp firestore.rules /tmp/rules_head.rules && cp docs/tasks/payment_server_authority/firestore.rules.stage4 firestore.rules && echo '교체 완료' ; }
 ```
 
 ```bash
@@ -117,7 +117,7 @@ cd /Users/Byeonguk/Developer/OrderApp && cp /tmp/rules_head.rules firestore.rule
 `stores`/`brands` 쪽 Rules 를 추가로 고쳤다면 이 파일이 낡는다. 다시 만들 때는 아래로 한다.
 
 ```bash
-cd /Users/Byeonguk/Developer/OrderApp && git show 11c90c7:firestore.rules > /tmp/s4.rules && for c in 6c1c831 7bdda20 <추가커밋>; do git show $c -- firestore.rules > /tmp/$c.patch && patch /tmp/s4.rules < /tmp/$c.patch; done && cp /tmp/s4.rules docs/tasks/payment_server_authority/firestore.rules.stage4
+cd /Users/Byeonguk/Developer/OrderApp && git show 11c90c7:firestore.rules > /tmp/s4.rules && for c in 6c1c831 7bdda20; do   # Rules 를 더 고쳤다면 그 커밋 해시를 이 목록 뒤에 붙인다 git show $c -- firestore.rules > /tmp/$c.patch && patch /tmp/s4.rules < /tmp/$c.patch; done && cp /tmp/s4.rules docs/tasks/payment_server_authority/firestore.rules.stage4
 ```
 
 만든 뒤 **반드시 하네스로 검증한다** — 교체해서 돌리고, 실패가 Rules-B/C 케이스뿐인지 본다.
@@ -148,12 +148,24 @@ admin 계정으로 `migrateBrandPrivateProfile {mode:'copy', dryRun:true}` → �
 
 ## ⑥ 본 Cloud Functions 배포 — **`PAYMENT_GATE_MODE=shadow`**
 
+**먼저 모드 값을 파일에 쓴다.** 값은 `functions/.env.order-app-5957e` 한 줄이고 이 파일은 git 제외다
+(`functions/.env.*`). **파일이 없으면 기본값 `off` 가 되어 게이트가 평가조차 하지 않는다** — ⑥ 을
+올려도 아무 일이 일어나지 않고, ⑥-b 가 그것을 "깨끗함" 으로 오인한다.
+
+```bash
+cd /Users/Byeonguk/Developer/OrderApp && touch functions/.env.order-app-5957e && grep -v '^PAYMENT_GATE_MODE=' functions/.env.order-app-5957e > /tmp/psa_env.new ; echo "PAYMENT_GATE_MODE=shadow" >> /tmp/psa_env.new && mv /tmp/psa_env.new functions/.env.order-app-5957e && cat functions/.env.order-app-5957e
+```
+
+(`>` 로 덮어쓰지 않는다 — 그 파일에 다른 키가 들어 있을 수 있다. 위 명령은 그 키만 교체한다.
+출력에 `PAYMENT_GATE_MODE=shadow` 가 보이는지 눈으로 확인한다.)
+
 ```bash
 cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 deploy --only functions --project order-app-5957e
 ```
 
-- 배포 전 **`PAYMENT_GATE_MODE` 가 `shadow` 로 설정돼 있는지** 확인한다
-  (functions params — `.env` / Secret Manager 중 구현이 택한 곳. `implementation.md` 참조).
+- 값은 **배포 시점에 박힌다.** 파일만 고치고 재배포하지 않으면 반영되지 않는다.
+- 배포 후 현재 값은 Console → Cloud Run → `verifytosspayment` → 환경 변수에서 본다.
+  다만 **값을 눈으로 보는 것보다 ⑥-b 의 양성 대조가 확실하다**(아래).
 - 올라가는 것: `verifyTossPayment`(G1·G2 게이트) · `lookupBrandByKey` · `issueBrandKey` · `deleteStore`.
 - **`shadow` 이므로 이 시점에 거절은 발생하지 않는다.** 그래서 ⑥ 을 어떤 방식으로 올려도 안전하다.
 
@@ -161,10 +173,21 @@ cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 deploy --on
 
 Console → Firestore → `paymentGateRejections` 에서 `detail.shadow == true` 기록을 본다.
 
+🔴 **"기록이 비어 있다" 를 정상으로 읽지 않는다.** 그것은 ⓐ 잡을 것이 없었다 와 ⓑ **모드가 `off`
+라서 게이트가 아예 안 돌았다** 를 구분하지 못한다. 기본값이 `off` 이므로 **ⓑ 가 더 흔한 원인**이다.
+
+그래서 **양성 대조를 먼저 만든다.** 미승인 매장(`approvedAt` 없음)으로 CF 를 직접 호출해
+`detail.shadow == true` 기록이 **1건 생기는 것을 확인**한다. 이 1건이 "게이트가 shadow 로 실제
+돌고 있다" 는 유일한 증거다.
+
+| 양성 대조 1건 | 판단 |
+|---|---|
+| **기록이 생기지 않는다** | **모드가 `shadow` 가 아니다.** ⑥ 의 파일 쓰기·재배포를 다시 한다. 이 상태로 ⑥-c 로 가면 `enforce` 도 반영되지 않았을 수 있다 |
+| 기록이 1건 생긴다 | 게이트가 돈다. 아래 관측으로 넘어간다 |
+
 | 기록 | 판단 |
 |---|---|
-| 비어 있다 | 정상. ⑥-c 로 간다 |
-| 미승인/반려 매장 건만 있다 | 정상(게이트가 잡아야 할 것을 잡았다). ⑥-c 로 간다 |
+| 양성 대조 1건 + 미승인/반려 매장 건만 | 정상(게이트가 잡아야 할 것을 잡았다). ⑥-c 로 간다 |
 | **영업 중인 정상 매장 / 품절이 아닌 메뉴가 잡힌다** | **멈춘다.** ③ 의 `willBeRejected` 와 교차 확인하고 원인을 찾는다. `enforce` 로 넘어가면 **그 매장의 매출이 멈춘다** |
 
 관측 기간은 **실결제가 0회이므로 "직접 테스트 결제 몇 건"** 이 전부다 — 자연 트래픽을 기다릴 수 없다.
@@ -178,7 +201,13 @@ Console → Firestore → `paymentGateRejections` 에서 `detail.shadow == true`
 cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
 ```
 
-(파라미터 값만 바꿔 재배포한다. 구현이 Secret/param 을 어디서 읽는지는 `implementation.md`.)
+모드 파일을 `enforce` 로 바꾸고 같은 줄에서 재배포한다.
+
+```bash
+cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_GATE_MODE=' functions/.env.order-app-5957e > /tmp/psa_env.new ; echo "PAYMENT_GATE_MODE=enforce" >> /tmp/psa_env.new && mv /tmp/psa_env.new functions/.env.order-app-5957e && cat functions/.env.order-app-5957e && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
+```
+
+(`cat` 출력에 `enforce` 가 보이는지 확인한다. 값은 배포 시점에 박힌다.)
 
 ⚠️ **전환 직후 거절 1건을 실제로 유도해 확인한다.** 미승인 매장(`approvedAt` 없음)으로 CF 를 직접
 호출해 **거절 + `paymentGateRejections` 1건(`shadow` 플래그 **없음**)** 을 본다.
@@ -269,7 +298,14 @@ admin 계정으로 `migrateBrandPrivateProfile {mode:'cleanup', dryRun:true}` �
 cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
 ```
 
-   (파라미터를 `off` 로 바꾼 뒤 실행. 게이트가 **평가조차 하지 않으므로** 즉시 현재 동작으로 돌아간다.)
+   위 명령은 리비전만 다시 올린다. **모드 값을 `off` 로 바꾸는 것까지 한 줄로 치려면 이쪽을 쓴다.**
+
+```bash
+cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_GATE_MODE=' functions/.env.order-app-5957e > /tmp/psa_env.new ; echo "PAYMENT_GATE_MODE=off" >> /tmp/psa_env.new && mv /tmp/psa_env.new functions/.env.order-app-5957e && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
+```
+
+   (게이트가 **평가조차 하지 않으므로** 배포가 끝나는 즉시 이전 동작으로 돌아간다. 파일 수정과
+   배포를 한 줄에 둔 이유는 급할 때 나누면 **파일만 고치고 배포를 잊기** 때문이다.)
 
 2. 그래도 결제가 실패하면 게이트 문제가 아니다 → `paymentGateRejections` 와 CF 로그를 본다.
 3. Rules 가 원인으로 의심되면 ⑧ → ④ 순서로 되돌린다 (**데이터 마이그레이션은 되돌리지 않는다**).

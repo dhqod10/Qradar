@@ -316,3 +316,215 @@
 - [ ] 전체 PASS
 - [ ] FAIL 있으나 후속 task로 분리 가능
 - [x] **재작업 필요** — F-01 · F-02 는 배포 전 조치 권고(F-02 는 Rules-A 에 포함), F-03 은 같은 커밋, F-04 는 후속 가능. 조치 후 이 문서의 해당 항목만 재검증하면 된다 (T-1 재실행 범위: Rules 하네스 + 게이트 모드/런북 확인).
+
+
+---
+---
+
+# 2차 검증 (T-1 재작업분) — 2026-10-27
+
+> 범위: 1차 FAIL 4건(F-01~F-04)의 수정(`6c1c831` C1 · `dcfe1fc` C2 · `e06b7b5` C3 · `7bdda20` C4 · `bcdc9a5` ④ Rules 파일 + 런북)이 그 FAIL 을 닫았는지, 닫으면서 새 구멍을 만들지 않았는지. **1차 PASS 30건은 다시 보지 않았다.**
+> 선행 확인(요청자 재실행분, 반복 안 함): analyze 0 / flutter 735 / functions 205 / test_rules 420/420 / `stage4` 하네스 405/420(실패 15건 = Rules-B 10 + C 4 + F4a 1).
+> 방법: (1) 에뮬레이터에 **내 프로브 24건**(스크래치 스크립트, 저장소 밖)을 `firestore.rules` 와 `firestore.rules.stage4` 양쪽에 실행 (2) 변이 실험 2종 — **둘 다 스크래치의 복사본으로만 했고 저장소 파일은 건드리지 않았다** (3) 코드·런북 정독 (4) `approvedAt`/`rejectedAt` 역방향 grep. 미실행: 에뮬레이터 E2E, 라이브, 실기기(1차와 동일).
+
+## 2차 결과 요약
+
+| 구분 | 개수 |
+|---|---|
+| PASS | **18** |
+| FAIL (신규) | **1** (F-05, 런북 문서 결함 — 코드 아님) |
+| 보류 | **7** (H-17 ~ H-23) |
+
+| 1차 FAIL | 판정 |
+|---|---|
+| F-01 게이트 순서 전제 | **닫힘** (조건부 — 아래 F-05 를 고쳐야 ⑥ 에서 실제로 닫힌다) |
+| F-02 `rejected → pending` G1 우회 | **닫힘** (에뮬레이터 재현 → 이제 거부, 변이로 규칙이 원인임을 증명) |
+| F-03 `status` create deny 공백 | **닫힘** (변이로 케이스가 실제로 깨짐을 확인) |
+| F-04 카트 배너 백틱 | **닫힘** |
+
+---
+
+## 2-A. F-02 — 재현과 우회 탐색
+
+### 재현 (1차와 같은 시나리오)
+
+반려 매장(`status:'rejected'`, `approvedBy`/`approvedAt` 잔존 = 구 `rejectFields` 가 남기는 모양) 에서 점주가 `updateDoc({status:'pending'})` 만 보낸다.
+
+| 대상 Rules | 결과 |
+|---|---|
+| 1차(C1 이전) | 허용 → `pending && approvedAt != null` → `canSellNow === true` (1차에서 재현) |
+| **HEAD `firestore.rules`** | **거부** (점주 · 브랜드 보유자 둘 다) |
+| **`firestore.rules.stage4`** | **거부** (같음) |
+| 변이: 두 `&& leavingRejectedClearsApproval()` 호출을 지운 사본 | **허용으로 뒤집힘** (3건 FAIL: 점주 · 브랜드 · approvedBy 만 남은 변형) |
+
+변이 실험이 필요했던 이유: 에뮬레이터 로그에 이 거부들마다 `evaluation error at L338:24` 가 같이 찍힌다 — `allow update` 의 `||` 분기 중 `isStoreOwnerBrandUpdate()` 가 `brandId` 없는 매장에서 `isBrandHolder('')` 를 평가하다 내는 오류로 보인다(기존 동작, 오류=거부). 즉 **"거부됐다" 는 사실만으로는 전이 제약이 원인인지 알 수 없다.** 사본에서 제약만 지우면 허용으로 뒤집히므로 **거부의 원인은 전이 제약이다.** (저장소 파일은 변경하지 않았다.)
+
+### 정상 경로를 막지 않는가 (이번 라운드의 핵심) — 프로브 결과
+
+| # | 시나리오 | 기대 | HEAD | stage4 |
+|---|---|---|---|---|
+| 1 | 레거시 반려(approvedAt 잔존) + **신 앱 재제출** payload(4종 null) | 허용 | PASS | PASS |
+| 2 | 레거시 반려 + **구 앱 재제출** payload(`rejectedAt` 키 없음) | 허용 | PASS | PASS |
+| 3 | 신형 반려(`rejectedAt`, approvedAt 없음) + 신 앱 재제출 | 허용 | PASS | PASS |
+| 4 | 신형 반려 + 구 앱 재제출 | 허용 | PASS | PASS |
+| 5 | 브랜드 보유자 재제출(신형 반려, `brandId` 있음) | 허용 | PASS | PASS |
+| 6 | **admin 승인** `rejected → approved` (실제 `approveFields` 모양, 레거시·신형 둘 다) | 허용 | PASS | PASS |
+| 7 | **admin 반려** (실제 `rejectFields` 모양, 승인 매장 대상) | 허용 | PASS | PASS |
+| 8 | **승인 매장 핵심 수정** → `pending`, 승인 메타 불변 (R2 불변식) | 허용 | PASS | PASS |
+| 9 | 승인 매장 운영 필드 수정 / 반려 매장 `status` 불변 운영 필드 수정 | 허용 | PASS | PASS |
+| 10 | 반려 → pending 인데 `approvedAt` 에 값 설정 | 거부 | PASS | PASS |
+| 11 | 반려 → pending + `approvedAt`/`approvedBy` 를 `deleteField()` 로 제거 | 허용 | PASS | PASS |
+| 12 | 반려 매장에서 `status` 를 `deleteField()` | 거부 | PASS | PASS |
+| 13 | `approvedAt` 없고 `approvedBy` 도 없는 반려(`rejectedAt` 만) → `status:'pending'` 만 | 허용 | PASS | PASS |
+
+**판정: 반려 매장의 복구 경로(점주·브랜드 재제출, admin 승인)는 막히지 않았다. 구 앱 payload 도 통과한다.** 전이 제약은 점주·브랜드 분기 *내부*에만 걸려 있어 admin 승인을 막지 않는다(`PSA-F02f` + 프로브 6).
+
+참고 — 의도된 엄격함: 신형 반려 문서는 `approvedBy` 에 admin uid 가 남는다(`rejectFields` 가 의미를 바꾸지 않았다). 이 상태에서 점주가 `status:'pending'` **한 필드만** 보내면 `approvedBy` 가 null 이 아니라 거부된다(프로브: 거부). 앱은 4종을 모두 null 로 보내므로 앱 경로에는 영향이 없다. 그러나 **다른 클라이언트·Console 스크립트가 status 만 바꾸려 하면 막힌다** — 영구 복구불가는 아니다(4종 null 을 같이 보내면 됨).
+
+### 우회 경로 탐색 — `pending && approvedAt != null` 을 만들 수 있는 조합
+
+| 경로 | 결과 |
+|---|---|
+| `rejected → pending` (점주/브랜드) | 닫힘 (위) |
+| 점주 create 에 `approvedAt` / `status:approved` / `status:rejected` / `rejectedAt` | 닫힘 (PSA-A5~A10) |
+| 점주 update 로 `approvedAt` 에 값 설정 | 닫힘 (PSA-A6, 프로브 10) |
+| `approved → pending` (핵심 수정) | **의도된 경로** (R2) — `approvedAt` 이 원래 승인의 증거이므로 정당 |
+| 반려를 거치지 않는 2단계 (예: 점주가 반려 매장의 `approvedAt` 만 null → 다시 pending) | 이미 승인 이력이 지워진 뒤라 결과가 `pending && approvedAt == null` — 우회 아님 |
+| CF 경로 | 코드 전수 grep: CF 가 `stores.status`/`approvedAt` 을 쓰는 곳은 `migrateStoreApprovalMeta` 뿐(`status:'approved'` + 백필). `deleteStore` 는 삭제 |
+| admin 이 반려 매장을 `pending` 으로 직접 되돌림 | 허용됨 (admin 분기는 무제약) — **보류 H-23** |
+| `status` 부재 / 오타·대소문자(`Rejected`, `rejected `) + `approvedAt` 잔존 매장에서 점주가 `pending` | **허용됨 → 이 경우 전이 제약이 작동하지 않는다.** 단 M1 이 부재를 `approved` 로 쓰고 오타값은 `invalid` 로 멈춘다 → **M1 전 한정** 잔여 구멍 — **보류 H-17** |
+
+## 2-B. C4 `rejectedAt` 전환 — 기존 화면·로직 회귀
+
+`approvedAt` 을 읽는 **StoreEntity 소비 지점 전수**(역방향 grep: `lib/` + `functions/src/`):
+
+| 지점 | 의미 | `rejectedAt` 전환의 영향 |
+|---|---|---|
+| `admin_store_approval_detail_page.dart` "처리 시각" | 처리 시각 | **developer 가 고친 곳.** `_processedAt()`: 반려면 `rejectedAt ?? approvedAt`, 아니면 `approvedAt`. 레거시 반려(approvedAt 에 반려 시각)도 표시됨 — OK |
+| `my_store_page.dart:409`, `sales_store_status_banner.dart:20`, `brand_approval_tracking_page.dart:165`, `admin_pending_stores_page.dart:120,152`, `admin_store_list_page.dart:204`, `admin_store_delete_page.dart:381`, `brand_stores_page.dart:166` | `approvedAt != null && status == pending` = "수정 대기" 라벨 | 전부 `status == pending` 과 AND. 신형 반려는 `approvedAt` 이 없으므로 **오히려 정확해진다**(반려→재제출 전 "수정 대기" 오인 소멸). 반려 매장은 `status != pending` 이라 영향 없음 |
+| `store_core_form_page.dart:358-362` | 엔티티 복사 | `rejectedAt` 전달 추가됨 — 누락 없음 |
+| `functions/src/paymentGate.ts:164`, `migrateStoreApprovalMeta.ts` | 게이트·M1 | `approvedAt` 만 읽음(`rejectedAt` 비참조) — spec §6.8 대로 |
+| `rejectedReason` 소비 (`my_store_page`, 관리자 상세) | 사유 표시 | 무변경 |
+| `rejectedAt` 을 읽는 곳 | — | `_processedAt` 1곳뿐 (store_model/entity 제외) |
+
+**작업표 밖 표면이 더 있는가: 없다.** developer 가 보고한 1곳이 전부이고, 나머지는 위 표대로 `status == pending` 가드가 있어 `rejectedAt` 전환에 영향받지 않는다.
+
+관찰(결함 아님, **H-19**): `approveFields` 는 `rejectedAt` 을 지우지 않는다 → 반려 후 admin 이 승인한 매장 문서에 낡은 `rejectedAt` 이 남는다. 또 구 앱이 신형 반려 매장을 재제출하면(`rejectedAt` 키를 안 보냄) `pending` 문서에 낡은 `rejectedAt` 이 남는다(프로브 4 허용 후 상태). 어디서도 읽지 않아 현재 무해.
+
+## 2-C. C2 모드 스위치
+
+| 항목 | 결과 |
+|---|---|
+| 미지값·부재·빈 문자열·`null`·숫자·대소문자(`Enforce`)·뒤 공백·`on`·`shadow,enforce` → `off` | **PASS** (`resolveGateMode` = `raw === 'shadow' \|\| raw === 'enforce'` 정확 일치, 테스트 15종 값) |
+| `deps.gateMode` 자체 부재 → `off` | PASS |
+| **`off` 에서 읽기 0** | **PASS** — 분기 `if (gateMode !== 'off')` 전체를 건너뜀. 테스트가 Firestore 컬렉션 접근 집합이 `{orders, users}` 뿐임을 단언, 기본 reader(`makeFirestoreGateReader`) 조립도 `if` 안쪽이라 없음 |
+| `shadow` 가 거절하지 않는다 | **PASS** — 위반·READ_FAILED·기록 쓰기 실패 모두 결제 성립, 기록에 `detail.shadow:true` |
+| **`enforce` 에서 게이트 예외가 삼켜지는가** | **아니오 — PASS.** `catch (e) { if (!shadow \|\| e instanceof HttpsError) throw e; ... }` — `enforce` 는 `!shadow === true` 라 **어떤 예외든 재던진다.** 테스트가 같은 `getMenuDocs → null`(TypeError) 입력으로 shadow=통과·enforce=`err` + `confirm 0` 을 대비 단언. 삼킴이 가능한 유일한 경로는 `shadow` 의 비-HttpsError 예외뿐 |
+| 모드 thunk 가 요청마다 평가됨 | PASS (테스트) |
+| `.value()` 자체가 던지는 경우 | `try` 밖이라 `off` 에서도 결제를 막는다 — `defineString` 에 `default` 가 있어 현실적으로 발생하지 않음(관찰만) |
+| 모드 값의 위치 | `functions/.env.order-app-5957e` (git 제외). 파일 부재 = `off` — **안전한 방향**. 단 아래 F-05 |
+
+## 2-D. C3 ⓓ `willBeRejected` — 쓸 만한가
+
+`planStoreMigration` 은 백필을 가정한 값(`statusWritten` → `approved`, `approvedAtWritten`)으로 **같은 `canSellNow`** 를 모든 문서에 돌린다(판정 중복 없음).
+
+| 질문 | 결과 |
+|---|---|
+| 빠뜨리는 매장이 있는가 (`canSellNow` 가 false 가 될 모든 문서) | **없다.** 순수 pending(approvedAt 없음) · rejected · `invalid` 미지값 · 문자열 아닌 status 모두 포함. 부재/`null` status 는 M1 이 `approved` 로 쓰므로 정당하게 제외 |
+| 목록 크기·잘림 | 전건 반환, 잘림 없음 (현재 7곳) |
+| 사람이 "영업 중인지" 판단할 수 있는가 | **제한적.** 행에 `{id, name, status, hasApprovedAt}` 만 있다 — `isOpen`/`updatedAt`/최근 주문이 없다. 7곳이면 `name` 으로 충분하지만 → **H-20** |
+| ⓔ 가 숨은 self-regress 를 다 잡는가 | **아니다.** 조건이 `pending && rejectedReason != null && approvedAt != null` 인데 구 Rules 는 `rejectedReason: null` 클리어를 허용했다 → 점주가 `{status:'pending', rejectedReason:null}` 로 우회했다면 `approvedBy` 가 admin 값이라 ⓒ 도 못 잡고 ⓔ 도 못 잡는다. 사후에 "진짜 승인"과 구분할 정보 자체가 없다(둘 다 admin 이 쓴 `approvedAt`/`approvedBy`) → **H-18**. 매장 7곳·실결제 0회라 사람이 7곳을 보는 것으로 충분하지만 *코드만으로는 증명되지 않는다* |
+| 실행을 막지 않는가 | ⓓⓔ 는 막지 않고 `anomalies`/`invalid` 만 `failed-precondition` (소스 단언 테스트) — 명세대로 |
+
+**판정: ⓓ 는 "막힐 매장" 을 빠뜨리지 않는다 → F-01 의 완화는 작동한다.** 한계는 위 H-18/H-20.
+
+## 2-E. 런북 ④ / ④-b — 실행 가능성 (명령은 치지 않았다)
+
+| 항목 | 결과 |
+|---|---|
+| `firestore.rules.stage4` 경로·파일명 | 존재 (`docs/tasks/payment_server_authority/firestore.rules.stage4`, 725줄), 런북의 모든 명령이 같은 경로를 쓴다 |
+| `11c90c7` 존재 + Rules-A 커밋 | 확인 (`feat(rules): Rules-A ...`) |
+| **④-b 절차로 파일을 재구성하면 현재 `stage4` 와 같은가** | **같다** — 스크래치에서 `git show 11c90c7:firestore.rules` + `6c1c831` + `7bdda20` 패치 → `diff` 0 (충돌 없음). 즉 파일은 낡지 않았고 절차는 재현된다 |
+| `diff stage4 firestore.rules` | 차이 70줄 = Rules-B + C (`94db822`, `4158572`) 뿐. `11c90c7..HEAD` 의 `firestore.rules` 커밋은 B·C·C1·C4 4건이고 stage4 가 C1·C4 를 포함 |
+| `firebase.json` 의 rules 경로 | `"rules": "firestore.rules"` — 복사 방식이 맞다 |
+| 작업 트리 원복 | `cp /tmp/rules_head.rules firestore.rules` + `git status --short` 확인이 있다 |
+| ④ 라이브 확인표 6행 | 내 프로브와 일치 (create 거부 · 반려→pending 거부 · 정상 재제출 허용 · admin 승인 허용) |
+
+**`stage4` 가 낡았을 때 ④ 를 치면?** — Rules 를 `11c90c7..HEAD` 이후에 더 고쳤는데 stage4 를 안 갱신했다면, ④ 는 **그 수정이 빠진 규칙을 프로덕션에 올린다.** 오류도 경고도 없다. 막는 장치는 런북 ④ 첫 줄의 `diff stage4 firestore.rules` 를 **사람이 읽고** "나와야 하는 차이는 B+C 뿐" 을 판단하는 것 하나다 → 규칙 파일은 700줄이라 70줄 diff 에서 한 블록이 더 섞여도 눈으로 알아보기 어렵다. 그 뒤 ⑧ 이 HEAD 를 올리면 빠진 수정은 늦게 복구된다(영구 손실은 아님). 자동 확인 수단이 없다는 점이 **H-22**.
+
+---
+
+## 2차 PASS / FAIL / 보류 표
+
+### PASS (18)
+
+| # | 항목 |
+|---|---|
+| P2-01 | F-02 재현 → 점주 `rejected→pending` 이제 거부 (HEAD) |
+| P2-02 | 브랜드 보유자 같은 시나리오 거부 |
+| P2-03 | 같은 시나리오가 `stage4` 에서도 거부 |
+| P2-04 | 변이(전이 제약 제거) 시 허용으로 뒤집힘 — 거부의 원인이 전이 제약임을 증명 |
+| P2-05 | 점주·브랜드 정상 재제출 (레거시/신형 반려 × 신/구 앱 payload) 허용 |
+| P2-06 | admin 승인 `rejected→approved` 허용 (전이 제약이 admin 을 막지 않음) |
+| P2-07 | admin 반려(`rejectFields` 모양)·승인 매장 핵심 수정(R2)·운영 필드 수정 허용 |
+| P2-08 | `approvedAt` 값 설정(위조) 거부, `status` 제거 거부 |
+| P2-09 | F-03 — `status:approved/rejected` create 거부 · 부재 허용. 변이(create 의 `status == 'pending'` 줄 삭제)로 `PSA-A9`/`A9b` 가 실제로 깨짐(418/420) |
+| P2-10 | F-04 — 배너 3변형 본문에 백틱 없음, `lib/` 전체 문자열 리터럴에도 없음, 가드 테스트가 `customer/cart`·`customer/checkout` 를 스캔 |
+| P2-11 | C4 소비 지점 전수 — 회귀 없음 (2-B) |
+| P2-12 | 작업표 밖 표면 역방향 grep — developer 보고분 외 없음 |
+| P2-13 | C2 미지값·부재·대소문자·공백 → `off` |
+| P2-14 | `off` 에서 stores·메뉴·`paymentGateRejections` 읽기·접근 0 |
+| P2-15 | `shadow` 는 거절하지 않고 `detail.shadow:true` 기록, 예외는 삼킴 |
+| P2-16 | **`enforce` 는 어떤 예외도 삼키지 않는다** (게이트가 조용히 통과되지 않음) |
+| P2-17 | C3 ⓓ 가 `canSellNow` 가 false 인 모든 문서를 포함 (빠뜨림 없음) |
+| P2-18 | `stage4` 가 ④-b 절차로 재현되고 현재 HEAD 와 B+C 만 다름 · 런북 경로/파일명 정합 |
+
+### FAIL (신규 1)
+
+#### F-05 — 런북이 게이트 모드를 **설정하는 법·확인하는 법**을 ⑥ / ⑥-b / ⑥-c / 비상 정지에서 안 적었다 (문서)
+- **심각도**: 중 (코드는 안전한 방향 — 문서가 틀려서 *구멍이 열린 채로 "깨끗하다"고 읽힐* 수 있음). ②~⑤ 는 영향 없고 **⑥ 부터 막는다.**
+- **증거**:
+  1. 런북 ⑥ — "`PAYMENT_GATE_MODE` 가 `shadow` 로 설정돼 있는지 확인한다 (**functions params — .env / Secret Manager 중 구현이 택한 곳**)". 구현은 이미 `functions/.env.order-app-5957e` 로 정해졌고(implementation §8.2) 명령도 있는데 런북은 *"중 구현이 택한 곳"* 이라고 두 후보를 열어 둔 채다. **그 파일은 git 에 없다**(`.gitignore: functions/.env.*`) — 배포 머신에서 만들지 않으면 코드 기본값 `off`.
+  2. ⑥-b 표 — "기록이 **비어 있다 → 정상. ⑥-c 로 간다**". 그러나 모드가 `off`(파일 누락)이면 미승인 매장 호출을 해도 기록이 **비어 있다.** 같은 문단이 "미승인 매장 호출 3건을 의도적으로 만든다" 고 했지만, 표는 그 호출 뒤에도 비어 있는 경우를 **모드 오류로 읽으라고** 말하지 않는다. → `off` 인 채로 ⑥-c 로 가서 enforce 파일을 쓰는데, ⑥-c 의 "거절 1건 실측" 이 그제서야 잡는다 — 한 단계 늦고 *그 사이 shadow 관측이 한 번도 실제로 돈 적 없음*.
+  3. ⑥-c 와 **비상 정지(§6)** 는 "(파라미터 값만 바꿔 재배포 …)", "(파라미터를 `off` 로 바꾼 뒤 실행)" 라고만 쓰고 **명령이 없다.** 런북 0절이 "가장 싼 비상 정지는 `PAYMENT_GATE_MODE=off` 재배포다. 먼저 이것을 친다" 고 정한 바로 그 명령인데, 급할 때 `implementation.md` §8.2 를 찾아가야 한다.
+  4. 부수: 모드 확인 방법(Cloud Run `verifytosspayment` 수정 버전의 환경변수)이 런북에 없고 implementation §8.2 에만 있다.
+- **재현**: 배포 머신에 `.env.order-app-5957e` 없이 ⑥ 을 따라 하면 → `off` → ⑥-b 표가 "정상" 이라 말함.
+- **권고 수정**: (a) ⑥ 에 implementation §8.2 의 `echo "PAYMENT_GATE_MODE=shadow" > ...` 명령을 그대로 옮기고, 배포 뒤 Cloud Run 환경변수에서 `shadow` 를 눈으로 확인하는 줄 추가. (b) ⑥-b 표에 "**의도적으로 만든 미승인 매장 호출 뒤에도 비어 있으면 모드가 `off` 다 → 멈춘다**" 행 추가. (c) ⑥-c · 비상 정지에 `enforce` / `off` 용 전체 한 줄 명령 추가(이 저장소의 명령 안내 규칙: 전체 한 줄·실행 위치 명시).
+
+### 보류 (7)
+
+| # | 내용 |
+|---|---|
+| **H-17** | **M1 전 한정 잔여 구멍.** `status` 부재 또는 오타·대소문자 값(`Rejected`, `rejected `)에 `approvedAt` 이 남은 매장은 점주가 `status:'pending'` 만 보내도 통과한다(전이 제약은 정확히 `'rejected'` 만 본다). ③ M1 이 부재를 `approved` 로 쓰고 오타값은 `invalid` 로 *멈춘다* → ③ 이 정상 완료되면 구멍은 닫힌다. ④ 가 ③ 뒤인 순서라 실전 영향 없음. **④ 를 ③ 보다 먼저 치는 순서 변경 금지**의 이유가 하나 더 생김 |
+| **H-18** | ⓔ 가 못 잡는 self-regress: 구 Rules 하에서 `{status:'pending', rejectedReason:null}` 우회 → `approvedBy` 가 admin 값, `rejectedReason` 없음 → ⓒ·ⓔ 모두 미탐. 사후에 "진짜 승인" 과 구분할 수단이 데이터에 없다. 매장 7곳이므로 **③ dry-run 뒤 `pending && approvedAt` 매장 전부를 사람이 승인 경위 확인**하면 된다(런북은 ⓔ 만 안내) |
+| **H-19** | 낡은 `rejectedAt` 잔존: `approveFields` 가 지우지 않음 + 구 앱 재제출은 키를 안 보냄. 읽는 곳 없음 — 무해. 승인 시 `rejectedAt: null` 을 같이 쓰면 깔끔(후속) |
+| **H-20** | ⓓ `willBeRejected` 행에 영업 신호(`isOpen`, `updatedAt`, 최근 주문 수)가 없다. 런북 중단 기준이 "영업 중인 매장이 들어 있으면" 인데 목록만으로는 못 가린다. 매장 수가 늘면 필요 |
+| **H-21** | 일시적 `permission-denied` 경합: 점주가 승인 매장 편집 화면을 연 사이 admin 이 반려하면, 점주의 (승인 메타 불변) 핵심 수정 payload 가 거부된다(프로브: 거부 확인). 앱이 에러를 보여 주고 재진입하면 `isResubmit` 경로로 복구되므로 영구 불가는 아니다. 사용자 문구가 "권한 없음" 류로 나오는지는 미확인 |
+| **H-22** | `stage4` 갱신 누락 자동 검출 없음(2-E). 완화 후보: 런북에 `diff` 대신 ④-b 재구성 → `diff -q` 로 *변경 없음* 을 확인하는 한 줄 추가, 또는 하네스에 "stage4 와 재구성 결과 동일" 단언. 부수: ④ 의 `cp firestore.rules /tmp/rules_head.rules` 를 **두 번 치면 백업이 stage4 로 덮인다**(재시도 시) — 원복은 `git checkout firestore.rules` 가 더 안전. ④-b 의 `<추가커밋>` 은 그대로 치면 셸 입력 리다이렉션 오류 |
+| **H-23** | admin 분기는 무제약이라 Console/admin 실수로 `rejected → pending`(승인 메타 잔존)이 가능하고 그러면 `canSellNow` 참. 신형 반려는 `approvedAt` 이 없어 영향 없고, **승인 이력이 있던 매장이 반려된 경우**만 해당(= 원래 승인된 매장이므로 판매 재개가 의미상 틀리지 않음). 정책 확인 사항 |
+
+> 참고: 에뮬레이터 로그의 `evaluation error at L338:24` 는 기존 동작(브랜드 분기가 `brandId` 없는 매장에서 `isBrandHolder('')` 를 평가)이며 결과는 거부로 안전하다. 다만 "거부" 로그가 *의도된 거부*와 *평가 오류로 인한 거부* 를 구분해 주지 않으므로, 이후 deny 케이스를 추가할 땐 허용 쪽 변이로 뒤집히는지 함께 확인하는 것이 안전하다.
+
+---
+
+## 2차 설계자 전달 메시지
+
+### ① F-01~F-04 닫힘 여부
+
+| | 판정 | 근거 |
+|---|---|---|
+| F-01 | **닫힘 (조건부)** | 코드가 `off` 기본 + 모드 스위치로 "② 가 ③④ 전에 게이트를 켜는" 경로를 끊었다. ⓓ 가 막힐 매장을 빠뜨리지 않는다. 남은 건 *런북이 모드를 설정·확인하는 법을 안 적은 것* (F-05) |
+| F-02 | **닫힘** | 재현 → 거부, 변이로 인과 확인, 정상 복구 경로(재제출·admin 승인·구 앱 payload) 전부 허용. 잔여는 M1 전 한정(H-17)·admin 무제약(H-23) |
+| F-03 | **닫힘** | 케이스가 변이에서 실제로 깨진다 |
+| F-04 | **닫힘** | 배너 · 가드 테스트 |
+
+### ② 새로 발견한 FAIL
+
+- **F-05 (런북 문서, 중)** — 코드 수정 없음, `deploy_runbook.md` ⑥ / ⑥-b / ⑥-c / 비상 정지 보강. ⑥ 전에만 필요.
+- 코드·Rules 의 새 FAIL 은 **없다.** 전이 제약이 막아선 안 되는 것(admin 승인, 정상 재제출, 평범한 수정)을 막지 않는다.
+
+### ③ 배포 GO / NO-GO
+
+- **② ~ ⑤ : GO.** (Rules-A `stage4`, M1, M2 copy 는 코드·파일 모두 검증됨.) 조건: ③ 의 `willBeRejected` 를 눈으로 확인하고 **`pending && approvedAt != null` 매장 전부의 승인 경위를 사람이 확인** (H-18), ④ 직후 라이브 6행 확인.
+- **⑥ 이후 : 조건부 NO-GO → F-05 를 고친 뒤 GO.** 런북이 모드 설정·확인·비상 정지 명령을 갖추기 전에는 ⑥ 을 치지 않는다 (코드는 안전한 방향이라 *사고*는 아니지만, shadow 관측이 실제로 도는지 확인할 수 없는 채로 enforce 로 넘어갈 수 있다).
+- 변하지 않는 조건: ④ 는 반드시 ③ 뒤 · ⑥ 보다 앞. ⑥-c 의 "거절 1건 실측" 은 `off` 폴백을 잡는 유일한 장치이므로 생략 금지.
