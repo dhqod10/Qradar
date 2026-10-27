@@ -942,6 +942,71 @@ await run('PSA-A8c brand create 정상 payload (회귀)', 'allow', () =>
 await run('PSA-A8d admin brand create (승인 메타 허용 — 해당 없음, 회귀)', 'allow', () =>
   setDoc(doc(asAdmin, 'brands', 'psa_b4'), { name: 'N', status: 'approved', approvedBy: ADMIN, approvedAt: Timestamp.now() }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// payment_server_authority — Rules-B (spec §10, §18.5 B1)
+// brands/{id}/private/profile (brandKey + PII), brandKeys, keyHistory
+// ═══════════════════════════════════════════════════════════════════════════
+const privDoc = (db, b) => doc(db, 'brands', b, 'private', 'profile');
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  await setDoc(privDoc(db, B_A), { brandKey: 'BR-AAAAAAAA', businessRegistrationNumber: '123-45-67890', representativeName: '김', contactName: '홍', contactPhone: '010-1234-5678', headOfficeAddress: '서울' });
+  await setDoc(doc(db, 'brandKeys', 'BR-AAAAAAAA'), { brandId: B_A });
+  await setDoc(doc(db, 'brands', B_A, 'keyHistory', 'k1'), { brandKey: 'BR-AAAAAAAA', changedBy: ADMIN });
+  await setDoc(doc(db, 'brands', B_A, 'menuItems', 'bm1'), { name: '마스터', basePrice: 4000, status: 'approved', visible: true });
+  await setDoc(doc(db, 'brands', B_A, 'subCategories', 'sc1'), { name: 'x' });
+  await setDoc(doc(db, 'brands', B_A, 'optionGroups', 'og1'), { name: 'x' });
+  await setDoc(doc(db, 'brands', 'psa_pending_b'), { name: 'P', status: 'pending', submittedBy: BRAND_X, brandKey: '' });
+});
+await run('PSA-B1 제3자(고객) private/profile read', 'deny', () => getDoc(privDoc(asCustomer, B_A)));
+await run('PSA-B1b 제3자(점주) private/profile read', 'deny', () => getDoc(privDoc(asOwner, B_A)));
+await run('PSA-B1c 다른 브랜드 보유자 private/profile read', 'deny', () => getDoc(privDoc(asBrandX, B_A)));
+await run('PSA-B2 부모 brands/{id} read 는 로그인 사용자 허용 (Q2 ⓑ)', 'allow', () => getDoc(doc(asCustomer, 'brands', B_A)));
+await run('PSA-B3 보유자 private/profile read', 'allow', () => getDoc(privDoc(asBrand, B_A)));
+await run('PSA-B3b admin private/profile read', 'allow', () => getDoc(privDoc(asAdmin, B_A)));
+await run('PSA-B3c 제출자(users.brandId 연결 전) private/profile read', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'users', 'psa_sub'), { uid: 'psa_sub', role: 'brand' }));
+  await seed((db) => setDoc(doc(db, 'brands', 'psa_sub_b'), { name: 'S', status: 'pending', submittedBy: 'psa_sub', brandKey: '' }));
+  return getDoc(privDoc(env.authenticatedContext('psa_sub').firestore(), 'psa_sub_b'));
+});
+await run('PSA-B3d private 의 다른 docId read', 'deny', () => getDoc(doc(asBrand, 'brands', B_A, 'private', 'other')));
+await run('PSA-B4 보유자가 brandKey write (update)', 'deny', () => updateDoc(privDoc(asBrand, B_A), { brandKey: 'BR-FORGED22' }));
+await run('PSA-B4b 보유자가 brandKey 를 PII 와 함께 update', 'deny', () => updateDoc(privDoc(asBrand, B_A), { contactName: 'z', brandKey: 'BR-FORGED22' }));
+await run('PSA-B4c admin 이 brandKey write (CF 전담)', 'deny', () => updateDoc(privDoc(asAdmin, B_A), { brandKey: 'BR-FORGED22' }));
+await run('PSA-B4d 제출자가 private create 에 brandKey 포함 (create 경로)', 'deny', async () => {
+  await seed((db) => setDoc(doc(db, 'users', 'psa_sub2'), { uid: 'psa_sub2', role: 'brand' }));
+  await seed((db) => setDoc(doc(db, 'brands', 'psa_sub2_b'), { name: 'S', status: 'pending', submittedBy: 'psa_sub2', brandKey: '' }));
+  return setDoc(privDoc(env.authenticatedContext('psa_sub2').firestore(), 'psa_sub2_b'), { brandKey: 'BR-FORGED22', contactName: 'z' });
+});
+await run('PSA-B4e 제출자가 private create (PII 만, 회귀 — 신규 브랜드 등록)', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'users', 'psa_sub3'), { uid: 'psa_sub3', role: 'brand' }));
+  await seed((db) => setDoc(doc(db, 'brands', 'psa_sub3_b'), { name: 'S', status: 'pending', submittedBy: 'psa_sub3', brandKey: '' }));
+  return setDoc(privDoc(env.authenticatedContext('psa_sub3').firestore(), 'psa_sub3_b'), { businessRegistrationNumber: '1', contactName: 'z', contactPhone: '010', representativeName: 'r' }, { merge: true });
+});
+await run('PSA-B4f 제출자도 보유자도 아닌 브랜드 유저가 private create', 'deny', () => setDoc(privDoc(asBrand, 'psa_pending_b'), { contactName: 'z' }, { merge: true }));
+await run('PSA-B4g 점주가 private write', 'deny', () => setDoc(privDoc(asOwner, B_A), { contactName: 'z' }, { merge: true }));
+await run('PSA-B5 보유자가 PII update (회귀 — 브랜드 정보 수정)', 'allow', () => updateDoc(privDoc(asBrand, B_A), { contactName: '새담당', contactPhone: '010-9999-9999' }));
+await run('PSA-B5b 보유자가 선택 PII 삭제(deleteField)', 'allow', () => updateDoc(privDoc(asBrand, B_A), { headOfficeAddress: deleteField() }));
+await run('PSA-B5c 보유자가 private 에 임의 필드 추가', 'deny', () => updateDoc(privDoc(asBrand, B_A), { isAdminish: true }));
+await run('PSA-B5d private delete (보유자)', 'deny', () => deleteDoc(privDoc(asBrand, B_A)));
+await run('PSA-B6 보유자가 부모에 PII update (private 로 이동)', 'deny', () => updateDoc(doc(asBrand, 'brands', B_A), { contactName: 'z' }));
+await run('PSA-B6b 보유자가 부모에 사업자번호 update', 'deny', () => updateDoc(doc(asBrand, 'brands', B_A), { businessRegistrationNumber: '9' }));
+await run('PSA-B6c 보유자 부모 description/companyName update (회귀)', 'allow', () => updateDoc(doc(asBrand, 'brands', B_A), { description: 'd', companyName: 'C' }));
+await run('PSA-B6d brand self-create 에 PII 포함 (create 경로)', 'deny', () =>
+  setDoc(doc(asBrand, 'brands', 'psa_b5'), { name: 'N', status: 'pending', submittedBy: BRAND_U, brandKey: '', contactPhone: '010' }));
+await run('PSA-B7 brandKeys read (admin 포함)', 'deny', () => getDoc(doc(asAdmin, 'brandKeys', 'BR-AAAAAAAA')));
+await run('PSA-B7b brandKeys read (보유자)', 'deny', () => getDoc(doc(asBrand, 'brandKeys', 'BR-AAAAAAAA')));
+await run('PSA-B7c brandKeys create (admin)', 'deny', () => setDoc(doc(asAdmin, 'brandKeys', 'BR-NEWKEY22'), { brandId: B_A }));
+await run('PSA-B7d brandKeys update/delete (admin)', 'deny', () => deleteDoc(doc(asAdmin, 'brandKeys', 'BR-AAAAAAAA')));
+await run('PSA-B8 keyHistory admin read', 'allow', () => getDoc(doc(asAdmin, 'brands', B_A, 'keyHistory', 'k1')));
+await run('PSA-B8b keyHistory 보유자 read', 'deny', () => getDoc(doc(asBrand, 'brands', B_A, 'keyHistory', 'k1')));
+await run('PSA-B8c keyHistory admin create', 'deny', () => setDoc(doc(asAdmin, 'brands', B_A, 'keyHistory', 'forge'), { brandKey: 'x' }));
+await run('PSA-B8d keyHistory 보유자 update/delete', 'deny', () => deleteDoc(doc(asBrand, 'brands', B_A, 'keyHistory', 'k1')));
+// 회귀: 좁히다 서브컬렉션까지 막으면 메뉴가 전부 사라진다.
+await run('PSA-B9 고객 brands/{id}/menuItems read (회귀)', 'allow', () => getDocs(collection(asCustomer, 'brands', B_A, 'menuItems')));
+await run('PSA-B9b 고객 brands/{id}/subCategories read (회귀)', 'allow', () => getDocs(collection(asCustomer, 'brands', B_A, 'subCategories')));
+await run('PSA-B9c 고객 brands/{id}/optionGroups read (회귀)', 'allow', () => getDocs(collection(asCustomer, 'brands', B_A, 'optionGroups')));
+await run('PSA-B9d 점주 brands/{id}/menuItems read (회귀)', 'allow', () => getDocs(collection(asOwner, 'brands', B_A, 'menuItems')));
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {

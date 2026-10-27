@@ -88,6 +88,18 @@ service cloud.firestore {
       return request.resource.data.keys().hasAny(qoinManagedFields());
     }
 
+    // [payment_server_authority Rules-B] 브랜드 비밀·PII — `brands/{id}/private/profile` 로 분리된 필드 집합 (필드 목록은 여기 1곳).
+    // brandKey 는 CF(issueBrandKey) 전담이라 클라이언트 write 대상이 아니다. 나머지 5개는 브랜드 본인이 쓴다.
+    function brandPrivatePiiFields() {
+      return ['businessRegistrationNumber', 'representativeName', 'contactName', 'contactPhone', 'headOfficeAddress'];
+    }
+
+    // 이 브랜드를 제출한 brand 유저인가 (claimSubmittedBrand 가 users.brandId 를 연결하기 전 — 신규 등록 직후 private 쓰기).
+    function isBrandSubmitter(brandId) {
+      return isBrand()
+        && get(/databases/$(database)/documents/brands/$(brandId)).data.get('submittedBy', '') == uid();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // users/{uid}
     // ─────────────────────────────────────────────────────────────────────────
@@ -453,6 +465,8 @@ service cloud.firestore {
                             && request.resource.data.get('submittedBy', '') == uid()
                             && request.resource.data.get('status', '') == 'pending'
                             && request.resource.data.get('brandKey', '') == ''
+                            // [Rules-B] 부모 문서에 PII 를 쓰지 않는다 (private/profile 로 이동 — R9). 구 앱의 create 는 여기서 거부된다.
+                            && !request.resource.data.keys().hasAny(brandPrivatePiiFields())
                             // [Rules-A] 승인 메타 자가 설정 금지 (부재 또는 null 만). admin 분기는 해당 없음.
                             && request.resource.data.get('approvedAt', null) == null
                             && request.resource.data.get('approvedBy', null) == null));
@@ -477,9 +491,8 @@ service cloud.firestore {
             'businessHours', 'updatedAt', 'tags',
             // 승인 메타 회귀 필드 (핵심 필드 수정 시 status=pending 회귀)
             'status', 'submittedBy', 'submittedAt', 'rejectedReason',
-            // BrandEntity 추가 필드
-            'companyName', 'businessRegistrationNumber',
-            'contactName', 'contactPhone', 'headOfficeAddress', 'representativeName'
+            // BrandEntity 추가 필드. [Rules-B] 사업자·담당자 PII 는 private/profile 로 이동했다 (부모 whitelist 에서 제거).
+            'companyName'
           ])
           // status 자기 승격 차단: 'pending' 으로만 set 가능
           && (
@@ -506,6 +519,29 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      // ── brands/{brandId}/private/profile ─── [payment_server_authority Rules-B] ───────────────
+      // 브랜드 비밀·PII (brandKey + 사업자·담당자·본사 정보). 부모 문서는 로그인 사용자 누구나 읽지만(name/status/qoin* 는 비밀이 아니다)
+      // 이 서브문서는 admin / 해당 브랜드 보유자 / 제출자만 읽는다 (R8·R9). 고객·점주·타 브랜드는 읽을 수 없다.
+      // 쓰기: 브랜드 본인(보유자 또는 신규 등록 직후 제출자)이 PII 5개만. **brandKey 는 CF 전담** — create 에 키가 있어도,
+      // update 로 바꿔도 거부 (create·update 양쪽 확인: onlyChangedFields 는 update 전용이다). admin 도 직접 쓰지 않는다.
+      match /private/{docId} {
+        allow read: if docId == 'profile'
+                    && (isAdmin() || isBrandHolder(brandId) || isBrandSubmitter(brandId));
+        allow create: if docId == 'profile'
+                      && (isBrandHolder(brandId) || isBrandSubmitter(brandId))
+                      && request.resource.data.keys().hasOnly(brandPrivatePiiFields());
+        allow update: if docId == 'profile'
+                      && (isBrandHolder(brandId) || isBrandSubmitter(brandId))
+                      && onlyChangedFields(brandPrivatePiiFields());
+        allow delete: if false;
+      }
+
+      // ── brands/{brandId}/keyHistory/{id} ─── brandKey 발급 이력. read: admin. 쓰기는 CF 전담 ──
+      match /keyHistory/{historyId} {
+        allow read: if isAdmin();
+        allow create, update, delete: if false;
+      }
+
       // ── brands/{brandId}/menuItems/{id} ───────────────────────────────────
       match /menuItems/{menuItemId} {
         allow read: if isSignedIn();
@@ -526,6 +562,14 @@ service cloud.firestore {
         allow create, update, delete:
           if isAdmin() || isBrandHolder(brandId);
       }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // brandKeys/{BR-XXXXXXXX} — brandKey 유일성 인덱스 (문서 ID = 키). CF(Admin SDK) 전담. 클라이언트는 읽지도 쓰지도 못한다.
+    // [payment_server_authority Rules-B]
+    // ─────────────────────────────────────────────────────────────────────────
+    match /brandKeys/{brandKey} {
+      allow read, write: if false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
