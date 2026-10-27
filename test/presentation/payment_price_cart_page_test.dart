@@ -12,7 +12,11 @@ import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/cart/cart_page.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
+import 'package:qradar/domain/repositories/app_config_repository.dart';
+import 'package:qradar/domain/usecases/check_client_update_required_use_case.dart';
 import 'package:qradar/presentation/customer/checkout/checkout_page.dart';
+import 'package:qradar/presentation/customer/checkout/providers/client_update_providers.dart';
+import 'package:qradar/presentation/customer/checkout/update_required_page.dart';
 
 /// payment_price_authority R9 — 카트 화면의 재가격: 진입 시 자동 적용 + 배너, `결제하기` 탭은 새 변동이면 멈춘다 (design §5.0·§5.3).
 class _Repo implements CheckoutValidationRepository {
@@ -58,6 +62,17 @@ class _Repo implements CheckoutValidationRepository {
   }) async => {for (final r in refs) optionRefKey(r.scope, r.id): null};
 }
 
+class _Cfg implements AppConfigRepository {
+  _Cfg({this.min, this.fail = false});
+  final int? min;
+  final bool fail;
+  @override
+  Future<int?> fetchMinClientLevel() async {
+    if (fail) throw StateError('offline');
+    return min;
+  }
+}
+
 class _Auth extends AuthNotifier {
   @override
   Future<UserEntity?> build() async =>
@@ -76,6 +91,7 @@ CartItemEntity _line(String id, String menu, {int unit = 4000, int qty = 1}) =>
 
 Future<(ProviderContainer, _Repo)> _pump(
   WidgetTester tester, {
+  AppConfigRepository? cfg,
   required Map<String, int> prices,
   bool fail = false,
   List<CartItemEntity>? lines,
@@ -87,6 +103,9 @@ Future<(ProviderContainer, _Repo)> _pump(
       overrides: [
         checkoutValidationRepositoryProvider.overrideWithValue(repo),
         authProvider.overrideWith(_Auth.new),
+        checkClientUpdateRequiredUseCaseProvider.overrideWithValue(
+          CheckClientUpdateRequiredUseCase(cfg ?? _Cfg()),
+        ),
       ],
       child: MaterialApp(
         home: Builder(
@@ -226,5 +245,33 @@ void main() {
       5000,
     );
     expect(find.text('메뉴 가격이 올라 카트 금액을 새로 맞췄어요'), findsOneWidget);
+  });
+
+  testWidgets('H-01: 서버가 요구한 최소 수준 미만으로 확인되면 결제하기가 업데이트 화면으로 간다 (체크아웃 아님)', (tester) async {
+    await _pump(tester, prices: {'m1': 4000}, cfg: _Cfg(min: 2));
+    await tester.tap(find.text('결제하기'));
+    await tester.pumpAndSettle();
+    expect(find.byType(UpdateRequiredPage), findsOneWidget);
+    expect(find.text('앱을 업데이트해 주세요'), findsOneWidget);
+    expect(find.byType(CheckoutPage), findsNothing);
+    expect(find.textContaining('조작'), findsNothing);
+    await tester.tap(find.text('확인'));
+    await tester.pumpAndSettle();
+    expect(find.byType(UpdateRequiredPage), findsNothing);
+  });
+
+  testWidgets('H-01: 버전 확인이 실패해도 결제를 막지 않는다 (fail-open)', (tester) async {
+    await _pump(tester, prices: {'m1': 4000}, cfg: _Cfg(fail: true));
+    await tester.tap(find.text('결제하기'));
+    await tester.pumpAndSettle();
+    expect(find.byType(UpdateRequiredPage), findsNothing);
+    expect(find.byType(CheckoutPage), findsOneWidget);
+  });
+
+  testWidgets('H-01: 설정이 없거나 충분한 수준이면 막지 않는다', (tester) async {
+    await _pump(tester, prices: {'m1': 4000}, cfg: _Cfg(min: 1));
+    await tester.tap(find.text('결제하기'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CheckoutPage), findsOneWidget);
   });
 }

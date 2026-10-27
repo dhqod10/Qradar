@@ -5,7 +5,8 @@ class AddToCartUseCase {
   final CartRepository _repository;
   AddToCartUseCase(this._repository);
 
-  Future<void> call({
+  /// 수량 상한에 걸려 잘렸으면 true.
+  Future<bool> call({
     required String storeId,
     required String storeName,
     required CartItemEntity item,

@@ -118,6 +118,20 @@
 | 6-12 | 빠른 재주문 단가 (역산) | 판정 출처 없음. **체크아웃 재가격이 교정한다**(spec §11) | 확인을 안 하므로 실패 표면 없음. 카트 진입 시 자동 선검증이 재가격하면 6-7 배너로 알려진다 | 6-7 | 기존 (UI 무변경) |
 | 6-13 | 점주 주문 상세·매출 집계·Qoin 적립 기준 | 주문 문서를 그대로 읽음 (판정 없음) | 기존 에러 UI | 재시도 | 기존 |
 
+### 3.0 인벤토리 보강 — "가격을 말하는" 읽기 전용 표면 (test_report F-04)
+
+> 역방향 grep(`unitPriceWithOptions|lineTotal|priceDelta|basePrice|priceOverride|subtotal|totalPrice` 앱·서버 전수)로 열거했다. 전부 **읽기 전용 표시**이며 가격은 같은 병합 함수(`applyOverrideForCustomer`)나 주문 문서를 거친다 — **동작 결함 없음, 새 코드 경로 없음**. 표를 완성하는 것이 목적이다(표에 없는 표면은 설계되지 않았다).
+
+| # | 표면 | ⓐ 판정 출처 | ⓑ 출처 읽기 실패 시 | ⓒ 복구 | 구분 |
+|---|---|---|---|---|---|
+| 6-14 | 메뉴 목록 카드 (`customer/order/store/widgets/menu_item_card.dart`) | `watchMenuItemsByStore` — 병합 함수가 적용된 단가 | 기존 에러 UI | 재시도 | 기존 (읽기 전용 표시) |
+| 6-15 | 검색 결과 (`customer/search/widgets/menu_search_result_tile.dart`) | `search_menu_items_use_case` — override 적용 | 기존 에러 UI | 재시도 | 기존 |
+| 6-16 | 홈 자주 찾는 메뉴 (`home/widgets/frequent_menu_items_section.dart`) | `storeMenuItemsProvider` 병합 단가 (못 찾으면 가격을 숨긴다) | 가격 숨김 | — | 기존 |
+| 6-17 | 고객 주문 상세·Log (`order/orders/order_detail_page.dart`, `order_card`, `order_item_row`, `price_summary`) | **주문 문서 그대로** (enforce 부터 서버 재계산값이 박제된다) | 기존 에러 UI | 재시도 | 기존 |
+| 6-18 | 환불 금액 (`processRefund.ts`) | 주문 문서 합계 | 기존 | 기존 | 서버 (판정 없음) |
+| 6-19 | 점주 브랜드 매장 메뉴 카드 (`owner/brand_store/owner_brand_store_menus_page.dart`) | 병합 단가 | 기존 에러 UI | 재시도 | 기존 |
+| 6-20 | 브랜드·점주 **가격 입력** 화면 (`price_override_input`, 마스터/점포 메뉴 폼, 옵션 항목 편집기) | **쓰기** — 승인 흐름(`menuOverrides` Rules-1) · 옵션 `priceDelta` 는 즉시 효력 | 기존 | 재시도 | 기존. **Q8·H-02 와 직결** (backlog PPA-P2) |
+
 > 6-12: 빠른 재주문은 UI 를 건드리지 않는다. 다만 재주문 직후 열리는 카트(`CartPage`)의 자동 선검증이 stale 단가를 고치고 6-7 배너를 띄운다. 즉 **재주문 고객이 가장 자주 이 배너를 보게 된다** — 문구는 재주문 맥락에서도 자연스러워야 한다(§5.2 문구는 "담아 둔 뒤에" 가 아니라 "가격이 바뀌어" 로 쓴다).
 
 ### 3.1 선행 design §3.1 사유 표에 더하는 행 (금액 관련 2행)

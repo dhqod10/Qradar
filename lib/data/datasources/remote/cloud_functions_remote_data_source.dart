@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:qradar/core/constants/app_client_level.dart';
 import 'package:qradar/core/errors/verify_payment_failure.dart';
 
 /// Firebase Cloud Functions 호출 어댑터.
@@ -33,6 +34,8 @@ class CloudFunctionsRemoteDataSource {
         'idempotencyKey': idempotencyKey,
         'cart': cartSnapshot,
         'paymentMethod': paymentMethod,
+        // 이 빌드가 금액 재가격(payment_price_authority R9)을 가진 수준이다. 서버는 거절 기록에 남겨 구버전 비율을 잰다.
+        'clientLevel': kPaymentClientLevel,
       });
       final data = result.data;
       if (data is Map) {

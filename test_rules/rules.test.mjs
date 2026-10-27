@@ -1112,6 +1112,8 @@ await run('PPA-1b 점주 create: 승인 메타(approvedBy/approvedAt) 포함', '
   setDoc(ovRef(asOwner, 'ppa1b'), { storeId: S_BR, brandId: B_A, status: 'approved', approvedBy: OWNER, approvedAt: NOW() }));
 await run('PPA-1c 점주 create: approvedBy 만 (status pending 이어도 승인 메타는 금지)', 'deny', () =>
   setDoc(ovRef(asOwner, 'ppa1c'), { storeId: S_BR, brandId: B_A, status: 'pending', approvedBy: OWNER }));
+await run('PPA-1h 점주 create: approvedAt 단독 (status pending 이어도 승인 메타는 필드마다 deny 1건)', 'deny', () =>
+  setDoc(ovRef(asOwner, 'ppa1h'), { storeId: S_BR, brandId: B_A, status: 'pending', approvedAt: NOW() }));
 await run('PPA-1d 점주 create: 모르는 status 문자열 (앱은 approved 로 읽는다) + priceOverride', 'deny', () =>
   setDoc(ovRef(asOwner, 'ppa1d'), { storeId: S_BR, brandId: B_A, status: 'weird', priceOverride: 1 }));
 await run('PPA-1e 점주 create: approved + excluded true (판매 중단을 승인 없이 효력화)', 'deny', () =>
@@ -1218,6 +1220,16 @@ await run('PPA-H3 회귀: 가격 쓰기 경로는 그대로 — 점주가 자기
   await seed((db) => setDoc(doc(db, 'stores', S_A, 'menuItems', 'ppa_h3'), { name: 'x', basePrice: 4000 }));
   return updateDoc(doc(asOwner, 'stores', S_A, 'menuItems', 'ppa_h3'), { basePrice: 4500 });
 });
+
+// ── payment_price_authority H-01: config/app (minClientLevel) — 기존 config 규칙으로 충분한가 ──
+await run('PPA-C1 고객이 config/app read (최소 클라이언트 수준 확인)', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'config', 'app'), { minClientLevel: 2 }));
+  return getDoc(doc(asCustomer, 'config', 'app'));
+});
+await run('PPA-C1b 비로그인이 config/app read', 'deny', () => getDoc(doc(asAnon, 'config', 'app')));
+await run('PPA-C2 고객이 config/app update (게이트 끄기)', 'deny', () => updateDoc(doc(asCustomer, 'config', 'app'), { minClientLevel: 0 }));
+await run('PPA-C2b 점주가 config/app update', 'deny', () => updateDoc(doc(asOwner, 'config', 'app'), { minClientLevel: 0 }));
+await run('PPA-C3 admin 이 config/app update', 'allow', () => updateDoc(doc(asAdmin, 'config', 'app'), { minClientLevel: 3 }));
 
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;

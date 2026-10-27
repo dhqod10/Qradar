@@ -204,10 +204,29 @@ cd /Users/Byeonguk/Developer/OrderApp && flutter run -d <device-id> --dart-defin
 | 위 상태에서 `결제하기` | 바로 체크아웃으로 가지 않고 **카트에서 한 번 멈춘다**(새 변동이 있을 때만). 한 번 더 누르면 체크아웃 |
 | 체크아웃에서 결제 탭 직전에 가격 변경 | `결제 금액이 바뀌었어요` 시트, 결제창은 열리지 않음 |
 | 가격 변동이 없을 때 | **어떤 가격 표시도 없다** |
+| 같은 메뉴를 60개 + 60개 담기 | **99개로 맞춰지고** 안내 문구(`한 메뉴는 최대 99개까지 …`)가 보인다. 카트 라인은 99, 결제 성공 (F-01) |
+| `config/app.minClientLevel` 을 임시로 `2` 로 올려 봄 (테스트 기기) | 카트 `결제하기`가 `앱을 업데이트해 주세요` 로 간다 · 문서를 지우면 다시 통과 · 네트워크를 끊으면 막지 않는다 (확인 후 **반드시 원복**) |
+
+## ⑥-c 최소 버전 게이트와 구버전 비율 — **enforce 전 필수 (H-01)**
+
+구버전 앱(이 빌드 이전)은 새 거절 토큰을 모르는 사유로 보고 갈래 C("주문이 완료됐는지 확인이 필요해요")를 띄우고 재가격 코드가 없어 가격이 바뀐 뒤 **카트 비움 외에 탈출구가 없다.** 그래서 enforce 전에 구버전을 걷어낸다. 게이트는 두 겹이다:
+
+1. **게이트 자체는 ⑥ 앱에 들어 있다.** 앱은 결제 진입(카트 `결제하기` · 체크아웃 결제 탭) 직전에 `config/app.minClientLevel`(정수)을 읽어, 이 빌드의 수준(`lib/core/constants/app_client_level.dart` 의 `kPaymentClientLevel`, 현재 `1`)보다 크면 `앱을 업데이트해 주세요` 화면으로 막는다. **설정 문서가 없거나 읽기가 실패·시간 초과(3초)면 막지 않는다** — 막는 건 구버전임이 확인됐을 때뿐이다. 값을 올리는 것은 Console 에서 `config/app` 문서를 만들거나 고치는 한 줄이다(admin 만 쓸 수 있다, Rules 하네스 `PPA-C*`).
+2. ⚠️ **이 게이트는 게이트 코드가 들어간 빌드만 막을 수 있다.** 이 배포 이전에 설치된 앱에는 게이트가 없으므로 **스스로 업데이트 화면을 띄울 수 없다.** 그쪽은 아래로 센다:
+   - 스토어 콘솔(App Store Connect / Play Console)의 **버전별 활성 사용자 분포** — ⑥ 빌드의 버전 이전 비율.
+   - 서버 기록: 앱은 `verifyTossPayment` 호출에 `clientLevel: 1` 을 싣고, 서버는 금액 거절 기록(`paymentGateRejections.detail.clientLevel`)에 남긴다. **`null` = 구버전.** ⑤-b 관측 중 `detail.clientLevel == null` 인 기록이 보이면 구버전이 아직 결제하고 있다는 뜻이다.
+
+| 확인 | 기준 |
+|---|---|
+| 스토어 분포에서 구버전(⑥ 이전) 비율 | **합의한 임계값 이하**(런북 실행자가 ⑦ 직전에 숫자로 기록). 임계값은 이 문서가 정하지 않는다 — 구버전 1명은 가격이 바뀌는 순간 결제가 막힌다 |
+| ⑤-b 이후 `detail.clientLevel == null` 기록 | 새로 생기지 않는다 |
+| `config/app.minClientLevel` | 아직 올리지 않는다(올릴 일은 다음 결제 규칙 변경 때). 게이트가 **막지 않는 상태**에서 라이브 확인: 업데이트 화면이 뜨지 않는다 |
+
+임계값을 못 맞추면 ⑦ 로 가지 않는다.
 
 ## ⑦ `PAYMENT_PRICE_MODE=enforce` 전환
 
-**전제 3개를 먼저 확인한다.** ⓐ ③ Rules 가 라이브 ⓑ ⑤-b 가 깨끗함 ⓒ ⑥ 앱이 라이브.
+**전제 4개를 먼저 확인한다.** ⓐ ③ Rules 가 라이브 ⓑ ⑤-b 가 깨끗함 ⓒ ⑥ 앱이 라이브 ⓓ **최소 버전 게이트(H-01)가 배포돼 있고 구버전 비율을 확인했다** (아래 ⑥-c).
 
 ```bash
 cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_PRICE_MODE=' functions/.env.order-app-5957e > /tmp/ppa_env.new ; echo "PAYMENT_PRICE_MODE=enforce" >> /tmp/ppa_env.new && mv /tmp/ppa_env.new functions/.env.order-app-5957e && cat functions/.env.order-app-5957e && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
@@ -262,7 +281,8 @@ cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_PRICE_MODE=' function
 7. **⑥(앱)가 라이브가 아니면 ⑦ 로 넘어가지 않는다.**
 8. ⑦ 의 **거절 1건 실측을 못 했으면** 전환이 끝난 것으로 보지 않는다.
 9. ⑧-1(옵션 포함 정상 결제)이 실패하면 **즉시 비상 정지** 후 보고.
-10. ③ 직후 `PPA-3` 류 회귀(점주 품절 토글 등)가 깨지면 ③ 을 되돌린다.
+10. **⑥-c: 최소 버전 게이트가 ⑥ 빌드에 없거나 구버전 비율이 임계값을 넘으면 ⑦ 로 가지 않는다 (H-01).**
+11. ③ 직후 `PPA-3` 류 회귀(점주 품절 토글 등)가 깨지면 ③ 을 되돌린다.
 
 ---
 
@@ -290,7 +310,8 @@ cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_PRICE_MODE=' function
 | ④ ⓑ 처리 | | | |
 | ⑤ 본 CF (shadow) | | | `.env` 두 줄 확인: ☐ |
 | ⑤-b 양성 대조 | | | |
-| ⑥ 앱 | | | |
+| ⑥ 앱 | | | 최소 버전 게이트 포함: ☐ |
+| ⑥-c 구버전 비율 | | | 스토어 분포 __% / `clientLevel==null` 기록 __건 / 임계값 __% |
 | ⑦ enforce 전환 | | | 거절 1건 실측: ☐ |
 | ⑧ 라이브 검증 | | | |
 | ⑨ 재측정 | | | ⓐ __ / ⓑ __ (② 대비 증가 0: ☐) |

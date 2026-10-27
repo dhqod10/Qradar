@@ -1,5 +1,5 @@
 {
-  "_doc": "카트 금액 산술 교차 골든 — Dart(lib/core/utils/cart_pricing.dart computeCartAmount) 와 TS(functions/src/cartPricing.ts) 가 같은 파일을 읽어 단언한다 (payment_price_authority spec §19-1). 각 라인의 기준가(basePrice)는 menu 문서에서 기존 판정 함수(Dart classifyCheckoutMenu→applyOverrideForCustomer / TS classifyCartMenu)로 얻는다 — 즉 '승인된 priceOverride 만 적용' 분기는 이 산술이 아니라 기존 판정이 결정하고, 이 골든은 그 결과가 산술까지 같은 값으로 이어짐을 고정한다. deltas 는 validateSelection 이 돌려주는 선택 항목의 가격 증감(음수 정상). 식: unit = base + Σ deltas, total = unit × quantity, subtotal = Σ total, expected = subtotal − 0.",
+  "_doc": "카트 금액 산술 교차 골든 — Dart(lib/core/utils/cart_pricing.dart computeCartAmount) 와 TS(functions/src/cartPricing.ts) 가 같은 파일을 읽어 단언한다 (payment_price_authority spec §19-1). 각 라인의 기준가(basePrice)는 menu 문서에서 기존 판정 함수(Dart classifyCheckoutMenu→applyOverrideForCustomer / TS classifyCartMenu)로 얻는다 — 즉 '승인된 priceOverride 만 적용' 분기는 이 산술이 아니라 기존 판정이 결정하고, 이 골든은 그 결과가 산술까지 같은 값으로 이어짐을 고정한다. deltas 는 validateSelection 이 돌려주는 선택 항목의 가격 증감(음수 정상). 식: unit = base + Σ deltas, total = unit × quantity, subtotal = Σ total, expected = subtotal − 0. quantityCases / mergeCases: 수량 유효 경계(1~99 정수)와 라인 병합의 상한 clamp — Dart isValidLineQuantity·mergeLineQuantity 와 TS 가 같은 파일로 고정한다 (test_report F-01).",
   "cases": [
     { "name": "P1 옵션 없음 단일 라인",
       "lines": [ { "menu": { "hasBrand": false, "storeMenu": { "basePrice": 4000 }, "master": null, "override": null }, "deltas": [], "quantity": 1 } ],
@@ -51,5 +51,20 @@
         { "menu": { "hasBrand": false, "storeMenu": { }, "master": null, "override": null }, "deltas": [ 500 ], "quantity": 1 },
         { "menu": { "hasBrand": false, "storeMenu": { "basePrice": 4000.9 }, "master": null, "override": null }, "deltas": [], "quantity": 1 } ],
       "expect": { "lines": [ { "unit": 500, "total": 500 }, { "unit": 4000, "total": 4000 } ], "subtotal": 4500, "expected": 4500 } }
+  ],
+  "quantityCases": [
+    { "name": "Q0 수량 0 = 무효", "quantity": 0, "valid": false },
+    { "name": "Q1 수량 1 = 유효 (하한)", "quantity": 1, "valid": true },
+    { "name": "Q2 수량 99 = 유효 (상한)", "quantity": 99, "valid": true },
+    { "name": "Q3 수량 100 = 무효", "quantity": 100, "valid": false },
+    { "name": "Q4 음수 = 무효", "quantity": -1, "valid": false },
+    { "name": "Q5 소수 = 무효", "quantity": 1.5, "valid": false },
+    { "name": "Q6 매우 큰 수 = 무효", "quantity": 1000000, "valid": false }
+  ],
+  "mergeCases": [
+    { "name": "M1 1 + 1 = 2", "existing": 1, "added": 1, "expect": 2 },
+    { "name": "M2 98 + 1 = 99 (상한 정확히)", "existing": 98, "added": 1, "expect": 99 },
+    { "name": "M3 99 + 1 = 99 (잘린다)", "existing": 99, "added": 1, "expect": 99 },
+    { "name": "M4 60 + 60 = 99 (F-01 재현: 120 이 아니다)", "existing": 60, "added": 60, "expect": 99 }
   ]
 }

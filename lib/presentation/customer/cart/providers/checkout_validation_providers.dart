@@ -172,7 +172,14 @@ String cartSignature(CartEntity cart) {
 /// 값은 재가격을 **적용한 뒤의** 카트 서명이다. 같은 서명으로 `PRICE_MISMATCH` 가 또 오면 재가격 버튼을 다시 주지 않는다.
 class PriceRepricedCartSignatureNotifier extends Notifier<String?> {
   @override
-  String? build() => null;
+  String? build() {
+    // 카트가 비워지면(비우기 · 결제 성공 후 비움) 서명을 무효화한다 — 같은 구성을 나중에 다시 담았을 때 첫 거절부터 변형 N 이
+    // 뜨는 것(다른 주문으로 새는 것)을 막는다 (test_report F-02).
+    ref.listen(cartProvider, (_, next) {
+      if (state != null && next.value == null) state = null;
+    });
+    return null;
+  }
 
   void mark(String signature) => state = signature;
 }

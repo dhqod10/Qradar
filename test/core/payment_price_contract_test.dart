@@ -164,6 +164,27 @@ void main() {
     }
   });
 
+  group('cart_pricing_contract.json — 수량 경계 (F-01)', () {
+    final fx = _load('cart_pricing_contract.json');
+    for (final c
+        in (fx['quantityCases'] as List).cast<Map<String, dynamic>>()) {
+      test(c['name'] as String, () {
+        expect(isValidLineQuantity(c['quantity'] as num), c['valid']);
+      });
+    }
+    for (final c in (fx['mergeCases'] as List).cast<Map<String, dynamic>>()) {
+      test(c['name'] as String, () {
+        expect(
+          mergeLineQuantity(c['existing'] as int, c['added'] as int),
+          c['expect'],
+        );
+      });
+    }
+    test('상한 상수는 99 이고 앱 수량 스테퍼 최댓값과 같다', () {
+      expect(kMaxLineQuantity, 99);
+    });
+  });
+
   test(
     'classifyCheckoutMenu 와 같은 규칙: 골든의 메뉴는 전부 판매 가능으로 분류된다 (기준가 산식의 전제)',
     () {

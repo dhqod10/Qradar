@@ -13,6 +13,8 @@ import 'package:qradar/presentation/customer/cart/widgets/cart_availability_bann
 import 'package:qradar/presentation/customer/cart/widgets/cart_line_tile.dart';
 import 'package:qradar/presentation/customer/cart/widgets/cart_price_change_banner.dart';
 import 'package:qradar/presentation/customer/checkout/checkout_page.dart';
+import 'package:qradar/presentation/customer/checkout/providers/client_update_providers.dart';
+import 'package:qradar/presentation/customer/checkout/update_required_page.dart';
 import 'package:qradar/presentation/customer/order/menu/menu_item_detail_page.dart';
 
 class CartPage extends ConsumerStatefulWidget {
@@ -138,6 +140,14 @@ class _CartPageState extends ConsumerState<CartPage>
     setState(() => _checkingOut = true);
     CartRefreshResult result;
     try {
+      // 최소 클라이언트 수준 게이트 (H-01): 구버전임이 **확인됐을 때만** 막는다. 확인 실패는 통과.
+      if (await ref.read(checkClientUpdateRequiredUseCaseProvider)()) {
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const UpdateRequiredPage()),
+        );
+        return;
+      }
       result = await ref
           .read(cartValidationProvider.notifier)
           .refreshAndReprice();

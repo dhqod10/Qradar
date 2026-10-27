@@ -121,6 +121,9 @@ class FirestorePaths {
   /// 운영 설정 컬렉션 `config/{docId}`.
   static const String config = 'config';
 
+  /// 앱 운영 설정 문서 ID — `config/app` (`minClientLevel`: 결제 최소 클라이언트 수준, payment_price_authority H-01).
+  static const String appConfigDocId = 'app';
+
   /// Qoin 설정 문서 ID — `config/qoin` (accrualRate / enabled).
   static const String qoinConfigDocId = 'qoin';
 

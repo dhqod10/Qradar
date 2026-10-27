@@ -719,7 +719,7 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
         ),
       );
 
-      await ref.read(addToCartUseCaseProvider).call(
+      final clamped = await ref.read(addToCartUseCaseProvider).call(
             storeId: storeId,
             storeName: widget.storeName,
             item: cartItem,
@@ -727,9 +727,12 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('카트에 담겼어요'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          // 상한에 걸려 잘렸으면 조용히 넘기지 않는다 (한 메뉴는 최대 99개 — 서버 규칙과 같다).
+          content: Text(
+            clamped ? '한 메뉴는 최대 99개까지 담을 수 있어요. 99개로 맞췄어요' : '카트에 담겼어요',
+          ),
+          duration: const Duration(seconds: 3),
         ),
       );
     } catch (_) {

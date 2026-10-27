@@ -12,12 +12,12 @@ class CartRepositoryImpl implements CartRepository {
   Stream<CartEntity?> watchActiveCart() => _local.watch();
 
   @override
-  Future<void> addItem({
+  Future<bool> addItem({
     required String storeId,
     required String storeName,
     required CartItemEntity item,
   }) async {
-    _local.addItem(storeId: storeId, storeName: storeName, item: item);
+    return _local.addItem(storeId: storeId, storeName: storeName, item: item);
   }
 
   @override

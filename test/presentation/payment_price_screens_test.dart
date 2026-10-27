@@ -254,6 +254,32 @@ void main() {
   });
 
   group('PRICE_MISMATCH — 재가격이 실패하거나 소용없을 때', () {
+    testWidgets('F-02: 카트를 비운 뒤 같은 구성을 다시 담으면 첫 거절은 기본형이다 (서명이 다른 주문으로 새지 않는다)', (tester) async {
+      final h = await _pumpFail(
+        tester,
+        _gate('[PRICE_MISMATCH:m1]'),
+        cartLines: [_line('c1', 'm1', '아메리카노')],
+        repo: _FakeRepo(menus: {'m1': _menu('m1', 4500)}),
+      );
+      await tester.tap(find.text('최신 가격으로 다시 담기'));
+      await tester.pumpAndSettle();
+      expect(h.container.read(priceRepricedCartSignatureProvider), isNotNull);
+
+      // 결제 성공 후 비움(또는 카트 비우기) → 같은 구성을 다시 담는다.
+      final ds = h.container.read(cartLocalDataSourceProvider);
+      ds.clearCart();
+      await tester.pump();
+      expect(h.container.read(priceRepricedCartSignatureProvider), isNull);
+      ds.addItem(storeId: 's1', storeName: '매장', item: _line('c9', 'm1', '아메리카노'));
+      await tester.pump();
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('메뉴 가격이 바뀌었어요'), findsOneWidget);
+      expect(find.text('최신 가격으로 다시 담기'), findsOneWidget);
+      expect(find.text('가격을 다시 확인했는데 달라진 게 없어요'), findsNothing);
+    });
+
     testWidgets('읽기 실패: 이 화면에 머문다. pop 없음, 카트 불변, 인라인 오류, 라벨 다시 불러오기', (
       tester,
     ) async {

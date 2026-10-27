@@ -12,7 +12,7 @@
  * Firestore 에 직접 의존하지 않는다 (`GateReader` 주입) — confirm 이 호출되지 않음을 단위 테스트로 단언하기 위해서다.
  */
 
-import { computeCartAmount, CartLinePricing } from "./cartPricing";
+import { computeCartAmount, CartLinePricing, isValidLineQuantity, MAX_LINE_QUANTITY } from "./cartPricing";
 import { classifyCartMenu, MergedMenu, OptionGroupRef, RawDoc } from "./menuVisibility";
 import { OptionGroupDoc, OptionIssue, optionRefKey, parseOptionGroup, validateSelection } from "./optionPricing";
 import { GateMode, GateReader, GateReason, isLookupSafeId, MAX_CART_ITEMS, resolveGateMode, TOKEN_ID_RE } from "./paymentGate";
@@ -20,8 +20,9 @@ import { GateMode, GateReader, GateReason, isLookupSafeId, MAX_CART_ITEMS, resol
 /** 중복 제거 후 (scope, groupId) 쌍 수 상한 (spec §6-2). 메뉴당 옵션 그룹 수는 점주·브랜드가 정하므로 읽기 비용의 뚜껑이다. */
 export const MAX_OPTION_GROUP_DOCS = 200;
 
-/** 라인 수량 상한 — 앱 `QuantityStepper` 의 1~99 와 같다. 음수·0·소수·거대 수량은 금액을 깎는 입력이므로 거절한다. */
-export const MAX_LINE_QUANTITY = 99;
+// 라인 수량 상한(MAX_LINE_QUANTITY)과 경계 판정(isValidLineQuantity)은 cartPricing.ts 한 곳이다 — Dart 와 교차 골든으로 고정.
+// 음수·0·소수·거대 수량은 금액을 깎는 입력이므로 거절한다.
+export { MAX_LINE_QUANTITY };
 
 /** `PAYMENT_PRICE_MODE` 값. `resolveGateMode` 와 **같은 폴백**(없거나 모르는 값·대소문자·공백 = off) — operations.md §6.1. */
 export type PriceMode = GateMode;
@@ -130,7 +131,7 @@ function parseLine(raw: unknown): ParsedLine {
   };
   if (isLookupSafeId(it.menuItemId)) out.menuItemId = it.menuItemId;
   else out.unusable = "badMenuItemId";
-  if (typeof it.quantity === "number" && Number.isInteger(it.quantity) && it.quantity >= 1 && it.quantity <= MAX_LINE_QUANTITY) {
+  if (isValidLineQuantity(it.quantity)) {
     out.quantity = it.quantity;
   } else {
     out.unusable ??= "badQuantity";

@@ -18,7 +18,11 @@ import 'package:qradar/domain/usecases/launch_payment_use_case.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
+import 'package:qradar/domain/repositories/app_config_repository.dart';
+import 'package:qradar/domain/usecases/check_client_update_required_use_case.dart';
 import 'package:qradar/presentation/customer/checkout/checkout_page.dart';
+import 'package:qradar/presentation/customer/checkout/providers/client_update_providers.dart';
+import 'package:qradar/presentation/customer/checkout/update_required_page.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 
 /// payment_price_authority R9 · design §5.4 — 체크아웃 결제 탭의 재가격. 결제(Toss 창)는 가격 변동·옵션 위반이면 시작하지 않는다.
@@ -78,6 +82,17 @@ class _Repo implements CheckoutValidationRepository {
   };
 }
 
+class _Cfg implements AppConfigRepository {
+  _Cfg({this.min, this.fail = false});
+  final int? min;
+  final bool fail;
+  @override
+  Future<int?> fetchMinClientLevel() async {
+    if (fail) throw StateError('offline');
+    return min;
+  }
+}
+
 class _SpyLaunch implements LaunchPaymentUseCase {
   int calls = 0;
   int? amount;
@@ -118,6 +133,7 @@ Future<(ProviderContainer, _Repo, _SpyLaunch)> _pump(
   WidgetTester tester, {
   required _Repo repo,
   List<CartItemEntity>? lines,
+  AppConfigRepository? cfg,
 }) async {
   final spy = _SpyLaunch();
   late ProviderContainer container;
@@ -126,6 +142,9 @@ Future<(ProviderContainer, _Repo, _SpyLaunch)> _pump(
       overrides: [
         checkoutValidationRepositoryProvider.overrideWithValue(repo),
         launchPaymentUseCaseProvider.overrideWithValue(spy),
+        checkClientUpdateRequiredUseCaseProvider.overrideWithValue(
+          CheckClientUpdateRequiredUseCase(cfg ?? _Cfg()),
+        ),
         currentUserProfileProvider.overrideWith(
           (ref) => Stream.value(
             const UserEntity(
@@ -311,5 +330,19 @@ void main() {
     expect(find.text('결제 금액이 바뀌었어요'), findsNothing);
     expect(find.text('옵션을 다시 골라야 하는 메뉴'), findsOneWidget);
     expect(spy.calls, 0);
+  });
+
+  testWidgets('H-01: 구버전으로 확인되면 결제창도 선검증도 열지 않고 업데이트 화면', (tester) async {
+    final (_, _, spy) = await _pump(tester, repo: _Repo(price: 4000), cfg: _Cfg(min: 2));
+    await _pay(tester, '8,000원');
+    expect(find.byType(UpdateRequiredPage), findsOneWidget);
+    expect(spy.calls, 0);
+  });
+
+  testWidgets('H-01: 버전 확인 실패는 막지 않는다 — 결제창이 열린다', (tester) async {
+    final (_, _, spy) = await _pump(tester, repo: _Repo(price: 4000), cfg: _Cfg(fail: true));
+    await _pay(tester, '8,000원');
+    expect(find.byType(UpdateRequiredPage), findsNothing);
+    expect(spy.calls, 1);
   });
 }

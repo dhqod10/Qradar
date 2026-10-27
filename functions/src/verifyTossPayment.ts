@@ -54,6 +54,8 @@ interface VerifyPaymentInput {
   idempotencyKey: string;
   cart: CartSnapshot;
   paymentMethod: string;
+  /** 앱이 싣는 결제 클라이언트 수준 (lib/core/constants/app_client_level.dart). 구버전은 이 키가 없다. 거절 기록에만 쓴다 — 권위가 아니다. */
+  clientLevel?: unknown;
 }
 
 // ── 함수 ─────────────────────────────────────────────────────────────────────
@@ -246,7 +248,8 @@ export async function handleVerifyTossPayment(
             uid,
             storeId: String(data.cart.storeId ?? ""),
             reason: result.reason,
-            detail: result.detail,
+            // clientLevel: null = 구버전(재가격 없음). ⑤-b 관측에서 구버전 비율을 재는 수단 (H-01). 판정에는 쓰지 않는다.
+            detail: { ...result.detail, clientLevel: Number.isInteger(data.clientLevel) ? data.clientLevel : null },
             amount: data.amount,
             shadow,
           });

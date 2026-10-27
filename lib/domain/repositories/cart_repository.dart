@@ -9,7 +9,8 @@ abstract class CartRepository {
   Stream<CartEntity?> watchActiveCart();
 
   /// 카트에 라인 추가. 다른 매장 카트가 있을 경우 호출자가 충돌 처리.
-  Future<void> addItem({
+  /// 같은 라인에 합친 수량이 상한(99)을 넘어 **잘렸으면 true**.
+  Future<bool> addItem({
     required String storeId,
     required String storeName,
     required CartItemEntity item,

@@ -11,6 +11,8 @@ import 'package:qradar/domain/entities/payment_failure.dart';
 import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
 import 'package:qradar/presentation/customer/cart/widgets/cart_price_change_banner.dart';
+import 'package:qradar/presentation/customer/checkout/providers/client_update_providers.dart';
+import 'package:qradar/presentation/customer/checkout/update_required_page.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_blocked_sheet.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_price_changed_sheet.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
@@ -71,6 +73,15 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         : '주문';
 
     try {
+      // 최소 클라이언트 수준 게이트 (H-01): 구버전임이 확인됐을 때만 막는다. 확인 실패는 통과 (선검증과 같은 원칙).
+      if (await ref.read(checkClientUpdateRequiredUseCaseProvider)()) {
+        if (!mounted) return;
+        setState(() => _processing = false);
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const UpdateRequiredPage()),
+        );
+        return;
+      }
       // 선검증 (권위 아님 — design D1). 위반을 직접 읽어서 확인했을 때만 막는다.
       // 읽기 실패/타임아웃(3초)은 UseCase 가 "위반 없음"으로 돌려주므로 결제는 그대로 진행된다 (spec §8.2).
       // 재가격(payment_price_authority R9): 같은 읽기로 카트 라인을 현재 문서 가격으로 다시 계산한다.

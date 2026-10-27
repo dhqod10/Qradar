@@ -8,7 +8,7 @@ import path from 'node:path';
 import { handleVerifyTossPayment } from '../lib/verifyTossPayment.js';
 import { classifyCartMenu } from '../lib/menuVisibility.js';
 import { resolveSelectableOptions, validateSelection, parseOptionGroup, optionRefKey } from '../lib/optionPricing.js';
-import { computeCartAmount } from '../lib/cartPricing.js';
+import { computeCartAmount, isValidLineQuantity, mergeLineQuantity, MAX_LINE_QUANTITY } from '../lib/cartPricing.js';
 import { applyServerPricing } from '../lib/orderBuilder.js';
 import { resolvePriceMode, MAX_OPTION_GROUP_DOCS } from '../lib/priceGate.js';
 import { buildRejectionMessage } from '../lib/paymentGate.js';
@@ -78,6 +78,14 @@ for (const c of pricingContract.cases) {
     assert.equal(r.discount, 0);
   });
 }
+
+for (const c of pricingContract.quantityCases) {
+  test(`quantity 경계: ${c.name}`, () => assert.equal(isValidLineQuantity(c.quantity), c.valid));
+}
+for (const c of pricingContract.mergeCases) {
+  test(`quantity 병합: ${c.name}`, () => assert.equal(mergeLineQuantity(c.existing, c.added), c.expect));
+}
+test('quantity 상한 상수는 99 (Dart kMaxLineQuantity 와 같은 값 — 골든이 경계를 고정)', () => assert.equal(MAX_LINE_QUANTITY, 99));
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 금액 게이트 (verifyTossPayment 2-c)
@@ -445,6 +453,18 @@ test('조합: 게이트 off + 가격 enforce — 조용히 통과하지 않는�
   assert.ok(r.err.message.endsWith('[PRICE_MISMATCH:m1]'));
   assert.equal(r.spy.confirm, 0);
   assert.equal(reader.calls.getMenuDocs, 1);
+});
+
+test('H-01: 거절 기록에 clientLevel 이 남는다 (신버전 = 숫자, 구버전 = null) — 구버전 비율을 재는 수단, 판정에는 쓰지 않는다', async () => {
+  const mk = (extra) => { const q = cartReq([line('m1', { unit: 1, total: 1 })]); Object.assign(q.data, extra); return q; };
+  const reader = fakeReader({ storeMenus: { m1: M } });
+  const a = await run({ reader, priceMode: () => 'shadow' }, mk({ clientLevel: 1 }));
+  assert.equal(a.db.state.rejections[0].detail.clientLevel, 1);
+  const b = await run({ reader, priceMode: () => 'shadow' }, mk({}));
+  assert.equal(b.db.state.rejections[0].detail.clientLevel, null);
+  const c = await run({ reader, priceMode: () => 'shadow' }, mk({ clientLevel: 'evil' }));
+  assert.equal(c.db.state.rejections[0].detail.clientLevel, null);
+  assert.equal(b.err, null, '구버전이어도 shadow 는 결제를 막지 않는다');
 });
 
 test('조합: 게이트 off + 가격 enforce — 정상 카트는 통과', async () => {

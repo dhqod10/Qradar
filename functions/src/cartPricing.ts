@@ -12,6 +12,22 @@
  * `priceDelta` 를 **합산**하는 TS 코드는 이 파일 1곳뿐이다 (grep 가드).
  */
 
+/**
+ * 한 라인의 수량 상한 — Dart `kMaxLineQuantity`(cart_pricing.dart)와 **같은 값**이다 (test_report F-01).
+ * `test_fixtures/cart_pricing_contract.json` 의 `quantityCases` / `mergeCases` 가 양쪽을 같은 파일로 고정한다.
+ */
+export const MAX_LINE_QUANTITY = 99;
+
+/** 1 이상 MAX_LINE_QUANTITY 이하의 정수. Dart `isValidLineQuantity` 와 같은 경계. */
+export function isValidLineQuantity(q: unknown): q is number {
+  return typeof q === "number" && Number.isInteger(q) && q >= 1 && q <= MAX_LINE_QUANTITY;
+}
+
+/** 같은 라인에 수량을 더한 결과(상한으로 자름). 서버 판정에는 쓰이지 않고 Dart 와의 골든 대칭을 위해 둔다. */
+export function mergeLineQuantity(existing: number, added: number): number {
+  return Math.min(existing + added, MAX_LINE_QUANTITY);
+}
+
 export function computeLinePrice(args: { basePrice: number; priceDeltas: readonly number[] }): number {
   let unit = args.basePrice;
   for (const d of args.priceDeltas) unit += d;

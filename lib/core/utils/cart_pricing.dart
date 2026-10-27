@@ -12,6 +12,23 @@
 //   subtotal     = Σ lineTotal
 //   expected     = subtotal − discount        (discount 는 항상 0 — spec §1-3)
 
+/// 한 라인의 수량 상한. 앱 `QuantityStepper` 의 1~99 이자 **서버 `MAX_LINE_QUANTITY`(cartPricing.ts) 와 같은 값**이다 —
+/// 둘이 갈라지면 앱이 만든 정상 카트를 서버가 `PRICE_MISMATCH` 로 거절한다 (test_report F-01).
+/// `test_fixtures/cart_pricing_contract.json` 의 `quantityCases` / `mergeCases` 가 양쪽을 같은 파일로 고정한다.
+const int kMaxLineQuantity = 99;
+
+/// 수량이 유효한가: 1 이상 [kMaxLineQuantity] 이하의 **정수**. 서버 `isValidLineQuantity` 와 같은 경계.
+bool isValidLineQuantity(num quantity) =>
+    quantity == quantity.truncate() &&
+    quantity >= 1 &&
+    quantity <= kMaxLineQuantity;
+
+/// 같은 (메뉴, 옵션) 라인에 수량을 더할 때의 결과. 상한을 넘기지 않는다 — 넘기면 서버가 거절하는 카트가 만들어진다.
+int mergeLineQuantity(int existing, int added) {
+  final sum = existing + added;
+  return sum > kMaxLineQuantity ? kMaxLineQuantity : sum;
+}
+
 /// 라인 단가 = 기준가 + 선택 옵션 가격 증감의 합. 음수 증감이 정상이다 (텀블러 −300).
 int computeLinePrice({
   required int basePrice,

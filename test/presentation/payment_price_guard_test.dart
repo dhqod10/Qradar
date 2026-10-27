@@ -36,17 +36,16 @@ String _code(String path) => _stripComments(File(path).readAsStringSync());
 List<File> get _appFiles => _files('lib', '.dart', skip: ['lib/dev/']);
 List<File> get _tsFiles => _files('functions/src', '.ts');
 
-/// 거절 화면·카트 가격 변동·시트가 문구를 그리는 파일 전부.
-const _copyFiles = [
-  'lib/presentation/customer/checkout/payment_failure_copy.dart',
-  'lib/presentation/customer/checkout/payment_result_page.dart',
-  'lib/presentation/customer/checkout/checkout_page.dart',
-  'lib/presentation/customer/checkout/widgets/checkout_price_changed_sheet.dart',
-  'lib/presentation/customer/checkout/widgets/checkout_blocked_sheet.dart',
-  'lib/presentation/customer/cart/cart_page.dart',
-  'lib/presentation/customer/cart/widgets/cart_line_tile.dart',
-  'lib/presentation/customer/cart/widgets/cart_price_change_banner.dart',
-  'lib/presentation/customer/cart/widgets/cart_availability_banner.dart',
+/// 거절 화면·카트 가격 변동·시트가 문구를 그리는 곳 — **디렉터리 단위**로 스캔한다 (닫힌 파일 목록은 새 문구 파일이 생기면
+/// 무방비다, test_report F-05). 결제·카트 presentation 전체 + 담기 상한 안내가 있는 메뉴 상세.
+final List<String> _copyFiles = [
+  for (final dir in [
+    'lib/presentation/customer/checkout',
+    'lib/presentation/customer/cart',
+  ])
+    for (final f in _files(dir, '.dart')) f.path,
+  'lib/presentation/customer/order/menu/menu_item_detail_page.dart',
+  'lib/presentation/admin/widgets/admin_price_audit_card.dart',
 ];
 
 void main() {
@@ -348,6 +347,26 @@ void main() {
       }
     });
 
+    test(
+      '원 단위 숫자 정규식이 변형을 잡는다 (양성 대조: 17,000원 · 17000원 · 17000 원 · 17,000 원)',
+      () {
+        final re = RegExp(r'\d[\d,]*\s*원');
+        for (final t in ['17,000원', '17000원', '17000 원', '17,000 원']) {
+          expect(re.hasMatch(t), isTrue, reason: t);
+        }
+        expect(re.hasMatch('최신 가격으로 다시 담기'), isFalse);
+      },
+    );
+
+    test('금지어 가드는 결제·카트 디렉터리 전체를 본다 (파일이 늘어도 무방비가 아니다)', () {
+      expect(_copyFiles.length, greaterThanOrEqualTo(15));
+      expect(
+        _copyFiles.any((p) => p.endsWith('payment_menu_list_card.dart')),
+        isTrue,
+        reason: '이전 9파일 목록 밖이던 파일',
+      );
+    });
+
     test('문구에 마크다운 백틱이 없다 (F-04 재발 방지: 화면에 백틱이 그대로 찍힌다)', () {
       for (final p in _copyFiles) {
         expect(_code(p).contains('`'), isFalse, reason: p);
@@ -364,7 +383,7 @@ void main() {
           'lib/presentation/customer/checkout/payment_result_page.dart',
         );
         for (final c in [copy, result]) {
-          expect(RegExp(r'\d{1,3}(,\d{3})*원').hasMatch(c), isFalse);
+          expect(RegExp(r'\d[\d,]*\s*원').hasMatch(c), isFalse);
           expect(c.contains('PriceFormatter'), isFalse);
           expect(c.contains('price_formatter.dart'), isFalse);
         }
@@ -409,8 +428,13 @@ void main() {
       },
     );
 
-    test('Color(0x...) 하드코딩이 새 파일에 없다 (AppColors 토큰만)', () {
-      for (final p in _copyFiles) {
+    test('Color(0x...) 하드코딩이 새 파일에 없다 (AppColors 토큰만 — 기존 파일의 선행 이슈는 범위 밖)', () {
+      for (final p in const [
+        'lib/presentation/customer/checkout/payment_failure_copy.dart',
+        'lib/presentation/customer/checkout/widgets/checkout_price_changed_sheet.dart',
+        'lib/presentation/customer/cart/widgets/cart_price_change_banner.dart',
+        'lib/presentation/admin/widgets/admin_price_audit_card.dart',
+      ]) {
         expect(RegExp(r'Color\(0x').hasMatch(_code(p)), isFalse, reason: p);
         expect(
           RegExp(r'Colors\.(white|black)').hasMatch(_code(p)),

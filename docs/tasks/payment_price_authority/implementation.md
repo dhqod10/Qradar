@@ -182,3 +182,51 @@ Rules-1/2 는 `firestore.rules` 의 서로 다른 블록만 만진다. **같은 
 ## 9. 코드 생성
 
 필요 없음 — 신규 freezed 클래스 없음.
+
+---
+
+## 10. T-1 재작업 (C1~C4) — test_report F-01~F-05, H-01, H-02
+
+### 10.1 커밋 경계 (제안 — 커밋하지 않았다)
+
+| 제안 커밋 | 내용 | 배포 |
+|---|---|---|
+| **C1** F-01 수량 경계 | `cart_pricing.dart`(`kMaxLineQuantity=99` · `isValidLineQuantity` · `mergeLineQuantity`) · `cartPricing.ts`(`MAX_LINE_QUANTITY` · `isValidLineQuantity` · `mergeLineQuantity`, `priceGate.ts` 는 여기서 import) · `cart_local_data_source.dart`(병합 clamp, **잘렸으면 true 반환**) → `CartRepository.addItem`/`AddToCartUseCase` 가 `Future<bool>` · 메뉴 상세 SnackBar 안내 · `cart_pricing_contract.json` 의 `quantityCases`(7)·`mergeCases`(4) · Dart/TS 골든 · `cart_quantity_clamp_test.dart` | **앱 ⑥ 빌드에 포함 필수.** 서버 변경 없음(상수 이동) |
+| **C2** H-01 최소 버전 게이트 | 아래 §10.2 | 앱 ⑥ + 서버(기록 한 줄) ⑤ |
+| **C3** F-02 서명 리셋 | `PriceRepricedCartSignatureNotifier` 가 카트가 null 이 되면 서명 null | 앱 ⑥ |
+| **C4** F-05 가드 보강 | `payment_price_guard_test` 금지어·백틱 가드를 결제·카트 디렉터리 전체로, 원 단위 정규식 `\d[\d,]*\s*원`, Rules `PPA-1h`(approvedAt 단독 deny) · `PPA-C*` | — |
+| 문서 | `deploy_runbook.md`(⑥-c · 중단 기준 10 · 기록 표 · ⑧ 확인) · `design.md` §3.0(F-04 7행) · `backlog.md`(PPA-P2 에 H-02 묶음, PPA-P8) | — |
+
+### 10.2 C2 — 최소 버전 게이트: 어디서 버전을 읽는가
+
+기존에 **버전 체크·강제 업데이트 패턴은 없었다**(`package_info`·`minVersion` 류 0건 — grep). 앱 문자열 버전 대신 **정수 "결제 클라이언트 수준"** 을 신설했다 (패키지 추가 없이, 빌드가 가진 *능력*을 센다).
+
+- **앱의 수준**: `lib/core/constants/app_client_level.dart` `kPaymentClientLevel = 1` (재가격 R9 + 새 거절 화면이 들어간 빌드).
+- **서버 설정**: Firestore `config/app` 문서의 `minClientLevel`(정수). 기존 `config/{docId}` Rules 로 충분하다 — 로그인 사용자 read, 쓰기는 admin(Console 포함). 하네스 `PPA-C1~C3`. 읽기는 `Source.server`(캐시 금지, `AppConfigRemoteDataSource`).
+- **비교·fail 방향**: `CheckClientUpdateRequiredUseCase` — `min > clientLevel` **확인됐을 때만** `true`. 문서·필드 없음 / 예외 / 3초 시간 초과는 전부 `false`(막지 않음). 순수 판정 `core/utils/client_update.dart`. 단위 테스트가 네 방향을 고정, 위젯 테스트가 "확인 실패 → 결제 진행" 을 카트·체크아웃 양쪽에서 고정.
+- **호출 지점**: 카트 `결제하기` 탭 직전(`cart_page.dart` `_onCheckout`)과 체크아웃 결제 탭 직전(`checkout_page.dart` `_handlePay`) 두 곳 → `UpdateRequiredPage`(`앱을 업데이트해 주세요` · 돈 줄 · `확인`). 서버 문자열 보간 없음, 금지어·백틱 가드가 이 디렉터리를 이미 스캔한다.
+- **서버 쪽 한 줄**: 앱은 `verifyTossPayment` 호출에 `clientLevel: 1` 을 싣고, 서버는 **금액 거절 기록**의 `detail.clientLevel` 에 남긴다(숫자 아니면 `null`; 판정에는 쓰지 않는다). 구버전 비율을 재는 수단이다. 테스트: `priceAuthority.test.mjs` H-01.
+- ⚠️ **한계(솔직히)**: 이 게이트는 **게이트 코드가 든 빌드만** 막을 수 있다. 이 수정 이전에 이미 설치된 앱(= 문제의 구버전)에는 게이트가 없어 스스로 업데이트 화면을 띄울 수 없다. 그래서 런북 ⑥-c 는 게이트 배포와 함께 **스토어 버전 분포 + `clientLevel==null` 기록**으로 구버전 비율을 *숫자로* 확인하고 임계값을 넘으면 ⑦ 로 가지 않게 했다(중단 기준 10). 구버전을 서버에서 강제로 막으려면 서버가 `clientLevel` 부재 요청을 거절해야 하는데, 구버전은 그 거절 사유도 몰라 갈래 C 를 띄우고 **가격이 안 바뀐 정상 결제까지 막으므로** 이번에 만들지 않았다 — 필요하면 별도 결정(`PAYMENT_MIN_CLIENT_LEVEL` 서버 스위치 + 스토어 강제 업데이트).
+- 신규 파일: `app_client_level.dart` · `client_update.dart` · `app_config_repository.dart`(+Impl, `AppConfigRemoteDataSource`) · `check_client_update_required_use_case.dart` · `checkout/providers/client_update_providers.dart` · `checkout/update_required_page.dart`. `firestore_paths.dart` 에 `appConfigDocId`.
+
+### 10.3 C1 — 조용한 데이터 손실을 피한 방법
+
+병합이 99 로 잘리면 `addItem` 이 `true` 를 돌려주고(`CartLocalDataSource` → `CartRepository` → `AddToCartUseCase`) 메뉴 상세가 SnackBar 를 `한 메뉴는 최대 99개까지 담을 수 있어요. 99개로 맞췄어요` 로 바꿔 3초 보인다(평소 `카트에 담겼어요`). 새 화면·설계 변경 없음. 수량은 서버 `MAX_LINE_QUANTITY` 와 **같은 값을 별개로 정의**하되 같은 fixture(`quantityCases` 0/1/99/100/-1/1.5/1000000, `mergeCases` 60+60=99 등)로 양쪽을 고정한다 — 한쪽을 100 으로 바꾸면 그 쪽 골든이 깨진다(아래 변이).
+
+### 10.4 F-03 / F-04 / H-02 처리 (코드 변경 없음)
+
+- **F-03**: 코드는 맞다(tester 가 실 Firestore 로 12건 일회성 확인). 에뮬레이터 하네스는 **후속 `PPA-P8`** 로 backlog 등재만 했다. 이번에 실 에뮬레이터 테스트를 새로 작성하지 않았다.
+- **F-04**: 동작 결함 없음(읽기 전용 표시, 판정 출처 = 병합 함수 / 주문 문서). `design.md` §3.0 에 **7행(6-14~6-20)** 을 추가해 표를 완성했다. 새 코드 경로 없음.
+- **H-02**: 코드 불변. `backlog.md` **PPA-P2** 에 "옵션 `priceDelta` 조작" 과 "옵션 비활성으로 저가 선택지 제거" 를 한 항목으로 묶었다 (착수 근거 = 감사 도구 `storePairs` + 옵션 비활성 건수 — 후자는 도구가 아직 세지 않는다).
+
+### 10.5 검증 (재작업 후)
+
+| 항목 | 결과 |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **914 통과** (재작업 전 884) |
+| `functions` `npm test` | **323 통과** (재작업 전 310) |
+| `test_rules` | **463/463 통과** (재작업 전 457; 신규 `PPA-1h` · `PPA-C1~C3`) |
+| 변이 (이번 batch 신규 15종) | **전건 검출**: Dart 병합 clamp 제거 · Dart 상한 100 · Dart 정수 검사 제거 · TS 상한 100 · TS clamp 제거 · TS 정수 검사 제거 · 서명 리셋 제거 · 금지어를 이전 9파일 밖(`payment_menu_list_card.dart`)에 · `17000 원` · Rules `approvedAt` 절 제거(`PPA-1h` FAIL 확인) · 게이트 fail-closed(catch → true) · 카트 게이트 호출 제거 · 체크아웃 게이트 호출 제거 · 판정 부등호 뒤집기 · 서버 `clientLevel` 미기록 |
+
+`dart format` 은 이번 batch 에서 새로 만든 파일에만 돌렸다.
