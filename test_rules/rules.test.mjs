@@ -943,6 +943,48 @@ await run('PSA-A8c brand create 정상 payload (회귀)', 'allow', () =>
 await run('PSA-A8d admin brand create (승인 메타 허용 — 해당 없음, 회귀)', 'allow', () =>
   setDoc(doc(asAdmin, 'brands', 'psa_b4'), { name: 'N', status: 'approved', approvedBy: ADMIN, approvedAt: Timestamp.now() }));
 
+// ── C1 (T-1 재작업): F-03 게이트 입력 status 의 create 케이스 + rejectedAt create 금지 ─────────────
+// G1 의 입력은 status 와 approvedAt 둘이다. approvedAt 은 A1~A7 로 완비됐고, status 는 이 3건이 채운다.
+await run('PSA-A9 owner 매장 create 에 status:approved (F-03)', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a9'), { ...PSA_STORE, status: 'approved' }));
+await run('PSA-A9b owner 매장 create 에 status:rejected (F-03)', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a9b'), { ...PSA_STORE, status: 'rejected' }));
+await run('PSA-A9c owner 매장 create 에 status 부재 (F-03 — 앱은 항상 pending 을 쓰지만 Rules 는 부재 허용)', 'allow', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a9c'), { ownerId: OWNER, name: 'N' }));
+await run('PSA-A10 owner 매장 create 에 rejectedAt 포함 (§6.8 신규 필드)', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a10'), { ...PSA_STORE, rejectedAt: Timestamp.now() }));
+
+// ── C1 (T-1 재작업): F-02 rejected → 다른 상태 전이는 승인 메타를 null 로 강제 ──────────────────────
+// 반려(rejectFields)가 approvedAt/approvedBy 에 값을 남긴다 → status 만 'pending' 으로 되돌리면 canSellNow 가 참이 된다.
+// 제약은 점주·브랜드 분기 '내부'에만 있다. allow update 전체에 걸면 admin 승인(approveFields 가 approvedAt 에 값을 씀)이 막힌다.
+const rejectedStore = (id, extra = {}) => seed((db) => setDoc(doc(db, 'stores', id), {
+  ownerId: OWNER, name: 'R', status: 'rejected',
+  approvedBy: ADMIN, approvedAt: Timestamp.now(), rejectedReason: '사유', ...extra,
+}));
+const CLEAR = { status: 'pending', approvedBy: null, approvedAt: null, rejectedReason: null };
+await rejectedStore('psa_f02_o1');
+await run('PSA-F02a owner: rejected → pending, 승인 메타를 그대로 둠 (G1 우회)', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', 'psa_f02_o1'), { status: 'pending' }));
+await rejectedStore('psa_f02_b1', { brandId: B_A });
+await run('PSA-F02b brand holder: rejected → pending, 승인 메타를 그대로 둠 (G1 우회)', 'deny', () =>
+  updateDoc(doc(asBrand, 'stores', 'psa_f02_b1'), { status: 'pending' }));
+await rejectedStore('psa_f02_o2');
+await run('PSA-F02c owner: rejected → pending 인데 approvedBy 만 클리어 (approvedAt 잔존)', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', 'psa_f02_o2'), { status: 'pending', approvedBy: null }));
+await rejectedStore('psa_f02_o3');
+await run('PSA-F02d 회귀: owner 정상 재제출 — rejected → pending + 승인 메타 null 클리어', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', 'psa_f02_o3'), { ...CLEAR, updatedAt: serverTimestamp() }));
+await rejectedStore('psa_f02_b2', { brandId: B_A });
+await run('PSA-F02e 회귀: brand holder 정상 재제출 — rejected → pending + 승인 메타 null 클리어', 'allow', () =>
+  updateDoc(doc(asBrand, 'stores', 'psa_f02_b2'), { ...CLEAR, updatedAt: serverTimestamp() }));
+await rejectedStore('psa_f02_a1');
+await run('PSA-F02f 회귀: admin 승인 — rejected → approved (approvedAt 에 값을 씀)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'stores', 'psa_f02_a1'), {
+    status: 'approved', approvedBy: ADMIN, approvedAt: serverTimestamp(), rejectedReason: null, updatedAt: serverTimestamp() }));
+await rejectedStore('psa_f02_o4');
+await run('PSA-F02g 회귀: owner 가 rejected 를 유지한 채 다른 필드 수정 (status 불변 — 전이 아님)', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', 'psa_f02_o4'), { notice: 'x' }));
+
 // ═══════════════════════════════════════════════════════════════════════════
 // payment_server_authority — Rules-B (spec §10, §18.5 B1)
 // brands/{id}/private/profile (brandKey + PII), brandKeys, keyHistory

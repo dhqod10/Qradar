@@ -324,7 +324,9 @@ service cloud.firestore {
                     // 이것이 없으면 approvedAt 을 넣어 매장을 만드는 것이 게이트를 통과하는 가장 쉬운 방법이 된다.
                     && request.resource.data.get('approvedAt', null) == null
                     && request.resource.data.get('approvedBy', null) == null
-                    && request.resource.data.get('rejectedReason', null) == null;
+                    && request.resource.data.get('rejectedReason', null) == null
+                    // [F-02/§6.8] rejectedAt 도 승인 메타와 같은 계열의 권한 값이다 — 자가 설정 금지.
+                    && request.resource.data.get('rejectedAt', null) == null;
 
       // delete: admin 만. [payment_server_authority Rules-C] 점주 하드 삭제 제거 — "삭제·재생성으로 적립 재개" 경로 차단,
       // 진행 중 주문의 취소·환불(cancelTossPayment/processRefund 가 stores 를 읽는다)을 묶지 않는다.
@@ -338,6 +340,18 @@ service cloud.firestore {
                         || isStoreOwnerFieldUpdate(storeId)
                         || isStoreOwnerBrandUpdate());
 
+      // [payment_server_authority F-02 / Rules-A 신규 2] `rejected` 에서 벗어나는 전이는 승인 메타를 null 로 강제한다.
+      // 반려(rejectFields)가 approvedAt/approvedBy 에 값을 남기므로, 점주가 status 만 'pending' 으로 되돌리면
+      // canSellNow(pending && approvedAt != null) 가 참이 된다 (G1 우회). 정상 재제출은 isResubmit 이 메타를 null 로 지운다.
+      // ⚠️ 이 함수는 allow update 전체가 아니라 점주·브랜드 분기 '내부'에만 건다 — admin 승인(approveFields)은
+      //    rejected → approved 로 올리면서 approvedAt 에 값을 쓰므로, 전체에 걸면 admin 승인이 막힌다.
+      function leavingRejectedClearsApproval() {
+        return !(resource.data.get('status', '') == 'rejected'
+                 && request.resource.data.get('status', '') != 'rejected')
+               || (request.resource.data.get('approvedAt', null) == null
+                   && request.resource.data.get('approvedBy', null) == null);
+      }
+
       // 점주가 자기 매장 핵심/운영 필드 업데이트.
       // - 핵심 필드 수정(updateStoreCoreFields): status=pending 회귀 + submittedBy/At 갱신 허용.
       // - 재제출(T3): approvedBy/approvedAt/rejectedReason null 클리어 허용.
@@ -346,6 +360,7 @@ service cloud.firestore {
       // - approvedBy / approvedAt 는 본인이 직접 승격 불가 (재제출 null 클리어만 허용).
       function isStoreOwnerFieldUpdate(storeId) {
         return isStoreOwner(storeId)
+          && leavingRejectedClearsApproval()
           && onlyChangedFields([
             // 운영 필드
             'name', 'imageUrl', 'location', 'phone', 'address',
@@ -378,6 +393,7 @@ service cloud.firestore {
       // 동일하게 status 자기 승격 차단 + approvedBy/approvedAt 보호 적용.
       function isStoreOwnerBrandUpdate() {
         return isBrandHolder(resource.data.get('brandId', ''))
+          && leavingRejectedClearsApproval()
           && onlyChangedFields([
             'name', 'imageUrl', 'location', 'phone', 'address',
             'description', 'menuCategories', 'businessHours',
