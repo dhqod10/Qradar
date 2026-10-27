@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/errors/unauthenticated_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/cart_pricing.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/cart_item_entity.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
@@ -682,7 +683,7 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
       );
 
       final selectedOptions = <SelectedOption>[];
-      var unitPriceWithOptions = widget.menuItem.basePrice;
+      final priceDeltas = <int>[];
       for (final g in groups) {
         final picked = selectedMap[g.id] ?? const <String>{};
         for (final item in g.items) {
@@ -694,10 +695,15 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
               label: item.label,
               priceDelta: item.priceDelta,
             ));
-            unitPriceWithOptions += item.priceDelta;
+            priceDeltas.add(item.priceDelta);
           }
         }
       }
+      // 금액 산술은 서버(cartPricing.ts)와 같은 식 하나다 — 여기서 직접 합산하지 않는다 (payment_price_authority R7).
+      final unitPriceWithOptions = computeLinePrice(
+        basePrice: widget.menuItem.basePrice,
+        priceDeltas: priceDeltas,
+      );
 
       final cartItem = CartItemEntity(
         cartItemId: const Uuid().v4(),
@@ -707,7 +713,10 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
         quantity: quantity,
         selectedOptions: selectedOptions,
         unitPriceWithOptions: unitPriceWithOptions,
-        lineTotal: unitPriceWithOptions * quantity,
+        lineTotal: computeLineTotal(
+          unitPrice: unitPriceWithOptions,
+          quantity: quantity,
+        ),
       );
 
       await ref.read(addToCartUseCaseProvider).call(

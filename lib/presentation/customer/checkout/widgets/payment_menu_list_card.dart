@@ -11,11 +11,15 @@ class PaymentMenuListCard extends StatelessWidget {
     required this.header,
     required this.names,
     this.margin = const EdgeInsets.only(top: 16),
+    this.icon = Icons.remove_circle_outline_rounded,
   });
 
   final String header;
   final List<String> names;
   final EdgeInsetsGeometry margin;
+
+  /// 행 아이콘. 사유별로 다르다 (품절 계열: 기본, 가격: price_change_outlined, 옵션: tune_rounded).
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -56,11 +60,7 @@ class PaymentMenuListCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.remove_circle_outline_rounded,
-                          size: 16,
-                          color: AppColors.textMuted,
-                        ),
+                        Icon(icon, size: 16, color: AppColors.textMuted),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(

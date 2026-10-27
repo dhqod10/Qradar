@@ -49,7 +49,7 @@ class MenuOverrideModel {
       masterMenuItemId: doc.id,
       storeId: storeId,
       brandId: data['brandId'] as String? ?? '',
-      priceOverride: data['priceOverride'] as int?,
+      priceOverride: (data['priceOverride'] as num?)?.toInt(),
       excluded: data['excluded'] as bool? ?? false,
       soldOut: data['soldOut'] as bool? ?? false,
       disabledOptionGroupIds: List<String>.from(

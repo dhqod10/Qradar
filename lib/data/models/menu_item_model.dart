@@ -72,7 +72,20 @@ class MenuItemModel {
     DocumentSnapshot<Map<String, dynamic>> doc, {
     required String storeId,
   }) {
-    final data = doc.data() ?? const <String, dynamic>{};
+    return MenuItemModel.fromData(
+      doc.id,
+      doc.data() ?? const <String, dynamic>{},
+      storeId: storeId,
+    );
+  }
+
+  /// 문서 데이터 → 모델. 값 해석(기본값·`optionGroupRefs` 정규화)의 단일 경로다.
+  /// 서버 `menuVisibility.ts` 와의 교차 골든 테스트도 이 경로를 탄다 (payment_price_authority).
+  factory MenuItemModel.fromData(
+    String id,
+    Map<String, dynamic> data, {
+    required String storeId,
+  }) {
     final rawRefs = (data['optionGroupRefs'] as List<dynamic>?) ?? const [];
     final rawTags = (data['tags'] as List<dynamic>?) ?? const [];
     final rawDisabledGroups =
@@ -80,7 +93,7 @@ class MenuItemModel {
     final rawDisabledItems =
         (data['disabledOptionItemIds'] as List<dynamic>?) ?? const [];
     return MenuItemModel(
-      id: doc.id,
+      id: id,
       storeId: storeId,
       name: (data['name'] as String?) ?? '',
       imageUrl: (data['imageUrl'] as String?) ?? '',

@@ -316,7 +316,12 @@ stateDiagram-v2
 - 핵심 필드 (priceOverride / excluded) — `status==approved` 일 때만 적용
 - 운영 필드 (soldOut / disabledOption*) — status 무관 즉시 적용
 
-**Rules**: `stores/{storeId}/menuOverrides` create/update/delete 는 `admin || isStoreOwner(storeId) || isBrandHolder(store.brandId)` 모두 허용. 즉 점주가 핵심 필드(priceOverride/excluded) 도 직접 write 가능하다는 의미가 됨 — **확인 필요** 점주가 가격을 임의로 set 하는 게 차단되는지 (Repository `_assertBrandOwnership` 가 brand role 일 때만 검증).
+**Rules (payment_price_authority Rules-1, 2026-10-27)**: `admin` · `brandHolder` 는 create/update/delete 전부 가능하다(제출·승인·반려). **점주(`storeOwner`)는 승인 상태의 핵심 필드를 쓸 수 없다** — create 는 `approvedBy`/`approvedAt` 부재·null + (`status != 'approved'` 또는 `priceOverride == null && excluded == false`) + `status ∈ {pending, approved, rejected}`, update 는 운영 필드(`soldOut` `disabledOptionGroupIds` `disabledOptionItemIds` `updatedBy` `updatedAt`)만. 위 표의 점주 전이 두 줄(운영 필드 신규 `status='approved'` / partial update)은 그대로 통과한다. 이전에는 점주가 `{status:'approved', priceOverride:1}` 을 직접 쓸 수 있어 "핵심 필드는 approved 일 때만 적용" 분기가 의미를 갖지 못했다. 상세: [`data_ownership.md §2.6`](./data_ownership.md).
+
+> **order 의 `→ paid` 진입 조건에 서버 금액 일치가 추가된다** (§2.2, payment_price_authority): `PAYMENT_PRICE_MODE=enforce` 에서 `verifyTossPayment` 가 카트 금액을 문서에서 다시 계산해 불일치면 **주문 생성 전에** 거절한다. 새 status 는 없고 거절은 전이가 아니라 **진입 차단**이다.
+
+> **알려진 우회로 (Q8 ⓑ, 현행 유지)**: `priceOverride` 의 승인 요건과 별개로 브랜드 마스터 메뉴가 store-scope 옵션 그룹을 참조하면 그 옵션의 `priceDelta` 는 가맹점주가 승인 없이 즉시 바꾼다. 서버는 문서 값을 그대로 권위로 쓴다(후속 P2).
+
 
 ---
 

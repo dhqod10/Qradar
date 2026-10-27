@@ -403,6 +403,10 @@ class _QuickReorderCardState extends ConsumerState<QuickReorderCard> {
     return ok == true;
   }
 
+  // [허용 목록 1건 — payment_price_authority 가드 7] 단가 역산(lineTotal ~/ quantity)이 남은 유일한 곳이다.
+  // 사유: 과거 주문(orderLogs)에는 단가 판정 출처가 없다. 이 값은 옛 가격일 수 있으나 돈 경로가 아니다 — 담긴 라인은
+  // 체크아웃/카트 진입 시 재가격(ValidateCheckoutUseCase → ApplyRepricedCartUseCase)이 현재 문서 가격으로 교정한다.
+  // 홈 화면의 표시 정확성은 backlog N5.
   static int _unitPriceFromLineTotal({
     required int lineTotal,
     required int quantity,

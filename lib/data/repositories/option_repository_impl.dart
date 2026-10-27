@@ -1,3 +1,4 @@
+import 'package:qradar/core/utils/option_availability.dart';
 import 'package:qradar/data/datasources/remote/option_remote_data_source.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/option_group_entity.dart';
@@ -53,31 +54,12 @@ class OptionRepositoryImpl implements OptionRepository {
       }
     });
     final results = await Future.wait(futures);
-    // active=false 인 그룹은 고객 화면에서 제외 (sub-phase 7 B-3)
-    final groups = results
-        .whereType<OptionGroupEntity>()
-        .where((g) => g.active)
-        .toList(growable: false);
-
-    // sub-phase 5 — 점주 비활성 필터 적용
-    if (disabledGroupIds.isEmpty && disabledItemIds.isEmpty) return groups;
-
-    final filtered = <OptionGroupEntity>[];
-    for (final group in groups) {
-      // 그룹 전체 비활성: 통째로 제외
-      if (disabledGroupIds.contains(group.id)) continue;
-
-      // 항목 필터: compositeId = "{groupId}_{itemId}"
-      if (disabledItemIds.isEmpty) {
-        filtered.add(group);
-        continue;
-      }
-      final filteredItems = group.items.where((item) {
-        final compositeId = '${group.id}_${item.id}';
-        return !disabledItemIds.contains(compositeId);
-      }).toList(growable: false);
-      filtered.add(group.copyWith(items: filteredItems));
-    }
-    return filtered;
+    // 선택 가능 판정(active / 점주 비활성)은 순수 함수 하나다 — payment_price_authority R6.
+    // 서버 optionPricing.ts 와 같은 규칙이며 교차 골든으로 고정된다. 여기에 판정을 남기지 않는다.
+    return resolveSelectableOptions(
+      groups: results.whereType<OptionGroupEntity>(),
+      disabledGroupIds: disabledGroupIds,
+      disabledItemIds: disabledItemIds,
+    );
   }
 }

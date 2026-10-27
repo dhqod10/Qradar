@@ -130,11 +130,13 @@ void main() {
       }
     });
 
-    test('ⓑ 알려진 6개 사유 각각이 design §3.1 의 헤드라인·주 버튼을 가진다', () {
+    test('ⓑ 알려진 8개 사유 각각이 design §3.1 의 헤드라인·주 버튼을 가진다', () {
       const expectedHeadline = {
         PaymentFailureReason.menuSoldOut: '품절된 메뉴가 있어요',
         PaymentFailureReason.menuExcluded: '판매가 중단된 메뉴가 있어요',
         PaymentFailureReason.menuNotFound: '메뉴 정보가 바뀌었어요',
+        PaymentFailureReason.priceMismatch: '메뉴 가격이 바뀌었어요',
+        PaymentFailureReason.optionUnavailable: '선택하신 옵션이 바뀌었어요',
         PaymentFailureReason.storeNotSellable: '지금은 이 매장에서 주문할 수 없어요',
         PaymentFailureReason.storeNotFound: '매장 정보를 찾을 수 없어요',
         PaymentFailureReason.readFailed: '일시적인 오류가 생겼어요',
@@ -143,6 +145,8 @@ void main() {
         PaymentFailureReason.menuSoldOut: '카트에서 확인하기',
         PaymentFailureReason.menuExcluded: '카트에서 확인하기',
         PaymentFailureReason.menuNotFound: '카트에서 확인하기',
+        PaymentFailureReason.priceMismatch: '최신 가격으로 다시 담기',
+        PaymentFailureReason.optionUnavailable: '카트에서 확인하기',
         PaymentFailureReason.storeNotSellable: '카트로 돌아가기',
         PaymentFailureReason.storeNotFound: '카트 비우고 메뉴 보러가기',
         PaymentFailureReason.readFailed: '카트로 돌아가기',
@@ -181,9 +185,17 @@ void main() {
 
     test('ⓓ CartLineAvailability 에 verified / ok 가 없다 (design N2)', () {
       final names = CartLineAvailability.values.map((v) => v.name).toSet();
-      expect(names, {'normal', 'soldOut', 'unavailable', 'rejectedByServer'});
+      // optionUnavailable 은 위반이다 (payment_price_authority design §5.5) — "확인됨" 이 아니다.
+      expect(names, {
+        'normal',
+        'soldOut',
+        'unavailable',
+        'optionUnavailable',
+        'rejectedByServer',
+      });
       expect(names.contains('verified'), isFalse);
       expect(names.contains('ok'), isFalse);
+      expect(names.contains('priceChecked'), isFalse);
     });
 
     test('돈 줄은 갈래 B 상수에만 있다', () {

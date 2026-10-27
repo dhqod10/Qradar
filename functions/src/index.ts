@@ -37,3 +37,15 @@ export { deleteStore } from "./deleteStore";
 // payment_server_authority — 임시 마이그레이션 (완료 후 정리 커밋으로 삭제: 배포 ⑪)
 export { migrateStoreApprovalMeta } from "./migrateStoreApprovalMeta";
 export { migrateBrandPrivateProfile } from "./migrateBrandPrivateProfile";
+
+// payment_price_authority — 가격 변경 이력 트리거 (R16, 상시). 문서 종류별 진입점이 같은 핵심(recordPriceChange)을 쓴다.
+export {
+  onMenuPriceWritten,
+  onBrandMenuPriceWritten,
+  onMenuOverridePriceWritten,
+  onOptionGroupPriceWritten,
+  onBrandOptionGroupPriceWritten,
+  onMasterOptionGroupPriceWritten,
+} from "./onMenuPriceWritten";
+// payment_price_authority — 임시 감사 도구 (읽기 전용, 완료 후 정리 커밋으로 삭제: 배포 ⑩)
+export { auditOrderPriceIntegrity } from "./auditOrderPriceIntegrity";

@@ -17,12 +17,25 @@
 
 export type RawDoc = Record<string, unknown>;
 
-/** 적용 결과 — 단가(basePrice)까지 포함한다 (spec Q6: N1 서버 가격 재계산이 이 반환값만 소비하면 되게). */
+/** 옵션 그룹 출처 (Dart `OptionScope`). 모르는 값은 `master` (Dart `OptionScope.fromString` 폴백과 같다). */
+export type OptionScope = "master" | "brand" | "store";
+
+/** 메뉴 → 옵션 그룹 참조 (Dart `OptionGroupRef`). */
+export interface OptionGroupRef {
+  scope: OptionScope;
+  id: string;
+}
+
+/**
+ * 적용 결과 — 단가(basePrice)와 옵션 그룹 참조까지 포함한다 (payment_price_authority: 금액 재계산이 이 반환값만 소비한다.
+ * `optionGroupRefs` 는 이미 읽은 문서에 있으므로 추가 읽기 0).
+ */
 export interface MergedMenu {
   basePrice: number;
   soldOut: boolean;
   disabledOptionGroupIds: string[];
   disabledOptionItemIds: string[];
+  optionGroupRefs: OptionGroupRef[];
 }
 
 function asBool(v: unknown, dflt: boolean): boolean {
@@ -33,12 +46,31 @@ function asStringList(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+/**
+ * `optionGroupRefs` 해석 — Dart `MenuItemModel.fromFirestore` 경로를 그대로 따른다 (골든이 고정):
+ * 객체가 아닌 요소는 건너뛰고, scope 부재/모르는 값 = master, id 부재 = ''.
+ */
+function asOptionGroupRefs(v: unknown): OptionGroupRef[] {
+  if (!Array.isArray(v)) return [];
+  const out: OptionGroupRef[] = [];
+  for (const e of v) {
+    if (typeof e !== "object" || e === null || Array.isArray(e)) continue;
+    const m = e as RawDoc;
+    const scope = m.scope === "brand" || m.scope === "store" ? m.scope : "master";
+    out.push({ scope, id: typeof m.id === "string" ? m.id : "" });
+  }
+  return out;
+}
+
 function asPrice(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : 0;
 }
 
-/** override.status 해석 — Dart `MenuOverrideModel`(부재='pending') → `EntityApprovalStatus.fromString`. */
-function overrideIsApproved(override: RawDoc): boolean {
+/**
+ * override.status 해석 — Dart `MenuOverrideModel`(부재='pending') → `EntityApprovalStatus.fromString`.
+ * **승인 분기의 유일한 구현이다** — 감사 도구(`auditOrderPriceIntegrity`)도 이 함수를 가져다 쓴다 (복제 금지, payment_price_authority 가드 5).
+ */
+export function overrideIsApproved(override: RawDoc): boolean {
   const raw = typeof override.status === "string" ? override.status : "pending";
   return raw !== "pending" && raw !== "rejected";
 }
@@ -58,6 +90,7 @@ export function applyOverrideForCustomer(args: {
       soldOut: asBool(master.soldOut, false),
       disabledOptionGroupIds: asStringList(master.disabledOptionGroupIds),
       disabledOptionItemIds: asStringList(master.disabledOptionItemIds),
+      optionGroupRefs: asOptionGroupRefs(master.optionGroupRefs),
     };
   }
   const approved = overrideIsApproved(override);
@@ -71,6 +104,8 @@ export function applyOverrideForCustomer(args: {
     soldOut: asBool(override.soldOut, false),
     disabledOptionGroupIds: asStringList(override.disabledOptionGroupIds),
     disabledOptionItemIds: asStringList(override.disabledOptionItemIds),
+    // override 는 옵션 그룹 참조를 바꾸지 않는다 — 마스터 것이다.
+    optionGroupRefs: asOptionGroupRefs(master.optionGroupRefs),
   };
 }
 
@@ -104,6 +139,7 @@ export function classifyCartMenu(args: {
       soldOut: asBool(storeMenu.soldOut, false),
       disabledOptionGroupIds: asStringList(storeMenu.disabledOptionGroupIds),
       disabledOptionItemIds: asStringList(storeMenu.disabledOptionItemIds),
+      optionGroupRefs: asOptionGroupRefs(storeMenu.optionGroupRefs),
     };
     if (!asBool(storeMenu.visible, true)) return { reason: "MENU_EXCLUDED", source: "store", merged: null };
     if (merged.soldOut) return { reason: "MENU_SOLD_OUT", source: "store", merged };

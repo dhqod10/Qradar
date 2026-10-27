@@ -156,13 +156,24 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | read | `isSignedIn()` |
 | create, update, delete | `admin OR storeOwner(storeId) OR brandHolder(store.brandId)` |
 
+> **`menuOverrides` 만 다르다 (payment_price_authority Rules-1, 2026-10-27)**: 점주는 **승인 상태의 핵심 필드를 쓸 수 없다.** 서버가 `priceOverride` 를 "권위 있는 금액" 으로 쓰기 시작해, UI 의 약속이던 승인 요건을 Rules 로 집행한다.
+>
+> | 주체 | create | update |
+> |---|---|---|
+> | `admin` · `brandHolder` | 제한 없음 (제출·승인·반려 모두) | 제한 없음 |
+> | `storeOwner` | `status ∈ {pending, approved, rejected}` + `approvedBy`/`approvedAt` 부재 또는 null + (`status != approved` 또는 `priceOverride == null && excluded == false`) | **운영 필드만**: `soldOut` `disabledOptionGroupIds` `disabledOptionItemIds` `updatedBy` `updatedAt` |
+>
+> 앱의 점주 정상 쓰기 둘(품절 토글의 W2 upsert — `status:'approved'` + 승인 메타 null + 핵심 필드 없음 / 가맹점 등록 시 제외 시드 — `status:'pending'` + `excluded:true`)은 통과한다. **모르는 `status` 문자열을 앱은 `approved` 로 읽으므로** 허용 목록으로 막는다. `create` 와 `update` 는 별개의 경로라 각각 제한한다(`onlyChangedFields` 는 update 전용). 하네스 `PPA-1*`(create) · `PPA-2*`(update) · `PPA-3*`(정상 흐름 회귀).
+
 **중요**:
 - store.brandId 가 채워진 가맹점이면 brand 본사도 write 가능. 개인 매장(brandId=null) 이면 brandHolder 조건은 자동 fail.
 - Repository 계층이 추가로 검증:
   - `MenuItemRepositoryImpl`: 개인 매장 메뉴는 owner only, 브랜드 매장 점포한정 메뉴는 brand only (Rules 보다 엄격)
   - `MenuOverrideRepositoryImpl`: 핵심 필드는 brand only, 운영 필드는 owner/brand 모두 가능
 
-⚠️ **방어 계층 일관성**: Rules 는 owner/brand/admin 모두 통과시키지만 Repository 가 case-by-case 로 제한. Rules 단에서 더 엄격히 갈라야 하는지 확인 필요.
+⚠️ **방어 계층 일관성**: `menuOverrides` 는 위 Rules-1 로 갈렸다. 나머지(`menuItems` 등)는 Rules 가 owner/brand/admin 모두 통과시키고 Repository 가 case-by-case 로 제한한다 — Rules 단에서 더 엄격히 갈라야 하는지 확인 필요.
+
+⚠️ **옵션 가격은 가격 승인 정책의 우회로다 (payment_price_authority §4-4 · Q8 ⓑ — 현행 유지 + 명시)**: `stores/{s}/optionGroups/{id}` 는 점주가 필드·타입 제약 없이 쓰고 `priceDelta` 변경이 **즉시** 효력을 갖는다. 브랜드 마스터 메뉴가 store-scope 옵션 그룹을 참조하면 가맹점이 승인 없이 그 메뉴의 옵션 가격을 바꿀 수 있고, 서버는 이제 그 문서 값을 "권위 있는 금액" 으로 쓴다(**서버가 우회를 공인한다**). 이 task 는 건수만 측정하고(감사 도구 ⓒ) 정책은 후속 P2 로 둔다. Rules 에 금액 필드 타입·범위 제약이 전무한 것은 P5.
 
 ### 2.7 `brands/{brandId}`
 
@@ -348,9 +359,10 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 
 | 컬렉션 | read | write | 내용 |
 |---|---|---|---|
-| `paymentGateRejections/{autoId}` | `admin` | **없음** (CF 전담) | `uid, storeId, reason(STORE_NOT_SELLABLE\|STORE_NOT_FOUND\|MENU_SOLD_OUT\|MENU_EXCLUDED\|MENU_NOT_FOUND\|READ_FAILED), detail{rawStatus,hasApprovedAt,violatedMenuItemIds,violatedMenuNames}, amount, createdAt`. **오탐 탐지 장치** — 거절이 악용 차단인지 데이터가 틀어져 정상 손님을 막은 것인지는 건수·분포로만 구분된다 |
+| `paymentGateRejections/{autoId}` | `admin` | **없음** (CF 전담) | `uid, storeId, reason(STORE_NOT_SELLABLE\|STORE_NOT_FOUND\|MENU_SOLD_OUT\|MENU_EXCLUDED\|MENU_NOT_FOUND\|PRICE_MISMATCH\|OPTION_UNAVAILABLE\|READ_FAILED), detail, amount, createdAt`. `detail` 은 품절 계열이면 `{rawStatus,hasApprovedAt,violatedMenuItemIds,violatedMenuNames}`, 금액 계열(`PRICE_MISMATCH`·`OPTION_UNAVAILABLE`·금액 게이트의 `READ_FAILED`)이면 `{clientAmount, serverExpected, delta(부호 있음), checks{c1..c6}, lines[{menuItemId,clientLineTotal,serverLineTotal,quantity,unusable?}], optionIssues[{menuItemId,groupId,itemId?,kind}], failure?}`. `shadow` 모드 기록은 `detail.shadow:true`. **오탐 탐지 장치** — 거절이 악용 차단인지 데이터가 틀어져 정상 손님을 막은 것인지는 건수·분포로만 구분된다 |
 | `storeDeletionHistory/{storeId_createdAtMillis}` | `admin` | **없음** (CF 전담) | `storeId, storeName, ownerId, brandId, status, deletedBy, deletedAt, reason, snapshot(삭제 직전 매장 문서), imageUrls, affected, phase(started\|docDeleted\|subDeleted\|storageDeleted\|done)` |
-| `migrationHistory/{autoId}` | (규칙 없음 = 클라이언트 접근 불가) | Admin SDK | 일괄 처리 1건 + 영향 범위(대상 수) |
+| `priceHistory/{eventId}` | `admin` | **없음** (트리거 전담 — Admin SDK) | **가격 변경 이력** (payment_price_authority R16). `kind(menuItem\|menuOverride\|optionGroup), scope(store\|brand\|master), storeId, brandId, targetId, before, after, changedBy(인증 주체 uid — Admin SDK/CF 쓰기면 null), authType, changedAt`. 문서 ID 는 트리거 이벤트 ID(재전달 멱등). `before`/`after` 는 가격 필드만(`basePrice` / `priceOverride`+`status`+`approvedBy` / `items[].priceDelta` 맵)이며 **원시 값을 정규화하지 않는다**(증거). **쓰기 경로를 건드리지 않는다** — Rules 로는 이력을 강제할 수 없고 트리거는 클라이언트 직접 쓰기도 포착한다 |
+| `migrationHistory/{autoId}` | (규칙 없음 = 클라이언트 접근 불가) | Admin SDK | 일괄 처리 1건 + 영향 범위(대상 수). `auditOrderPriceIntegrity` 실행 1건도 여기 남긴다(`name:'auditOrderPriceIntegrity'`) |
 | `brandKeyLookupLimits/{uid}` | (규칙 없음) | Admin SDK | `lookupBrandByKey` rate limit 창 카운터 |
 
 ### 2.12 fallback
@@ -380,6 +392,9 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | `issueBrandKey` | admin | `{brandId}` | `brandKeys/{key}` create + `private/profile.brandKey` + `keyHistory` 1건 (**한 트랜잭션**). 멱등 | 쿼리 기반 유일성은 경쟁 조건에서 깨진다 → 문서 ID 유일성. 이력 위조·누락 차단 |
 | `deleteStore` | admin | `{storeId, reason, dryRun}` | `storeDeletionHistory/{storeId_createdAtMillis}` (재진입점, `phase`) → 매장 문서 삭제 → 하위 문서 재귀 삭제 → Storage 이미지 → `done`. **진행 중 주문이 있으면 차단**. `dryRun` 은 쓰기 0 | 이력 없는 하드 삭제 제거. 재실행 멱등 (이력 1건) |
 | `verifyTossPayment` 게이트 (G1·G2) | — | — | 거절 시 `paymentGateRejections/{autoId}` 1건 (Toss confirm 전, 돈 이동 없음) | 아래 §2.13 |
+| `verifyTossPayment` 금액 게이트 (2-c) | — | — | `PAYMENT_PRICE_MODE`(독립 스위치) `enforce` 에서 카트 금액을 메뉴·옵션 그룹 문서로 **다시 계산**해 불일치면 거절 + `paymentGateRejections` 1건 (confirm 전). `enforce` 는 `orders`/`orderLogs` 의 금액 필드(`unitPriceWithOptions` `lineTotal` `subtotal` `totalPrice`)를 **서버 재계산값으로** 쓴다 | 클라이언트가 보낸 금액은 권위가 아니다 — 지금까지 `amount`·`cart.totalPrice` 가 둘 다 클라 값이라 비교가 의미 없었다. 판정식·읽기 비용·모드: `payment_price_authority/spec.md`, 운영: `operations.md §6` |
+| `onMenuPriceWritten` 외 5개 (가격 이력 트리거) | 누구든 (`menuItems`/`menuOverrides`/`optionGroups` written) | 각 문서 written 트리거 | 가격 필드(`basePrice` / `priceOverride`+`status` / `items[].priceDelta`)가 바뀌면 `priceHistory/{eventId}` 1건. 변경이 가격 밖이면 기록하지 않는다 | **Rules 로는 "이력을 같이 쓰라" 를 강제할 수 없다**(클라이언트가 이력만 빼고 쓸 수 있다). 트리거는 클라이언트 직접 쓰기도 포착하므로 쓰기 경로를 건드리지 않는다 |
+| `auditOrderPriceIntegrity` ⏳**임시** | admin (1회성) | `{from?, to?, limit?}` | **쓰기는 `migrationHistory` 1건뿐.** ⓐ 주문 Tier 1 내부 정합성 4개 불변식 ⓑ self-approved `menuOverrides` ⓒ 브랜드 메뉴 → store-scope 옵션 그룹 참조를 **보고만** 한다 | 금액 게이트 enforce 전·후 기준선. 자동 교정하지 않는다. **배포 ⑩ 정리 커밋에서 삭제** |
 | `migrateStoreApprovalMeta` · `migrateBrandPrivateProfile` ⏳**임시** | admin (1회성) | `{dryRun}` · `{stage, dryRun}` | `stores.status/approvedAt` 백필(이상치는 멈추고 보고) · `brands` PII/brandKey → `private/profile` 복사(stage copy) / 부모 제거(stage cleanup). `migrationHistory` 1건 | payment_server_authority M1·M2. **배포 ⑪ 정리 커밋에서 삭제** |
 | `migrateQoinZeroRates` ⏳**임시** | admin (1회성) | `{dryRun: boolean}` | `qoinAccrualRate == 0` 인 `stores`/`brands` 를 `{rate 삭제, qoinAccrualEnabled: false}` + 이력 1건(`source: 'migration'`, `migratedFromRate: 0`) 으로 이전. 멱등 | Q1 결정 이전용. **마이그레이션 0건 확인 후 과도기 호환 분기와 함께 삭제한다** (`qoin_accrual_rate_hierarchy/spec.md` §20.4.5) |
 | `claimSubmittedBrand` | brand 신청자 (브랜드 마스터 정보 등록 직후) | `{ brandId }` | `brands/{brandId}.submittedBy == uid` 검증 후 `users/{uid}.brandId` 설정 + `users/{uid}/roleHistory` 1건 (**같은 트랜잭션**). 멱등 | 1) `brandId` 는 **권한 값**이다 — 클라이언트가 쓰면 임의 브랜드의 보유자가 된다 2) Rules 로는 검증 불가: 신규 등록이 brand create 와 같은 **batch** 라 `get()` 이 brand 문서를 보지 못한다 3) 권한 변경 이력을 값과 같은 트랜잭션에 둔다 |
@@ -431,7 +446,8 @@ flowchart TD
 | `brand → customer` UI 미구현 (rules 는 허용) | UI 누락 | brand 가 역할 변경 못함 |
 | `owner → brand` UI 미구현 (rules 는 허용) | UI 누락 | 점주가 추후 본사 전환 못함 |
 | `stores/{storeId}/menuItems` Rules 는 owner 도 write 허용, Repository 는 brand 매장은 brand only | Rules 가 느슨 | 점주가 SDK 직접 호출로 우회 가능성? |
-| `stores/{storeId}/menuOverrides` Rules 는 owner 도 핵심 필드 write 허용 | Rules 가 느슨 | 점주가 마스터 가격을 임의로 set 가능성? |
+| ~~`stores/{storeId}/menuOverrides` Rules 는 owner 도 핵심 필드 write 허용~~ | **해소 (코드 완료, 배포 ③ 후 확정)** payment_price_authority Rules-1 — §2.6. 점주가 `status:'approved'`+`priceOverride` 를 직접 쓰던 경로(create·update 양쪽)를 닫았다 | **다섯 번째** "판정 입력 필드의 create 경로 누락" 이었다 |
+| `stores/{s}/optionGroups` 의 `priceDelta` 는 점주가 승인 없이 즉시 변경 (브랜드 메뉴가 store-scope 그룹을 참조할 때 가격 승인 우회) | **의도된 현행 유지 (Q8 ⓑ)** — 서버가 문서 값을 그대로 권위로 쓴다. 건수는 감사 도구 ⓒ | 정책은 후속 P2 |
 | ~~`brands` read 가 `isSignedIn()` 전면 공개 → brandKey·PII 노출~~ | **해소 (코드 완료, 배포 ⑧⑨ 후 확정)** payment_server_authority B1 — §2.7a | R9 는 M2 stage cleanup(부모 PII 제거)까지 가야 이행 |
 | ~~`verifyTossPayment` 가 `stores` 를 읽지 않아 `pending` 매장도 결제·적립이 성립~~ | **해소 (코드 완료, 배포 ⑥ 후 확정)** payment_server_authority G1 — `canSellNow` + Rules-A | §2.5 |
 | ~~`reviews` Rules 만 있고 UI 없음 / `stores.averageScore`, `reviewCount` 갱신 경로 없음~~ | **해소 (2026-10-22)** `store_reviews` task — Rules 전면 교체 + `onReviewWritten` CF 집계 | — |

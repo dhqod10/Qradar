@@ -19,6 +19,7 @@ class CartAvailabilityBanner extends StatefulWidget {
 
   static String titleOf(CartBannerVariant v) => switch (v) {
     CartBannerVariant.unavailableMenus => '결제하려면 확인이 필요한 메뉴가 있어요',
+    CartBannerVariant.optionUnavailable => '옵션을 다시 골라야 하는 메뉴가 있어요',
     CartBannerVariant.serverRejectedOnly => '직전 결제에서 문제가 있던 메뉴가 있어요',
     CartBannerVariant.storeUnavailable => '지금은 이 매장에서 주문할 수 없어요',
   };
@@ -26,6 +27,8 @@ class CartAvailabilityBanner extends StatefulWidget {
   static String bodyOf(CartBannerVariant v) => switch (v) {
     CartBannerVariant.unavailableMenus =>
       '표시된 메뉴를 빼고 결제해 주세요. 방금 다시 판매를 시작했을 수도 있으니 \'다시 확인\'을 눌러 보세요.',
+    CartBannerVariant.optionUnavailable =>
+      '표시된 메뉴의 옵션을 다시 고르거나 빼고 결제해 주세요.',
     CartBannerVariant.serverRejectedOnly =>
       '표시된 메뉴를 빼거나, 상황이 바뀌었을 수 있으니 \'다시 확인\'을 눌러 보세요.',
     CartBannerVariant.storeUnavailable =>

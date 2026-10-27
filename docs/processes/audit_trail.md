@@ -70,7 +70,8 @@ qoinTransactions/{id}
 | brandKey 발급 이력 | `brands/{id}/keyHistory/{autoId}` | `issueBrandKey` CF 가 키 생성·`brandKeys` 유일성·`private/profile.brandKey` 와 **같은 트랜잭션**에 기록 (`changedBy` = admin uid). brandKey 는 가맹 신청의 권한 근거라 **권한 값** (payment_server_authority) |
 | 매장 삭제 이력 | `storeDeletionHistory/{storeId_createdAtMillis}` | `deleteStore` CF 가 **삭제 전에 가장 먼저** 기록 (삭제 직전 스냅샷 + `deletedBy` + `reason` + 실행 시점 `affected` + `phase`). 중간 실패 시 재진입점이기도 하다 |
 | 결제 게이트 거절 기록 | `paymentGateRejections/{autoId}` | 거래 이력이 아니라 **거절 이력** — 오탐(정상 손님이 막힘) 탐지용. CF 전담 write, 건수·분포를 영구 보존 (Cloud Logging 의존 금지, §4-6) |
-| 일괄 처리(마이그레이션) 기록 | `migrationHistory/{autoId}` | M1·M2 가 실행 시 1건 + 영향 범위(대상 수) |
+| 가격 변경 이력 | `priceHistory/{eventId}` | **payment_price_authority R16 (2026-10-27).** `onMenuPriceWritten` 트리거 계열이 `basePrice` / `priceOverride`+`status` / 옵션 `priceDelta` 변경의 `before`/`after`/`changedBy`/`targetId`/`scope`/`changedAt` 를 남긴다. 트리거라 **쓰기 경로를 건드리지 않고** 클라이언트 직접 쓰기도 포착한다. 이 시점 **이후**부터만 있다 — 과거 가격은 복원할 수 없다 |
+| 일괄 처리(마이그레이션) 기록 | `migrationHistory/{autoId}` | M1·M2 가 실행 시 1건 + 영향 범위(대상 수). 가격 감사 도구(`auditOrderPriceIntegrity`)도 실행마다 1건 |
 | Cloud Function 실행 | Google Cloud Logging | **30일 등 보존 기간 제한.** 영구 기록으로 믿으면 안 된다 |
 
 ### ⬜ 남겨야 하는데 없는 것
@@ -79,7 +80,7 @@ qoinTransactions/{id}
 |---|---|---|
 | **A1** | **적립률 변경 이력** (전역 / 브랜드 / 매장) | `qoin_accrual_rate_hierarchy` 의 **H7 로 포함 확정** |
 | A2 | 매장 운영 정보 변경 이력 (이름·주소·영업시간 등) | 미설계. 현재 덮어쓰기만 |
-| A3 | 메뉴 가격 변경 이력 | 미설계. 가격 분쟁 시 과거 가격 증명 불가 — **주문 문서에 당시 가격이 박제되는지 확인 필요** |
+| ~~A3~~ | ~~메뉴 가격 변경 이력~~ | **해소 (코드 완료, 배포 ⑤ 후 확정)** — `priceHistory` + `onMenuPriceWritten` (payment_price_authority Q7 ⓐ, §3 ✅ 표). **이후 구간만** 증명된다. 주문 문서가 당시 가격을 박제하는 값은 enforce 부터 **서버 재계산값**이다(R8) — 그 전에는 클라이언트 값이었다 |
 | A4 | 역할 변경 이력 (customer ↔ owner ↔ brand) | **부분 (2026-10-22)** — `users.brandId`(= 브랜드 권한 값) 설정만 `users/{uid}/roleHistory` 에 남는다 (`brand_authorization_hardening`). `role` 필드 자체는 여전히 덮어쓰기다. **사유**: `brandId` 를 CF 전담으로 옮긴 뒤 `role` 단독으로는 어떤 자원 권한도 주지 않는다 — 권한을 결정하는 것은 `brandId` 다 |
 | A5 | admin 운영 행위 전반 (승인·반려·정지 등) | 부분적. `stores` 승인만 남고 나머지는 없음 |
 | A6 | Qoin 적립 **비용 정산** | **기능 자체가 미설계.** §5 참조 |

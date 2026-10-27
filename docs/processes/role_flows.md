@@ -115,7 +115,7 @@ stateDiagram-v2
 | 지도 기반 매장 탐색 | `customer/home/**` | `stores` (status=approved 필터) |
 | 매장 상세 / 메뉴 보기 | `customer/store/**` | `stores/{id}` + `menuItems` 머지 (master + override + store-only) |
 | 장바구니 (매장별 독립) | `customer/cart/**` | `CartRepositoryImpl` (local) |
-| 결제 / 주문 생성 | `customer/checkout/checkout_page.dart` | `verifyTossPayment` Cloud Function |
+| 결제 / 주문 생성 | `customer/checkout/checkout_page.dart` | `verifyTossPayment` Cloud Function. 결제 탭 직전 **재가격**(카트를 현재 문서 가격으로 다시 계산 — 변동이면 시트로 알리고 결제창을 열지 않는다). 서버 거절 갈래: 품절·판매 중단·매장 불가 · **금액 불일치(`PRICE_MISMATCH`) · 옵션 불가(`OPTION_UNAVAILABLE`)** · 읽기 실패. 금액 거절 화면의 주 버튼은 **`최신 가격으로 다시 담기`**(신선 읽기 → 카트 적용 → 카트) — 같은 거절의 무한 반복을 막는다 |
 | 결제 결과 / 영수증 | `customer/checkout/payment_result_page.dart` | `orders/{orderId}` watch |
 | 주문 취소 (paid 단계만) | 주문 상세 / 결제 결과 페이지 | `cancelTossPayment` Cloud Function |
 | 환불 요청 (accepted+ 단계) | 주문 상세 | `OrderRepository.requestRefund` (직접 Firestore update) |
@@ -188,6 +188,7 @@ stateDiagram-v2
 | 브랜드/매장 관리 | `admin/brand_store_management/**` | 모든 brand/store CRUD (Rules 전권) |
 | 메뉴 카테고리 마스터 데이터 | `admin/menu_categories/**` | `mainCategories`, 글로벌 `subCategories`, 글로벌 `optionGroups` |
 | 매장 관리 (목록·삭제) | `admin/store_management/admin_store_list_page.dart` → `admin_store_delete_page.dart` (더보기 → `매장 관리`) | `watchAllStoresForAdmin` + `deleteStore` CF (`dryRun` 영향 범위 → 실행; 진행 중 주문이 있으면 차단; `storeDeletionHistory` 이력) |
+| 가격 감사 (임시, 읽기 전용) | 더보기 → `배포 마이그레이션 (임시)` → `② ⑨ 가격 감사` 카드 (`admin/widgets/admin_price_audit_card.dart`) | `auditOrderPriceIntegrity` CF. 주문 금액 정합성 · self-approved 가격 오버라이드 · store-scope 옵션 참조를 **보고만** 한다. 배포 ⑩ 정리 커밋에서 제거 (payment_price_authority) |
 | 더보기 | `admin/more/admin_more_page.dart` | — |
 
 **핵심 진입점**: `AdminScaffold` — 2탭 (승인 큐 / 더보기). 회원 정지·매출 종합·공지/배너·쿠폰 등 product_scope 의 다른 admin 기능은 **미구현**.

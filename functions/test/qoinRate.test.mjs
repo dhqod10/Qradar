@@ -9,7 +9,7 @@ import {
   MIN_RATE, MAX_RATE, BULK_STALE_MS, classifyRate, classifySwitch, resolveEffectiveRate, isValidCallableRate, isValidCallableSwitch,
   computeEarnAmount,
 } from '../lib/qoinRate.js';
-import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS } from '../lib/orderBuilder.js';
+import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS, CONSUMED_ITEM_KEYS, CONSUMED_OPTION_KEYS } from '../lib/orderBuilder.js';
 import { describeRaw, BULK_STATUS } from '../lib/qoinAdmin.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -157,6 +157,14 @@ test('T1 buildOrderData: 주문 문서 키 집합 고정 (운영이 쓰는 모�
 test('T2 cart 입력 계약: TS 가 소비하는 키 집합 = test_fixtures/qoin_cart_contract.json (Dart 가 보내는 키 집합과 같은 파일)', () => {
   assert.deepEqual([...CONSUMED_CART_KEYS].sort(), [...cartContract.keys].sort());
   assert.ok(!CONSUMED_CART_KEYS.includes('brandId'), 'brandId 는 소비 키가 아니다');
+});
+
+test('T2-b item 레벨 입력 계약 (payment_price_authority §1-5): items[] 와 selectedOptions[] 키 집합 = 골든 (Dart 가 보내는 키와 같은 파일)', () => {
+  assert.deepEqual([...CONSUMED_ITEM_KEYS].sort(), [...cartContract.itemKeys].sort());
+  assert.deepEqual([...CONSUMED_OPTION_KEYS].sort(), [...cartContract.selectedOptionKeys].sort());
+  // 거짓 타입 재발 방지: 옵션 키는 groupId/itemId 다 (optionGroupId/optionId 가 아니다), imageUrl 은 보내지 않는다.
+  assert.ok(!CONSUMED_OPTION_KEYS.includes('optionGroupId') && !CONSUMED_OPTION_KEYS.includes('optionId'));
+  assert.ok(!CONSUMED_ITEM_KEYS.includes('imageUrl'));
 });
 
 test('T2 buildOrderData 가 cart 에서 읽는 키는 CONSUMED_CART_KEYS 와 일치 (Proxy 로 접근 키 수집)', () => {

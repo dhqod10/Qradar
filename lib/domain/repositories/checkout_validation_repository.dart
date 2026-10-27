@@ -1,4 +1,6 @@
+import 'package:qradar/core/utils/option_availability.dart';
 import 'package:qradar/domain/entities/checkout_validation.dart';
+import 'package:qradar/domain/entities/option_group_entity.dart';
 
 /// 결제 선검증용 **신선 읽기**(서버 source) 저장소 (payment_server_authority design N5).
 ///
@@ -14,5 +16,14 @@ abstract class CheckoutValidationRepository {
     required String storeId,
     required String? brandId,
     required List<String> menuItemIds,
+  });
+
+  /// 재가격(payment_price_authority R9)용 옵션 그룹 문서 신선 읽기. 키는 [optionRefKey].
+  /// 문서가 없으면 값이 null 이다. brand scope 는 [brandId] 가 null 이면 읽지 않고 null (서버 `getOptionGroups` 와 같다).
+  /// 읽기 실패는 예외로 전파한다.
+  Future<Map<String, OptionGroupEntity?>> fetchOptionGroupsFresh({
+    required String storeId,
+    required String? brandId,
+    required List<OptionGroupRef> refs,
   });
 }

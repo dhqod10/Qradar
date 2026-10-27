@@ -34,8 +34,18 @@ void main() {
       '1. soldOut / override status 비교는 functions/src/menuVisibility.ts 에만 있다',
       () {
         final offenders = <String>[];
+        // payment_price_authority 가 추가한 허용 2건 — 둘 다 **판정이 아니라 기록·보고**다 (원시 값을 그대로 남기거나 센다).
+        // 승인 분기(approved 일 때만 효력)는 menuVisibility.ts 의 overrideIsApproved 를 가져다 쓰며
+        // `payment_price_guard_test.dart` 가 두 파일에 status 리터럴 비교가 없음을 따로 고정한다.
+        //  - onMenuPriceWritten.ts          가격 변경 이력(priceHistory)에 before/after 를 남긴다
+        //  - auditOrderPriceIntegrity.ts    임시 감사 도구의 보고 필드 (배포 ⑩ 에서 삭제)
+        const allowedReadOnly = {
+          'menuVisibility.ts',
+          'onMenuPriceWritten.ts',
+          'auditOrderPriceIntegrity.ts',
+        };
         for (final f in _files('functions/src', '.ts')) {
-          if (f.path.endsWith('menuVisibility.ts')) continue;
+          if (allowedReadOnly.any(f.path.endsWith)) continue;
           final c = _code(f);
           if (RegExp(r'\bsoldOut\b').hasMatch(c) ||
               RegExp(r'excluded\b').hasMatch(c) ||

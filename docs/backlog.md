@@ -712,9 +712,23 @@ stores/{storeId}
 
 | # | 과제 | 근거 |
 |---|---|---|
-| **PSA-N1** | **서버 가격 재계산** — 클라이언트가 보낸 가격이 그대로 주문·적립 기준이 된다. `verifyTossPayment` 의 금액 검증(`amount === cart.totalPrice`)은 클라 값끼리의 비교라 의미가 없다 | spec §5-6. **Q6 ⓑ — 이번 묶음 직후 최우선.** 게이트(`paymentGate.ts evaluatePaymentGate`)가 이미 `resolved[].merged.basePrice`(마스터 + override 적용 단가) 를 반환한다 → **추가 읽기 0** 으로 닫을 수 있다. 실결제 0회라는 착수 창이 동일하게 적용된다 |
+| ✅ ~~**PSA-N1**~~ | **(코드 완료 2026-10-27, 배포 대기 — `payment_price_authority`)** ~~서버 가격 재계산~~ — 클라이언트가 보낸 가격이 그대로 주문·적립 기준이 된다. `verifyTossPayment` 의 금액 검증(`amount === cart.totalPrice`)은 클라 값끼리의 비교라 의미가 없다 | spec §5-6. **Q6 ⓑ — 이번 묶음 직후 최우선.** 게이트(`paymentGate.ts evaluatePaymentGate`)가 이미 `resolved[].merged.basePrice`(마스터 + override 적용 단가) 를 반환한다 → **추가 읽기 0** 으로 닫을 수 있다. 실결제 0회라는 착수 창이 동일하게 적용된다 |
 | PSA-N2 | 핵심 필드 수정을 `pending` 회귀와 분리 (심사 정책) | spec §6.2 ⓒ. "이름 고치면 고객 목록에서 사라진다" 기존 결함 포함 |
 | PSA-N3 | 매장 `status` 전이 이력 (승인/반려) + `rejectedReason` 덮어쓰기 | spec §9-주의 |
 | PSA-N4 | 매장 폐업 신청 흐름 / 소프트 삭제 (점주 공백 해소) | spec §11.1 ⓒ |
-| PSA-N5 | `quick_reorder_section` 의 단가 역산 제거 | spec §5-2 |
+| PSA-N5 | `quick_reorder_section` 의 단가 역산 제거 — **우선도 낮춤 (payment_price_authority §11)** | **돈 경로는 체크아웃 재가격이 덮었다** — 역산으로 담긴 옛 단가는 카트 진입·결제 탭에서 현재 문서 가격으로 교정되고 배너가 알린다. 남은 것은 홈 화면이 옛 가격을 **표시**하는 정확성뿐이다. `lineTotal ~/ quantity` 는 가드(`payment_price_guard_test` 7)의 허용 목록 1건으로 남아 있다 |
 | PSA-N6 | **`temporaryClosed` 가 아무 일도 하지 않는다** — 점주 스위치가 고객·CF 어디에도 효과가 없다. 할 때는 고객 노출·결제 게이트·점주 표시를 **한 번에** | spec §6.8 |
+
+---
+
+### ⬜ payment_price_authority 후속 (2026-10-27 신규) — 선행 PSA-N1 을 닫으며 등재
+
+| # | 과제 | 근거 |
+|---|---|---|
+| **PPA-P1** | **서버 견적(quote) 발급** — 시점 차이를 구조적으로 제거(고객이 본 금액이 서버가 보증한 금액). 새 CF + 상태 + 만료 + 멱등 | Q2 ⓑ. 지금은 거절 + 재가격 복구로 창을 "체크아웃 진입 ~ confirm" 으로 줄였다. **`paymentGateRejections.detail.delta` 분포(양·음 양방향의 작은 금액 = 시점 차이)로 빈도를 측정한 뒤** 필요를 판단 |
+| **PPA-P2** | **가격 승인 정책의 일관화 — store-scope 옵션 가격** | Q8 ⓐ/ⓒ. 가맹점주가 승인 없이 옵션 `priceDelta` 를 바꾸는 우회로를 서버가 공인한다. 착수 근거 = 감사 도구 ⓒ 가 측정한 참조 건수(`storePairs`) |
+| PPA-P3 | 주문 문서의 **이름·옵션 라벨도 서버가 구성** | Q4 ⓑ. 지금은 금액 필드만 서버 값 |
+| PPA-P4 | **Tier 2 소급 감사** (과거 주문 단가를 `priceHistory` 와 대조) | spec §12-1. `priceHistory` 가 쌓인 뒤에만 의미가 있다 |
+| PPA-P5 | Rules 에 금액 필드 **타입·범위 제약** (`basePrice >= 0`, `priceDelta` 정수 등) | spec §13-7. 현재 Rules 에 타입 제약이 전무하다 — Dart/TS 파싱이 갈리는 `0.5` 같은 입력은 R10 이 파서 쪽에서 막았을 뿐 |
+| PPA-P6 | 비활성 키 `{groupId}_{itemId}` 를 **쓰는** 화면 3곳(브랜드 옵션 선택기 · 점주/브랜드 비활성 시트)이 형식을 직접 조립한다 — 가드 허용 목록 | payment_price_authority 구현 중 발견. 판정(읽기)은 `option_availability.dart` 1곳이지만 쓰기 쪽이 같은 형식을 따로 만든다. 한 헬퍼로 모으면 가드의 예외가 사라진다 |
+| PPA-P7 | **옵션 선택 중복(`duplicate`) 은 spec 의 6종 밖에서 구현자가 추가한 7번째 위반이다** | 음수 `priceDelta` 를 같은 항목으로 반복 선택하면 가격이 깎인다(`multi` 그룹). 설계자 확인 요청 — implementation.md §작업표와 현실의 차이 |

@@ -10,7 +10,9 @@ import 'package:qradar/domain/entities/order_item_entity.dart';
 import 'package:qradar/domain/entities/payment_failure.dart';
 import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
+import 'package:qradar/presentation/customer/cart/widgets/cart_price_change_banner.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_blocked_sheet.dart';
+import 'package:qradar/presentation/customer/checkout/widgets/checkout_price_changed_sheet.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/checkout/payment_result_page.dart'
@@ -71,16 +73,29 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     try {
       // 선검증 (권위 아님 — design D1). 위반을 직접 읽어서 확인했을 때만 막는다.
       // 읽기 실패/타임아웃(3초)은 UseCase 가 "위반 없음"으로 돌려주므로 결제는 그대로 진행된다 (spec §8.2).
+      // 재가격(payment_price_authority R9): 같은 읽기로 카트 라인을 현재 문서 가격으로 다시 계산한다.
       final validation = await ref
           .read(validateCheckoutUseCaseProvider)
           .call(
             storeId: cart.storeId,
             menuItemIds: items.map((i) => i.menuItemId),
+            cartItems: items,
           );
       if (!mounted) return;
-      if (validation.hasViolations) {
+      // 우선순위 (design §5.4): 품절·판매중단·매장 불가 > 옵션 위반 > 가격 변동.
+      if (validation.store != null || validation.menus.isNotEmpty) {
         setState(() => _processing = false);
         await _showBlocked(cart, validation);
+        return;
+      }
+      if (validation.optionIssues.isNotEmpty) {
+        setState(() => _processing = false);
+        await _showOptionBlocked(cart, validation);
+        return;
+      }
+      if (validation.hasPriceChanges) {
+        setState(() => _processing = false);
+        await _showPriceChanged(cart, validation);
         return;
       }
 
@@ -208,6 +223,65 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         Navigator.of(context).pop();
       case null:
         break;
+    }
+  }
+
+  /// 옵션 위반 (design §5.4). 결제는 시작하지 않는다. 카트 행이 옵션 라벨 단위로 지목한다 (§5.5).
+  Future<void> _showOptionBlocked(
+    CartEntity cart,
+    CheckoutValidation validation,
+  ) async {
+    final names = resolveFailureMenuNames(
+      cart,
+      validation.optionViolatedMenuItemIds,
+    );
+    final choice = await showCheckoutOptionSheet(context, names: names);
+    if (!mounted) return;
+    switch (choice) {
+      case CheckoutOptionSheetChoice.removeMenus:
+        // 체크아웃에 머문다. 합계가 바뀌었으므로 자동 결제하지 않는다.
+        final remove = ref.read(removeCartItemUseCaseProvider);
+        for (final id in {for (final o in validation.optionIssues) o.cartItemId}) {
+          await remove.call(id);
+        }
+      case CheckoutOptionSheetChoice.backToCart:
+        ref
+            .read(cartValidationProvider.notifier)
+            .applyKnown(cart.storeId, validation);
+        Navigator.of(context).pop();
+      case null:
+        break;
+    }
+  }
+
+  /// 가격 변동 (design §5.4). **카트 적용을 먼저 끝낸 뒤** 시트를 띄운다 — 시트를 밀어 닫아도 stale 상태가 남지 않는다.
+  /// 어떤 선택지도 자동으로 결제를 시작하지 않는다 (고객이 새 금액을 보고 직접 다시 탭한다).
+  Future<void> _showPriceChanged(
+    CartEntity cart,
+    CheckoutValidation validation,
+  ) async {
+    final applied = await ref
+        .read(applyRepricedCartUseCaseProvider)
+        .call(validation.repricing);
+    if (!mounted) return;
+    if (!applied.hasChanges) return;
+    ref.read(cartPriceChangesProvider.notifier).record(applied);
+    ref
+        .read(cartValidationProvider.notifier)
+        .applyKnown(cart.storeId, CheckoutValidation.none);
+    final choice = await showCheckoutPriceChangedSheet(
+      context,
+      summary: CartPriceChangeSummary(
+        beforeSubtotal: applied.subtotalBefore,
+        afterSubtotal: applied.subtotalAfter,
+        hasIncrease: applied.changes.any((c) => c.isIncrease),
+        hasDecrease: applied.changes.any((c) => !c.isIncrease),
+      ),
+      rows: priceChangeRows(cart, applied.changes),
+    );
+    if (!mounted) return;
+    if (choice == CheckoutPriceSheetChoice.backToCart) {
+      Navigator.of(context).pop();
     }
   }
 

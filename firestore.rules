@@ -459,9 +459,35 @@ service cloud.firestore {
       }
 
       // ── stores/{storeId}/menuOverrides/{masterMenuItemId} ─────────────────
+      // [payment_price_authority §13-8] priceOverride 의 승인 요건은 UI 의 약속이었고 Rules 로 집행되지 않았다 — 가맹점주가
+      // {status:'approved', priceOverride:1} 을 직접 쓸 수 있었다. 서버가 이 값을 "권위 있는 금액" 으로 쓰기 시작하므로 닫는다.
+      //  - admin / 브랜드 보유자: 제한 없음 (제출·승인 쓰기 유지 — approveOverride 는 status/approvedBy/approvedAt 을 쓴다)
+      //  - 점주: create 는 **효력 있는 핵심 필드를 만들 수 없다**, update 는 **운영 필드만** 바꿀 수 있다.
+      //    (update 전용 장치 onlyChangedFields 는 create 를 보호하지 않는다 — 같은 패턴의 다섯 번째. 두 경로를 각각 제한한다.)
+      // 점주의 정상 create 는 둘이다: W2 운영 필드 upsert(status:'approved', priceOverride:null, excluded:false, 승인 메타 null) 와
+      // 매장 등록 시 seedExclusionsForStore(status:'pending', excluded:true). 둘 다 아래 조건을 통과한다.
+      // applyOverrideForCustomer 는 status 의 모르는 문자열을 approved 로 읽으므로 허용 목록으로 막는다.
+      function ownerOverrideCreateOk() {
+        return request.resource.data.get('status', 'pending') in ['pending', 'approved', 'rejected']
+            && request.resource.data.get('approvedBy', null) == null
+            && request.resource.data.get('approvedAt', null) == null
+            && (request.resource.data.get('status', 'pending') != 'approved'
+                || (request.resource.data.get('priceOverride', null) == null
+                    && request.resource.data.get('excluded', false) == false));
+      }
+
       match /menuOverrides/{masterMenuItemId} {
         allow read: if isSignedIn();
-        allow create, update, delete:
+        allow create:
+          if isAdmin()
+          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''))
+          || (isStoreOwner(storeId) && ownerOverrideCreateOk());
+        allow update:
+          if isAdmin()
+          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''))
+          || (isStoreOwner(storeId)
+              && onlyChangedFields(['soldOut', 'disabledOptionGroupIds', 'disabledOptionItemIds', 'updatedBy', 'updatedAt']));
+        allow delete:
           if isAdmin()
           || isStoreOwner(storeId)
           || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
@@ -602,6 +628,15 @@ service cloud.firestore {
       allow write: if false;
     }
     match /storeDeletionHistory/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // priceHistory/{id} — 가격 변경 이력 (payment_price_authority R16). onMenuPriceWritten 트리거(Admin SDK) 전담 write, admin read.
+    // 쓰기 경로를 막거나 강제하지 않는다 — 가격을 쓰는 클라이언트는 그대로이고 이력은 트리거가 사후에 남긴다.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /priceHistory/{id} {
       allow read: if isAdmin();
       allow write: if false;
     }

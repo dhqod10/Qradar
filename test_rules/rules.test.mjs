@@ -1098,6 +1098,127 @@ for (const col of ['paymentGateRejections', 'storeDeletionHistory']) {
   await run(`PSA-C4d ${col} 고객 create (자기 uid 로 위조)`, 'deny', () => setDoc(doc(asCustomer, col, 'forge2'), { uid: CUSTOMER }));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// payment_price_authority — Rules-1 (spec §13-7, §13-8, §19-5)
+// menuOverrides: 서버가 priceOverride 를 "권위 있는 금액" 으로 쓰기 시작하므로 점주가 승인 상태를 직접 쓰는 경로를 닫는다.
+// create 와 update 는 별개의 경로다 (onlyChangedFields 는 update 전용) — 양쪽을 각각 확인한다. 정상 흐름 회귀를 함께 고정한다.
+// ═══════════════════════════════════════════════════════════════════════════
+const ovRef = (db, id) => doc(db, 'stores', S_BR, 'menuOverrides', id);
+const ovSeed = (id, data) => seed((db) => setDoc(ovRef(db, id), data));
+const NOW = () => Timestamp.now();
+await run('PPA-1 점주 create: status approved + priceOverride 1 (self-approve)', 'deny', () =>
+  setDoc(ovRef(asOwner, 'ppa1'), { storeId: S_BR, brandId: B_A, status: 'approved', priceOverride: 1, excluded: false, soldOut: false }));
+await run('PPA-1b 점주 create: 승인 메타(approvedBy/approvedAt) 포함', 'deny', () =>
+  setDoc(ovRef(asOwner, 'ppa1b'), { storeId: S_BR, brandId: B_A, status: 'approved', approvedBy: OWNER, approvedAt: NOW() }));
+await run('PPA-1c 점주 create: approvedBy 만 (status pending 이어도 승인 메타는 금지)', 'deny', () =>
+  setDoc(ovRef(asOwner, 'ppa1c'), { storeId: S_BR, brandId: B_A, status: 'pending', approvedBy: OWNER }));
+await run('PPA-1d 점주 create: 모르는 status 문자열 (앱은 approved 로 읽는다) + priceOverride', 'deny', () =>
+  setDoc(ovRef(asOwner, 'ppa1d'), { storeId: S_BR, brandId: B_A, status: 'weird', priceOverride: 1 }));
+await run('PPA-1e 점주 create: approved + excluded true (판매 중단을 승인 없이 효력화)', 'deny', () =>
+  setDoc(ovRef(asOwner, 'ppa1e'), { storeId: S_BR, brandId: B_A, status: 'approved', excluded: true }));
+await run('PPA-1f 점주 create: status 부재 + priceOverride (부재 = pending, 효력 없음 — 허용)', 'allow', () =>
+  setDoc(ovRef(asOwner, 'ppa1f'), { storeId: S_BR, brandId: B_A, priceOverride: 1 }));
+await run('PPA-1g 점주 create: pending + priceOverride (승인 전에는 효력 없음 — 허용)', 'allow', () =>
+  setDoc(ovRef(asOwner, 'ppa1g'), { storeId: S_BR, brandId: B_A, status: 'pending', priceOverride: 1 }));
+
+// update 경로 — 브랜드가 제출한 pending override 를 점주가 승인 상태로 올리는 경로
+const pendingOv = (id) => ovSeed(id, { storeId: S_BR, brandId: B_A, status: 'pending', priceOverride: 1, excluded: false, soldOut: false, submittedBy: BRAND_U });
+await run('PPA-2 점주 update: pending → approved (self-approve)', 'deny', async () => {
+  await pendingOv('ppa2'); return updateDoc(ovRef(asOwner, 'ppa2'), { status: 'approved' });
+});
+await run('PPA-2b 점주 update: approvedBy/approvedAt 세팅', 'deny', async () => {
+  await pendingOv('ppa2b'); return updateDoc(ovRef(asOwner, 'ppa2b'), { approvedBy: OWNER, approvedAt: NOW() });
+});
+await run('PPA-2c 점주 update: 승인된 override 의 priceOverride 변경', 'deny', async () => {
+  await ovSeed('ppa2c', { storeId: S_BR, brandId: B_A, status: 'approved', priceOverride: 3000, approvedBy: ADMIN });
+  return updateDoc(ovRef(asOwner, 'ppa2c'), { priceOverride: 1 });
+});
+await run('PPA-2d 점주 update: excluded 변경', 'deny', async () => {
+  await ovSeed('ppa2d', { storeId: S_BR, brandId: B_A, status: 'approved', excluded: true, approvedBy: ADMIN });
+  return updateDoc(ovRef(asOwner, 'ppa2d'), { excluded: false });
+});
+await run('PPA-2e 점주 update: 운영 필드 + status 동시 (한 키라도 밖이면 거부)', 'deny', async () => {
+  await pendingOv('ppa2e'); return updateDoc(ovRef(asOwner, 'ppa2e'), { soldOut: true, status: 'approved' });
+});
+await run('PPA-2f 점주 setDoc(merge)로 기존 문서의 status 를 올림 (W2 경합 — update 로 평가된다)', 'deny', async () => {
+  await pendingOv('ppa2f'); return setDoc(ovRef(asOwner, 'ppa2f'), { status: 'approved' }, { merge: true });
+});
+await run('PPA-2g 점주 setDoc(전체 교체)로 기존 pending 문서를 approved 로 교체', 'deny', async () => {
+  await pendingOv('ppa2g'); return setDoc(ovRef(asOwner, 'ppa2g'), { storeId: S_BR, brandId: B_A, status: 'approved', priceOverride: 1 });
+});
+await run('PPA-2h 타 매장 점주가 update (기존 보호 회귀)', 'deny', async () => {
+  await pendingOv('ppa2h'); return updateDoc(ovRef(env.authenticatedContext(OTHER).firestore(), 'ppa2h'), { soldOut: true });
+});
+
+// 정상 흐름 회귀 — 막다가 정상 제출까지 막으면 안 된다
+await run('PPA-3 회귀: 점주 W2 create (운영 필드 upsert — 앱 payload 그대로: approved + 승인 메타 null)', 'allow', () =>
+  setDoc(ovRef(asOwner, 'ppa3'), {
+    storeId: S_BR, brandId: B_A, priceOverride: null, excluded: false, soldOut: true,
+    disabledOptionGroupIds: [], disabledOptionItemIds: [], status: 'approved',
+    submittedBy: OWNER, submittedAt: NOW(), approvedBy: null, approvedAt: null, rejectedReason: null,
+    updatedBy: 'owner', updatedAt: NOW(),
+  }, { merge: true }));
+await run('PPA-3b 회귀: 점주 seedExclusionsForStore create (pending + excluded true)', 'allow', () =>
+  setDoc(ovRef(asOwner, 'ppa3b'), {
+    masterMenuItemId: 'ppa3b', storeId: S_BR, brandId: B_A, excluded: true, soldOut: false,
+    disabledOptionGroupIds: [], disabledOptionItemIds: [], status: 'pending',
+    submittedBy: OWNER, submittedAt: NOW(), updatedBy: 'brand', updatedAt: NOW(),
+  }, { merge: true }));
+await run('PPA-3c 회귀: 점주 운영 필드 partial update (soldOut / disabled* / updatedBy / updatedAt)', 'allow', async () => {
+  await ovSeed('ppa3c', { storeId: S_BR, brandId: B_A, status: 'approved', priceOverride: 3000, approvedBy: ADMIN, soldOut: false });
+  return updateDoc(ovRef(asOwner, 'ppa3c'), { soldOut: true, disabledOptionGroupIds: ['g1'], disabledOptionItemIds: ['g1_a'], updatedBy: 'owner', updatedAt: serverTimestamp() });
+});
+await run('PPA-3d 회귀: 점주 delete (현행 유지)', 'allow', async () => {
+  await pendingOv('ppa3d'); return deleteDoc(ovRef(asOwner, 'ppa3d'));
+});
+await run('PPA-3e 회귀: 브랜드 보유자 제출(upsertOverrideCore — pending + priceOverride + submittedBy)', 'allow', () =>
+  setDoc(ovRef(asBrand, 'ppa3e'), {
+    masterMenuItemId: 'ppa3e', storeId: S_BR, brandId: B_A, priceOverride: 3500, excluded: false, soldOut: false,
+    disabledOptionGroupIds: [], disabledOptionItemIds: [], status: 'pending', submittedBy: BRAND_U, submittedAt: NOW(),
+    updatedBy: 'brand', updatedAt: NOW(),
+  }, { merge: true }));
+await run('PPA-3f 회귀: 브랜드 보유자 update (핵심 필드 변경 + pending 회귀)', 'allow', async () => {
+  await ovSeed('ppa3f', { storeId: S_BR, brandId: B_A, status: 'approved', priceOverride: 3000, approvedBy: ADMIN });
+  return updateDoc(ovRef(asBrand, 'ppa3f'), { priceOverride: 3300, status: 'pending', submittedBy: BRAND_U });
+});
+await run('PPA-3g 회귀: 브랜드 보유자의 승인 쓰기 (spec: brandHolder 승인 쓰기 유지)', 'allow', async () => {
+  await pendingOv('ppa3g');
+  return updateDoc(ovRef(asBrand, 'ppa3g'), { status: 'approved', approvedBy: BRAND_U, approvedAt: NOW() });
+});
+await run('PPA-3h 회귀: admin 승인 update (approveOverride payload)', 'allow', async () => {
+  await pendingOv('ppa3h');
+  return updateDoc(ovRef(asAdmin, 'ppa3h'), { status: 'approved', approvedBy: ADMIN, approvedAt: serverTimestamp(), rejectedReason: null, updatedBy: 'admin', updatedAt: serverTimestamp() });
+});
+await run('PPA-3i 회귀: admin 반려 update (rejectOverride payload)', 'allow', async () => {
+  await pendingOv('ppa3i');
+  return updateDoc(ovRef(asAdmin, 'ppa3i'), { status: 'rejected', approvedBy: ADMIN, rejectedReason: 'x', updatedBy: 'admin', updatedAt: serverTimestamp() });
+});
+await run('PPA-3j 회귀: admin create approved + priceOverride (admin 전권 유지)', 'allow', () =>
+  setDoc(ovRef(asAdmin, 'ppa3j'), { storeId: S_BR, brandId: B_A, status: 'approved', priceOverride: 2000, approvedBy: ADMIN }));
+await run('PPA-3k 회귀: 고객 read (고객 화면이 override 를 읽는다)', 'allow', async () => {
+  await pendingOv('ppa3k'); return getDoc(ovRef(asCustomer, 'ppa3k'));
+});
+await run('PPA-3l 타 브랜드 보유자 create (기존 보호 회귀)', 'deny', () =>
+  setDoc(ovRef(env.authenticatedContext(BRAND_X).firestore(), 'ppa3l'), { storeId: S_BR, status: 'pending' }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// payment_price_authority — Rules-2 (R16): priceHistory 는 admin 읽기 전용, 쓰기는 트리거(Admin SDK) 전담
+// ═══════════════════════════════════════════════════════════════════════════
+await seed((db) => setDoc(doc(db, 'priceHistory', 'ph1'), { kind: 'menuItem', scope: 'store', storeId: S_A, targetId: 'm1', before: { basePrice: 1 }, after: { basePrice: 2 }, changedBy: OWNER }));
+await run('PPA-H1 priceHistory admin read', 'allow', () => getDoc(doc(asAdmin, 'priceHistory', 'ph1')));
+await run('PPA-H1b priceHistory 점주 read (자기 매장 이력이어도)', 'deny', () => getDoc(doc(asOwner, 'priceHistory', 'ph1')));
+await run('PPA-H1c priceHistory 고객 read', 'deny', () => getDoc(doc(asCustomer, 'priceHistory', 'ph1')));
+await run('PPA-H1d priceHistory 비로그인 read', 'deny', () => getDoc(doc(asAnon, 'priceHistory', 'ph1')));
+await run('PPA-H2 priceHistory admin create (위조)', 'deny', () => setDoc(doc(asAdmin, 'priceHistory', 'forge'), { kind: 'menuItem' }));
+await run('PPA-H2b priceHistory admin update', 'deny', () => updateDoc(doc(asAdmin, 'priceHistory', 'ph1'), { after: { basePrice: 1 } }));
+await run('PPA-H2c priceHistory admin delete (이력 지우기)', 'deny', () => deleteDoc(doc(asAdmin, 'priceHistory', 'ph1')));
+await run('PPA-H2d priceHistory 점주 create', 'deny', () => setDoc(doc(asOwner, 'priceHistory', 'forge2'), { changedBy: OWNER }));
+await run('PPA-H2e priceHistory 점주 delete', 'deny', () => deleteDoc(doc(asOwner, 'priceHistory', 'ph1')));
+await run('PPA-H3 회귀: 가격 쓰기 경로는 그대로 — 점주가 자기 점포 메뉴 basePrice 를 바꾼다 (이력은 트리거가 남긴다)', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'stores', S_A, 'menuItems', 'ppa_h3'), { name: 'x', basePrice: 4000 }));
+  return updateDoc(doc(asOwner, 'stores', S_A, 'menuItems', 'ppa_h3'), { basePrice: 4500 });
+});
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {

@@ -13,6 +13,10 @@ enum PaymentFailureAction {
 
   /// Log 탭(3)으로.
   goToLog,
+
+  /// `최신 가격으로 다시 담기` (payment_price_authority design P1) — 단순 pop 이 아니다. 신선 읽기로 카트를 재가격하고
+  /// **적용한 뒤** 카트로 보낸다. 실패하면 이 화면에 머문다. 이 동작은 `PRICE_MISMATCH` 기본형의 주 버튼 하나에만 쓴다.
+  repriceAndReturn,
 }
 
 /// 갈래 B 한 사유의 화면 문구 (design §3.1 표). **서버가 보낸 문자열은 어디에도 들어오지 않는다.**
@@ -26,6 +30,7 @@ class GateFailureCopy {
     required this.primaryAction,
     this.secondaryLabel,
     this.secondaryAction,
+    this.secondaryIsLine = false,
   });
 
   final String headline;
@@ -38,18 +43,81 @@ class GateFailureCopy {
   final PaymentFailureAction primaryAction;
   final String? secondaryLabel;
   final PaymentFailureAction? secondaryAction;
+
+  /// 보조 버튼을 라인 버튼으로 그린다 (기본은 텍스트 버튼). `PRICE_MISMATCH` 는 보조 버튼도 의미 있는 선택지다.
+  final bool secondaryIsLine;
 }
 
 /// 돈 줄 (design §3.4). 갈래 B 에서만 쓴다.
 const String kGateMoneyLine = '아직 결제되지 않았고, 요금도 청구되지 않았어요';
 
+// ── 가격 거절 화면 (payment_price_authority design §4.2) ─────────────────────────
+// 이 화면에는 금액 숫자가 없다 (Q6=ⓒ) — 숫자는 카트로 돌아간 뒤 재가격 결과로 보인다. 서버 문자열도 보간하지 않는다.
+
+/// `PRICE_MISMATCH` 기본형 주 버튼. 누르면 신선 읽기로 카트를 다시 맞춘다.
+const String kRepriceLabel = '최신 가격으로 다시 담기';
+
+/// 재가격 읽기 실패 시 주 버튼 라벨 (같은 동작).
+const String kRepriceRetryLabel = '다시 불러오기';
+
+/// 재가격 읽기 실패 인라인 문구 — 사용자가 직접 누른 동작이므로 무음 금지 (design N3).
+const String kRepriceErrorText = '최신 가격을 불러오지 못했어요. 네트워크를 확인하고 다시 눌러 주세요.';
+
+/// 연속 2회 이상 실패했을 때 덧붙이는 한 줄.
+const String kRepriceErrorHint = '계속 안 되면 카트에서 메뉴를 빼고 다시 담아 보세요.';
+
+/// 재가격 진행 중 스크린리더 라벨.
+const String kRepriceBusySemantics = '가격을 다시 불러오는 중';
+
 /// 갈래 B 사유별 문구. [hasNames] 는 메뉴 이름을 하나라도 해석했는지다 (design §3.6 empty 행).
 /// 알려진 6개 사유 모두에 값이 있어야 한다 (사유가 추가되면 이 switch 가 컴파일 오류로 알려 준다).
+///
+/// [repeated] 는 `PRICE_MISMATCH` 에서만 의미가 있다: 같은 카트로 재가격을 이미 한 번 적용했거나 재가격해도 달라진 게 없을 때
+/// (**변형 N**, design P2 루프 차단기) — 재가격 버튼을 다시 주지 않는다.
 GateFailureCopy gateFailureCopy(
   PaymentFailureReason reason, {
   required bool hasNames,
+  bool repeated = false,
 }) {
   switch (reason) {
+    case PaymentFailureReason.priceMismatch:
+      if (repeated) {
+        return const GateFailureCopy(
+          headline: '가격을 다시 확인했는데 달라진 게 없어요',
+          body: '카트의 금액은 지금 가격과 같아요. 가격이 잠깐 바뀌었다가 돌아왔을 수 있어요. 카트로 돌아가 다시 결제해 보세요.',
+          subBody:
+              '같은 화면이 계속 나오면 카트를 비우고 메뉴를 다시 담아 보세요. 그래도 안 되면 아래 오류 코드와 함께 관리자에게 문의해 주세요.',
+          primaryLabel: '카트로 돌아가기',
+          primaryAction: PaymentFailureAction.popToCart,
+          secondaryLabel: '카트 비우고 메뉴 보러가기',
+          secondaryAction: PaymentFailureAction.clearCartAndBrowse,
+          secondaryIsLine: true,
+        );
+      }
+      return GateFailureCopy(
+        headline: '메뉴 가격이 바뀌었어요',
+        body: '카트에 담은 뒤에 가격이 바뀐 메뉴가 있어요. 최신 가격으로 다시 담으면 바뀐 금액을 카트에서 확인하고 결제할 수 있어요.',
+        subBody: '카트에 담은 메뉴와 수량은 그대로 남아요.',
+        listHeader: hasNames ? '가격을 다시 확인할 메뉴' : null,
+        primaryLabel: kRepriceLabel,
+        primaryAction: PaymentFailureAction.repriceAndReturn,
+        secondaryLabel: '카트로 돌아가기',
+        secondaryAction: PaymentFailureAction.popToCart,
+        secondaryIsLine: true,
+      );
+    case PaymentFailureReason.optionUnavailable:
+      return GateFailureCopy(
+        headline: '선택하신 옵션이 바뀌었어요',
+        body: hasNames
+            ? '아래 메뉴에서 고르신 옵션을 지금은 선택할 수 없어요. 카트에서 어떤 옵션인지 확인하고 다시 골라 주세요.'
+            : '선택하신 옵션이 바뀐 메뉴가 있어요. 카트에서 확인해 주세요.',
+        subBody: '옵션이 바뀌면 가격도 함께 바뀔 수 있어요. 다시 고른 뒤 카트에서 새 금액을 확인해 주세요.',
+        listHeader: '옵션을 다시 골라야 하는 메뉴',
+        primaryLabel: '카트에서 확인하기',
+        primaryAction: PaymentFailureAction.popToCart,
+        secondaryLabel: '닫기',
+        secondaryAction: PaymentFailureAction.popToCart,
+      );
     case PaymentFailureReason.menuSoldOut:
       return GateFailureCopy(
         headline: '품절된 메뉴가 있어요',

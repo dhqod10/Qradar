@@ -6,6 +6,7 @@ import 'package:qradar/data/datasources/remote/qoin_remote_data_source.dart';
 import 'package:qradar/data/repositories/payment_gateway_repository_impl.dart';
 import 'package:qradar/domain/entities/cart_entity.dart';
 import 'package:qradar/domain/entities/cart_item_entity.dart';
+import 'package:qradar/domain/entities/selected_option.dart';
 
 /// F1 재발 방지 (spec §19.1 T2 / F3).
 ///
@@ -44,6 +45,49 @@ void main() {
       ..sort();
     expect(keys, golden);
     expect(keys.contains('brandId'), isFalse);
+  });
+
+  test('payment_price_authority §1-5: items[] 와 selectedOptions[] 의 키 집합 = 골든 (서버 CONSUMED_ITEM_KEYS / CONSUMED_OPTION_KEYS 와 같은 파일)', () {
+    final full =
+        jsonDecode(File('test_fixtures/qoin_cart_contract.json').readAsStringSync())
+            as Map<String, dynamic>;
+    const cart = CartEntity(
+      storeId: 's1',
+      storeName: '강남점',
+      subtotal: 4500,
+      items: [
+        CartItemEntity(
+          cartItemId: 'c1',
+          menuItemId: 'm1',
+          menuItemName: '아메리카노',
+          quantity: 1,
+          unitPriceWithOptions: 4500,
+          lineTotal: 4500,
+          selectedOptions: [
+            SelectedOption(
+              groupId: 'g1',
+              groupName: '샷',
+              itemId: 'i1',
+              label: '샷 추가',
+              priceDelta: 500,
+            ),
+          ],
+        ),
+      ],
+    );
+    final item =
+        (PaymentGatewayRepositoryImpl.cartToMap(cart)['items'] as List).first
+            as Map<String, dynamic>;
+    expect(item.keys.toList()..sort(), (full['itemKeys'] as List).cast<String>());
+    final opt = (item['selectedOptions'] as List).first as Map<String, dynamic>;
+    expect(
+      opt.keys.toList()..sort(),
+      (full['selectedOptionKeys'] as List).cast<String>(),
+    );
+    // 서버 타입이 한때 선언했던 거짓 키 (§1-5) — 앱은 보낸 적이 없다.
+    expect(opt.containsKey('optionGroupId'), isFalse);
+    expect(opt.containsKey('optionId'), isFalse);
+    expect(item.containsKey('imageUrl'), isFalse);
   });
 
   test('CartEntity 에는 brandId 필드가 없다 (추가하면 "앱이 보내는 브랜드" 라는 거짓 권위가 생긴다)', () {

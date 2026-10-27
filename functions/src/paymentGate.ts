@@ -15,13 +15,18 @@
 import { canSellNow } from "./storeSellability";
 import { classifyCartMenu, CartMenuReason, MergedMenu, RawDoc } from "./menuVisibility";
 
-/** 거절 사유 6종 (고객 화면이 아는 목록 — design §3.1). */
+/**
+ * 거절 사유 8종 (고객 화면이 아는 목록 — design §3.1). `PRICE_MISMATCH` / `OPTION_UNAVAILABLE` 은 금액 게이트
+ * (`priceGate.ts`, payment_price_authority §9-1)가 쓰며 토큰 문법은 메뉴 사유와 같다.
+ */
 export type GateReason =
   | "STORE_NOT_SELLABLE"
   | "STORE_NOT_FOUND"
   | "MENU_SOLD_OUT"
   | "MENU_EXCLUDED"
   | "MENU_NOT_FOUND"
+  | "PRICE_MISMATCH"
+  | "OPTION_UNAVAILABLE"
   | "READ_FAILED";
 
 /**
@@ -49,6 +54,8 @@ export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-fo
   MENU_SOLD_OUT: "failed-precondition",
   MENU_EXCLUDED: "failed-precondition",
   MENU_NOT_FOUND: "not-found",
+  PRICE_MISMATCH: "failed-precondition",
+  OPTION_UNAVAILABLE: "failed-precondition",
   READ_FAILED: "unavailable",
 };
 
@@ -59,10 +66,19 @@ const GATE_TEXT: Record<GateReason, string> = {
   MENU_SOLD_OUT: "품절된 메뉴가 있어요. 카트에서 빼고 다시 시도해주세요",
   MENU_EXCLUDED: "이 매장에서 더 이상 판매하지 않는 메뉴가 있어요",
   MENU_NOT_FOUND: "메뉴 정보가 변경됐어요. 카트를 비우고 다시 담아주세요",
+  PRICE_MISMATCH: "메뉴 가격이 바뀌었어요. 최신 가격으로 다시 담아주세요",
+  OPTION_UNAVAILABLE: "선택한 옵션이 바뀌었어요. 카트에서 옵션을 다시 골라주세요",
   READ_FAILED: "일시적인 오류예요. 잠시 후 다시 시도해주세요",
 };
 
-const MENU_REASONS: ReadonlySet<GateReason> = new Set(["MENU_SOLD_OUT", "MENU_EXCLUDED", "MENU_NOT_FOUND"]);
+/** 토큰에 menuItemId 를 싣는 사유 (메뉴 사유 3종 + 금액 사유 2종 — payment_price_authority R11). */
+const MENU_REASONS: ReadonlySet<GateReason> = new Set([
+  "MENU_SOLD_OUT",
+  "MENU_EXCLUDED",
+  "MENU_NOT_FOUND",
+  "PRICE_MISMATCH",
+  "OPTION_UNAVAILABLE",
+]);
 
 /** 토큰의 id 문법 (spec §15.1): Firestore 문서 ID — `,` `:` `[` `]` 가 들어가지 않는다. */
 export const TOKEN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -97,6 +113,16 @@ export interface GateReader {
   getStore(storeId: string): Promise<RawDoc | null>;
   /** §7.2 ② — getAll 1회로 묶는다. brandId 가 null 이면 마스터는 읽지 않는다. */
   getMenuDocs(storeId: string, brandId: string | null, menuItemIds: string[]): Promise<MenuDocs>;
+  /**
+   * 금액 게이트용 옵션 그룹 문서 (payment_price_authority R3). getAll 1 round-trip.
+   * 반환 키는 `optionRefKey(scope, id)`; 문서가 없으면 null. brand scope 는 `brandId` 가 null 이면 읽지 않고 null.
+   * 읽기 실패는 예외.
+   */
+  getOptionGroups(
+    storeId: string,
+    brandId: string | null,
+    refs: ReadonlyArray<{ scope: "master" | "brand" | "store"; id: string }>
+  ): Promise<Map<string, RawDoc | null>>;
 }
 
 // ── 평가 ─────────────────────────────────────────────────────────────────────
@@ -131,7 +157,7 @@ export type GateResult =
     };
 
 /** Firestore 경로 조립에 안전한 id 인가 ('/' 가 들어가면 다른 경로를 읽게 된다). */
-function isLookupSafeId(id: unknown): id is string {
+export function isLookupSafeId(id: unknown): id is string {
   return typeof id === "string" && id.length > 0 && id.length <= 256 && !id.includes("/") && id !== "." && id !== "..";
 }
 

@@ -1,3 +1,4 @@
+import 'package:qradar/core/utils/option_availability.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/menu_override_entity.dart';
 
@@ -43,20 +44,85 @@ class MenuViolation {
   final MenuViolationKind kind;
 }
 
+/// 재가격으로 **단가가 달라진** 카트 라인 1건 (payment_price_authority R9). 금액은 `computeCartAmount` 와 같은 식으로
+/// 문서에서 다시 계산한 값이다 — presentation 이 계산하지 않는다.
+class RepricedLine {
+  const RepricedLine({
+    required this.cartItemId,
+    required this.menuItemId,
+    required this.menuItemName,
+    required this.oldUnitPrice,
+    required this.newUnitPrice,
+  });
+
+  final String cartItemId;
+  final String menuItemId;
+  final String menuItemName;
+  final int oldUnitPrice;
+  final int newUnitPrice;
+
+  bool get isIncrease => newUnitPrice > oldUnitPrice;
+}
+
+/// 카트 라인 하나의 옵션 선택이 지금은 유효하지 않다 (spec R4 와 같은 판정 — `validateSelection`).
+class LineOptionIssue {
+  const LineOptionIssue({
+    required this.cartItemId,
+    required this.menuItemId,
+    required this.issue,
+  });
+
+  final String cartItemId;
+  final String menuItemId;
+  final OptionIssue issue;
+}
+
+/// 선검증이 **직접 읽어서** 다시 계산한 결과. 읽기 실패·타임아웃이면 만들어지지 않는다 (선검증은 권위가 아니다).
+class CartRepricing {
+  const CartRepricing({
+    this.priceChanges = const [],
+    this.optionIssues = const [],
+  });
+
+  static const CartRepricing none = CartRepricing();
+
+  /// 단가가 달라진 라인. 옵션 위반 라인은 유효한 가격이 없으므로 여기에 들어가지 않는다.
+  final List<RepricedLine> priceChanges;
+  final List<LineOptionIssue> optionIssues;
+}
+
 /// 선검증 결과. **위반을 직접 읽어서 확인했을 때만** 위반이 들어 있다.
 ///
 /// 확인 실패(네트워크/타임아웃/권한)는 [none] 과 구분되지 않는다 (design N1·N2, spec §8.2).
 /// 이 타입에 `failed` / `verified` 를 두지 않는다.
 class CheckoutValidation {
-  const CheckoutValidation({this.store, this.menus = const []});
+  const CheckoutValidation({
+    this.store,
+    this.menus = const [],
+    this.repricing = CartRepricing.none,
+  });
 
   static const CheckoutValidation none = CheckoutValidation();
 
   final StoreViolation? store;
   final List<MenuViolation> menus;
 
-  bool get hasViolations => store != null || menus.isNotEmpty;
+  /// 재가격 결과 (payment_price_authority R9). 가격 변동은 위반이 아니므로 [hasViolations] 에 들어가지 않는다.
+  final CartRepricing repricing;
 
-  /// 위반 메뉴 id 집합 (종류 단위, 중복 없음).
+  /// 옵션 위반은 위반이다 — 서버가 어차피 거절한다 (`OPTION_UNAVAILABLE`).
+  bool get hasViolations =>
+      store != null || menus.isNotEmpty || repricing.optionIssues.isNotEmpty;
+
+  bool get hasPriceChanges => repricing.priceChanges.isNotEmpty;
+
+  List<LineOptionIssue> get optionIssues => repricing.optionIssues;
+  List<RepricedLine> get priceChanges => repricing.priceChanges;
+
+  /// 위반 메뉴 id 집합 (종류 단위, 중복 없음). 메뉴 위반만 — 옵션 위반 메뉴는 [optionViolatedMenuItemIds].
   Set<String> get violatedMenuItemIds => {for (final m in menus) m.menuItemId};
+
+  Set<String> get optionViolatedMenuItemIds => {
+    for (final o in repricing.optionIssues) o.menuItemId,
+  };
 }

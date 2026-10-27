@@ -170,22 +170,37 @@ flutter build appbundle --release --dart-define=KAKAO_JS_KEY=<your-js-key>
 **두 스위치는 독립이다.** 가격 쪽 오탐으로 `PAYMENT_PRICE_MODE` 를 내려도 품절 게이트는 그대로
 유지된다. (검증 끝난 보호를, 검증 중인 다른 것 때문에 잃지 않게 나눴다.)
 
+- **읽는 곳**: 둘 다 `functions/src/verifyTossPayment.ts` 의 `defineString("PAYMENT_GATE_MODE" | "PAYMENT_PRICE_MODE", { default: "off" })`
+  이고, 값은 `resolveGateMode` / `resolvePriceMode`(= 같은 함수) 로 정규화된다 — 폴백이 같다. 둘 다 `verifyTossPayment`
+  함수 하나의 환경변수라 **재배포 단위도 `functions:verifyTossPayment` 하나**다. 값은 **배포 머신의
+  `functions/.env.order-app-5957e` 에 한 파일**에 같이 있다 — 한 키를 바꾸는 명령이 다른 키를 지우지 않게 아래 6.2 의
+  `grep -v` 형식을 쓴다. **배포 머신에서 그 파일이 없으면 두 스위치가 함께 `off` 로 떨어진다.**
+- **조합**: `PAYMENT_GATE_MODE=off` 인데 `PAYMENT_PRICE_MODE` 가 `shadow`/`enforce` 면 가격 모드가 매장·메뉴 문서를 **직접
+  읽어** 금액을 계산한다(품절·판매 중단 판정은 하지 않는다). 가격 쪽은 플래그 조합과 무관하게 동작한다. 반대로
+  `PAYMENT_PRICE_MODE=off` 면 옵션 그룹은 물론 메뉴 문서도 가격 목적으로 읽지 않는다(비용 0).
+
 각 값:
 
 | 값 | 동작 |
 |---|---|
-| `off` | 검사하지 않는다. 관련 문서 읽기 0 (비용 0). **기본값·미지값·오타·대소문자 불일치는 전부 `off`** — 설정 오타로 매출이 멈추는 것보다 구멍이 열려 있는 게 낫다는 판단(spec §17.0). |
+| `off` | 검사하지 않는다. 관련 문서 읽기 0 (비용 0 — 금액 모드는 옵션 그룹도 읽지 않는다). **기본값·미지값·오타·대소문자 불일치는 전부 `off`** — 설정 오타로 매출이 멈추는 것보다 구멍이 열려 있는 게 낫다는 판단(spec §17.0). |
 | `shadow` | 검사하되 **거절하지 않고** `paymentGateRejections` 에 `detail.shadow:true` 로 기록만. "무엇이 막힐지" 를 돈 안 멈추고 본다. |
 | `enforce` | 실제로 거절한다. |
 
 ### 6.2 모드 값 바꾸기
 
-값은 배포 머신의 `functions/.env.order-app-5957e` 한 줄이다 (git 제외). **배포 시점에 박히므로
+값은 배포 머신의 `functions/.env.order-app-5957e` 에 키마다 한 줄이다 (git 제외). **배포 시점에 박히므로
 파일만 고치면 반영되지 않고 재배포해야 한다.** 아래는 `PAYMENT_GATE_MODE` 예시 — `PAYMENT_PRICE_MODE`
 도 키 이름만 바꿔 같은 방식이다. `>` 로 덮어쓰지 않는다(다른 키가 있을 수 있다).
 
 ```bash
 cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_GATE_MODE=' functions/.env.order-app-5957e > /tmp/psa_env.new ; echo "PAYMENT_GATE_MODE=enforce" >> /tmp/psa_env.new && mv /tmp/psa_env.new functions/.env.order-app-5957e && cat functions/.env.order-app-5957e && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
+```
+
+금액 스위치는 키 이름만 바꾼 같은 형식이다 (`cat` 출력에 **두 키가 다 보이는지** 눈으로 확인한다):
+
+```bash
+cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_PRICE_MODE=' functions/.env.order-app-5957e > /tmp/ppa_env.new ; echo "PAYMENT_PRICE_MODE=enforce" >> /tmp/ppa_env.new && mv /tmp/ppa_env.new functions/.env.order-app-5957e && cat functions/.env.order-app-5957e && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
 ```
 
 ### 6.3 🚨 비상 정지 — 게이트가 정상 결제를 막고 있을 때
@@ -195,6 +210,9 @@ cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_GATE_MODE=' functions
 `off` 로 바꿔 친다.
 
 - 품절·매장 상태 문제면 `PAYMENT_GATE_MODE=off`, 금액 문제면 `PAYMENT_PRICE_MODE=off`.
+- ⚠️ **금액 게이트를 `off` 로 내린 상태는 "결제 금액을 클라이언트가 정하는 상태"(1원 결제 가능)다.** 품절 게이트의 `off` 보다 구멍이 크다.
+- **무한 거절 루프 신호**: 같은 `uid` + 같은 `storeId` 의 `PRICE_MISMATCH` 가 `paymentGateRejections` 에 짧은 시간에 반복해서
+  쌓이면(고객이 `최신 가격으로 다시 담기` 로도 못 빠져나온다) 원인을 찾기 전에 먼저 `PAYMENT_PRICE_MODE=off` 로 내린다.
 - ⚠️ **`off` 로 내린 뒤 그대로 잊지 않는다.** `off` 는 구멍이 열린 상태다. 원인을 고치고
   `shadow` → `enforce` 를 다시 밟는다.
 
@@ -205,6 +223,10 @@ Console → Cloud Run → `verifytosspayment` → 컨테이너 → 변수 및 �
 가 실제로 도는지는 의도적으로 위반 1건을 만들어 `paymentGateRejections` 에 기록이 생기는지로
 확인한다(기본값이 `off` 라 "기록 없음" 은 "안 돈 것" 과 구분되지 않는다).
 
+금액 스위치의 양성 대조는 **결제창(Toss)이 떠 있는 동안 그 메뉴의 `basePrice` 를 바꾸고** 결제를 마치는 것이다 —
+신버전 앱은 결제 탭 직전에 카트를 재가격하므로 일반 조작으로는 서버 거절이 나지 않는다. 기대: `PRICE_MISMATCH` 1건,
+`shadow` 일 때만 `detail.shadow:true`, `detail.delta` 부호가 변경 방향과 같다.
+
 ### 6.5 일일 점검 — `paymentGateRejections`
 
 Console → Firestore → `paymentGateRejections`. 거절이 **"악용 차단"** 인지 **"데이터가 틀어져
@@ -213,6 +235,19 @@ Console → Firestore → `paymentGateRejections`. 거절이 **"악용 차단"**
 - **영업 중인 정상 매장 / 품절이 아닌 메뉴가 잡히면** → 오탐이다. 즉시 원인을 찾는다. 방치하면
   그 매장의 매출이 계속 멈춘다. 급하면 6.3 으로 내린다.
 - 미승인·반려 매장, 실제 품절 메뉴만 잡히면 정상(게이트가 할 일을 한 것).
+
+**금액 거절 (`PRICE_MISMATCH` · `OPTION_UNAVAILABLE`)** 은 `detail` 로 읽는다:
+
+| 필드 | 읽는 법 |
+|---|---|
+| `delta` (= 클라 선언액 − 서버 계산액, 부호 있음) | **시점 차이는 양·음 양방향으로 흩어지고 금액이 작다.** 조작은 음수로 크게 치우친다(공격자는 적게 낸다). 이 부호 분포가 둘을 사후에 가르는 유일한 수단이다 |
+| `checks` (c1~c6) | 판정식 어느 항이 깨졌나. c1~c3 은 클라 값끼리의 정합성(권위 아님), **c4~c6 이 권위** |
+| `lines[]` | 라인별 `clientLineTotal` / `serverLineTotal` / `quantity`. `unusable` 이 있으면 그 라인은 계산할 수 없었다(메뉴 해석 불가·수량 이상) |
+| `optionIssues[]` | `missing` `disabled` `inactive` `notInRefs` `requiredEmpty` `multiInSingle` `duplicate` |
+| `failure` (READ_FAILED 일 때) | `storeUnreadable` `optionGroupsUnreadable` `optionGroupCapExceeded` — **`optionGroupCapExceeded` 는 1건이라도 나오면 멈추고 원인부터** (도달 불가 가정이 틀렸다) |
+
+- **정상 결제가 잡히면(오탐)** 즉시 원인을 찾는다. 급하면 `PAYMENT_PRICE_MODE=off`(6.3).
+- 가격 변경 이력(`priceHistory`, admin 읽기 전용)으로 "그 시점에 가격이 바뀌었나" 를 확인한다 — 같은 `targetId` 의 `changedAt` 근처.
 
 ### 6.6 아직 검증되지 않은 것
 

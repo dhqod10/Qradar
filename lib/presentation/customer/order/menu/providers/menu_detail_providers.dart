@@ -1,4 +1,5 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/utils/cart_pricing.dart';
 import 'package:qradar/data/datasources/remote/option_remote_data_source.dart';
 import 'package:qradar/data/repositories/option_repository_impl.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
@@ -188,18 +189,23 @@ final menuItemCurrentPriceProvider =
   final selected = ref.watch(menuItemSelectedOptionsProvider(key.menuItemId));
   final quantity = ref.watch(menuItemQuantityProvider(key.menuItemId));
 
-  var unit = detail.basePrice;
+  final priceDeltas = <int>[];
   if (groups != null) {
     for (final g in groups) {
       final selectedIds = selected[g.id] ?? const <String>{};
       for (final item in g.items) {
-        if (selectedIds.contains(item.id)) {
-          unit += item.priceDelta;
-        }
+        if (selectedIds.contains(item.id)) priceDeltas.add(item.priceDelta);
       }
     }
   }
-  return unit * quantity;
+  // 서버와 같은 식 하나 (payment_price_authority R7) — 여기서 직접 합산하지 않는다.
+  return computeLineTotal(
+    unitPrice: computeLinePrice(
+      basePrice: detail.basePrice,
+      priceDeltas: priceDeltas,
+    ),
+    quantity: quantity,
+  );
 });
 
 /// "담기" 버튼 활성 여부 — 모든 required 그룹이 1개 이상 선택됨.

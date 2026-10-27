@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:qradar/core/utils/cart_pricing.dart';
 import 'package:qradar/domain/entities/cart_entity.dart';
 import 'package:qradar/domain/entities/cart_item_entity.dart';
 
@@ -54,7 +55,10 @@ class CartLocalDataSource {
         final newQty = line.quantity + item.quantity;
         mergedItems.add(line.copyWith(
           quantity: newQty,
-          lineTotal: line.unitPriceWithOptions * newQty,
+          lineTotal: computeLineTotal(
+            unitPrice: line.unitPriceWithOptions,
+            quantity: newQty,
+          ),
         ));
         merged = true;
       } else {
@@ -83,10 +87,37 @@ class CartLocalDataSource {
         .map((line) => line.cartItemId == cartItemId
             ? line.copyWith(
                 quantity: quantity,
-                lineTotal: line.unitPriceWithOptions * quantity,
+                lineTotal: computeLineTotal(
+                  unitPrice: line.unitPriceWithOptions,
+                  quantity: quantity,
+                ),
               )
             : line)
         .toList(growable: false);
+    _emit(cart.copyWith(items: updated, subtotal: _subtotal(updated)));
+  }
+
+  /// 재가격: 라인 단가를 새 값으로 바꾸고 합계는 `cart_pricing.dart` 의 식으로 다시 만든다.
+  /// 바뀐 라인이 없으면 emit 하지 않는다 (불필요한 리빌드·선검증 연쇄 방지).
+  void applyUnitPrices(Map<String, int> unitPriceByCartItemId) {
+    final cart = _current;
+    if (cart == null || unitPriceByCartItemId.isEmpty) return;
+    var changed = false;
+    final updated = cart.items
+        .map((line) {
+          final next = unitPriceByCartItemId[line.cartItemId];
+          if (next == null || next == line.unitPriceWithOptions) return line;
+          changed = true;
+          return line.copyWith(
+            unitPriceWithOptions: next,
+            lineTotal: computeLineTotal(
+              unitPrice: next,
+              quantity: line.quantity,
+            ),
+          );
+        })
+        .toList(growable: false);
+    if (!changed) return;
     _emit(cart.copyWith(items: updated, subtotal: _subtotal(updated)));
   }
 
@@ -120,11 +151,6 @@ class CartLocalDataSource {
     return '${item.menuItemId}|${ids.join(',')}';
   }
 
-  static int _subtotal(List<CartItemEntity> items) {
-    var total = 0;
-    for (final it in items) {
-      total += it.lineTotal;
-    }
-    return total;
-  }
+  static int _subtotal(List<CartItemEntity> items) =>
+      sumLineTotals(items.map((it) => it.lineTotal));
 }

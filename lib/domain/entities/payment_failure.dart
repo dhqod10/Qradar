@@ -12,13 +12,16 @@ enum PaymentFailureFamily {
   unknown,
 }
 
-/// 서버 게이트가 보내는 알려진 거절 사유 6개 (spec §15.1). 목록 밖은 [unknown] → 갈래 C.
+/// 서버 게이트가 보내는 알려진 거절 사유 8개 (payment_server_authority spec §15.1 의 6개 +
+/// payment_price_authority §9-1 의 금액 사유 2개). 목록 밖은 [unknown] → 갈래 C.
 enum PaymentFailureReason {
   storeNotSellable('STORE_NOT_SELLABLE'),
   storeNotFound('STORE_NOT_FOUND'),
   menuSoldOut('MENU_SOLD_OUT'),
   menuExcluded('MENU_EXCLUDED'),
   menuNotFound('MENU_NOT_FOUND'),
+  priceMismatch('PRICE_MISMATCH'),
+  optionUnavailable('OPTION_UNAVAILABLE'),
   readFailed('READ_FAILED'),
   unknown('');
 
@@ -26,8 +29,13 @@ enum PaymentFailureReason {
 
   final String token;
 
+  /// 토큰이 `menuItemId` 를 싣는 사유 (메뉴 사유 3종 + 금액 사유 2종 — 메뉴 사유 계열, payment_price_authority R11).
   bool get isMenuReason =>
-      this == menuSoldOut || this == menuExcluded || this == menuNotFound;
+      this == menuSoldOut ||
+      this == menuExcluded ||
+      this == menuNotFound ||
+      this == priceMismatch ||
+      this == optionUnavailable;
 
   static PaymentFailureReason? fromToken(String token) {
     for (final r in values) {
@@ -56,7 +64,7 @@ class PaymentFailure {
   /// [family] == gate 일 때만 의미가 있다. 그 외에는 [PaymentFailureReason.unknown].
   final PaymentFailureReason reason;
 
-  /// MENU_* 사유일 때 토큰에서 파싱한 id (id 정규식 통과분만, 중복은 페이지가 제거).
+  /// 메뉴 사유 계열([PaymentFailureReason.isMenuReason])일 때 토큰에서 파싱한 id (id 정규식 통과분만, 중복은 페이지가 제거).
   final List<String> menuItemIds;
 
   /// family == launch 일 때 Toss errorCode (문구 매핑 키로만 쓴다).
@@ -81,7 +89,7 @@ class PaymentFailure {
   /// `verifyAndCreateOrder` 등에서 잡은 예외 → 갈래 B/C.
   ///
   /// 입력은 [VerifyPaymentFailure.message] (또는 임의 객체의 `toString()`) 이며 **끝의 토큰만** 읽는다.
-  /// 알려진 6개 → 갈래 B. 그 밖(토큰 없음·모르는 토큰·파싱 불가)은 모두 갈래 C — 돈이 안 나갔다고 잘못 말하느니
+  /// 알려진 8개 → 갈래 B. 그 밖(토큰 없음·모르는 토큰·파싱 불가)은 모두 갈래 C — 돈이 안 나갔다고 잘못 말하느니
   /// 확인을 시킨다 (design D4).
   factory PaymentFailure.from(Object error) {
     final text = error is VerifyPaymentFailure

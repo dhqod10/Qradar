@@ -44,12 +44,28 @@ class OptionGroupModel {
     String? brandId,
     String? storeId,
   }) {
-    final data = doc.data() ?? const <String, dynamic>{};
+    return OptionGroupModel.fromData(
+      doc.id,
+      doc.data() ?? const <String, dynamic>{},
+      scope: scope,
+      brandId: brandId,
+      storeId: storeId,
+    );
+  }
+
+  /// 문서 데이터 → 모델. 값 해석의 단일 경로다 (결제 선검증·교차 골든 테스트도 이 경로를 탄다).
+  factory OptionGroupModel.fromData(
+    String id,
+    Map<String, dynamic> data, {
+    required String scope,
+    String? brandId,
+    String? storeId,
+  }) {
     final rawItems = (data['items'] as List<dynamic>?) ?? const [];
     final createdAtTs = data['createdAt'];
     final updatedAtTs = data['updatedAt'];
     return OptionGroupModel(
-      id: doc.id,
+      id: id,
       scope: scope,
       brandId: brandId,
       storeId: storeId,

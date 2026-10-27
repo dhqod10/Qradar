@@ -37,4 +37,12 @@ class CartRepositoryImpl implements CartRepository {
   Future<void> clearCart() async {
     _local.clearCart();
   }
+
+  @override
+  Future<CartEntity?> getActiveCart() async => _local.current;
+
+  @override
+  Future<void> applyUnitPrices(Map<String, int> unitPriceByCartItemId) async {
+    _local.applyUnitPrices(unitPriceByCartItemId);
+  }
 }

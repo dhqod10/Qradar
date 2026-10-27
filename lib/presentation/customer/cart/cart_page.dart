@@ -11,7 +11,9 @@ import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart'
 import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
 import 'package:qradar/presentation/customer/cart/widgets/cart_availability_banner.dart';
 import 'package:qradar/presentation/customer/cart/widgets/cart_line_tile.dart';
+import 'package:qradar/presentation/customer/cart/widgets/cart_price_change_banner.dart';
 import 'package:qradar/presentation/customer/checkout/checkout_page.dart';
+import 'package:qradar/presentation/customer/order/menu/menu_item_detail_page.dart';
 
 class CartPage extends ConsumerStatefulWidget {
   const CartPage({super.key});
@@ -90,10 +92,28 @@ class _CartPageState extends ConsumerState<CartPage>
     for (final line in cart.items)
       resolveCartLineAvailability(
         menuItemId: line.menuItemId,
+        cartItemId: line.cartItemId,
         validation: validation,
         rejectedMenuItemIds: rejected,
       ),
   ];
+
+  /// `다시 고르기` (design §5.5) — 라인은 어차피 결제할 수 없는 상태였으므로 빼고 메뉴 상세에서 다시 담게 한다.
+  Future<void> _reselectOptions(CartEntity cart, String cartItemId) async {
+    final line = cart.items.where((l) => l.cartItemId == cartItemId).firstOrNull;
+    if (line == null) return;
+    await ref.read(removeCartItemUseCaseProvider).call(cartItemId);
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MenuItemDetailPage(
+          storeId: cart.storeId,
+          storeName: cart.storeName,
+          menuItemId: line.menuItemId,
+        ),
+      ),
+    );
+  }
 
   Future<void> _onCheckout(CartEntity cart) async {
     if (_checkingOut) return;
@@ -116,20 +136,42 @@ class _CartPageState extends ConsumerState<CartPage>
     // 자동 선검증 ③ `결제하기` 탭 (체크아웃 진입 검증). 위반이 있을 때만 막고,
     // 확인 실패/통과는 기존대로 체크아웃으로 간다 (spec §8.2).
     setState(() => _checkingOut = true);
-    CheckoutValidation result;
+    CartRefreshResult result;
     try {
-      result = await ref.read(cartValidationProvider.notifier).refresh();
+      result = await ref
+          .read(cartValidationProvider.notifier)
+          .refreshAndReprice();
     } finally {
       if (mounted) setState(() => _checkingOut = false);
     }
     if (!mounted) return;
-    if (result.hasViolations) {
+    if (result.validation.hasViolations) {
       _scrollToFirstViolation();
+      return;
+    }
+    // 가격이 새로 바뀌었으면 체크아웃으로 가지 않고 카트에서 한 번 멈춘다 (design §5.3). 금액이 바뀐 채로 결제 화면에
+    // 들어가면 "내가 본 금액" 과 다른 금액을 결제하게 된다. 한 번 더 탭하는 것이 동의다 — 그 탭은 다음 신선 선검증도 겸한다.
+    if (result.applied.hasChanges) {
+      _scrollToFirstPriceChange(result.applied.changes.first.cartItemId);
       return;
     }
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const CheckoutPage()));
+  }
+
+  void _scrollToFirstPriceChange(String cartItemId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final ctx = _lineKeys[cartItemId]?.currentContext;
+      if (ctx != null && ctx.mounted) {
+        await Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _scrollToFirstViolation() {
@@ -175,6 +217,9 @@ class _CartPageState extends ConsumerState<CartPage>
     final cart = ref.watch(cartProvider).value;
     final hasItems = cart != null && cart.items.isNotEmpty;
     final rejected = ref.watch(paymentRejectedMenuIdsProvider);
+    final optionRejected = ref.watch(paymentOptionRejectedMenuIdsProvider);
+    final priceChanges = ref.watch(cartPriceChangesProvider);
+    final priceSummary = summarizePriceChanges(cart, priceChanges);
     final validation = hasItems
         ? _validationFor(cart)
         : CheckoutValidation.none;
@@ -185,7 +230,8 @@ class _CartPageState extends ConsumerState<CartPage>
         ? {
             for (var i = 0; i < cart.items.length; i++)
               if (availabilities[i] == CartLineAvailability.soldOut ||
-                  availabilities[i] == CartLineAvailability.unavailable)
+                  availabilities[i] == CartLineAvailability.unavailable ||
+                  availabilities[i] == CartLineAvailability.optionUnavailable)
                 cart.items[i].menuItemId,
           }.length
         : 0;
@@ -240,7 +286,14 @@ class _CartPageState extends ConsumerState<CartPage>
                 key: const ValueKey('list'),
                 cart: cart,
                 availabilities: availabilities,
+                validation: validation,
                 banner: banner,
+                priceChanges: priceChanges,
+                priceSummary: priceSummary,
+                optionRejected: optionRejected,
+                onAcknowledgePrice: () =>
+                    ref.read(cartPriceChangesProvider.notifier).acknowledge(),
+                onReselect: (id) => _reselectOptions(cart, id),
                 onRecheck: _recheck,
                 scroll: _scroll,
                 keyFor: (id) => _lineKeys.putIfAbsent(id, GlobalKey.new),
@@ -318,14 +371,26 @@ class _CartList extends ConsumerWidget {
     super.key,
     required this.cart,
     required this.availabilities,
+    required this.validation,
     required this.banner,
+    required this.priceChanges,
+    required this.priceSummary,
+    required this.optionRejected,
+    required this.onAcknowledgePrice,
+    required this.onReselect,
     required this.onRecheck,
     required this.scroll,
     required this.keyFor,
   });
   final CartEntity cart;
   final List<CartLineAvailability> availabilities;
+  final CheckoutValidation validation;
   final CartBannerVariant? banner;
+  final CartPriceChangesState priceChanges;
+  final CartPriceChangeSummary? priceSummary;
+  final Set<String> optionRejected;
+  final VoidCallback onAcknowledgePrice;
+  final void Function(String cartItemId) onReselect;
   final Future<void> Function() onRecheck;
   final ScrollController scroll;
   final GlobalKey Function(String cartItemId) keyFor;
@@ -335,6 +400,23 @@ class _CartList extends ConsumerWidget {
     return CustomScrollView(
       controller: scroll,
       slivers: [
+        // 가격 변동 배너 (payment_price_authority design §5.2): 가격이 바뀌었을 때만. 위반 배너 위에 둔다.
+        SliverToBoxAdapter(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: priceSummary == null
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: CartPriceChangeBanner(
+                      summary: priceSummary!,
+                      onAcknowledge: onAcknowledgePrice,
+                    ),
+                  ),
+          ),
+        ),
         // 배너: 위반 1건 이상일 때만. 사라질 때 AnimatedSize 로 접힌다 — "문제 없음" 메시지는 띄우지 않는다 (N1).
         SliverToBoxAdapter(
           child: AnimatedSize(
@@ -401,6 +483,17 @@ class _CartList extends ConsumerWidget {
                   availability: i < availabilities.length
                       ? availabilities[i]
                       : CartLineAvailability.normal,
+                  priceChange: priceChanges.byCartItemId[line.cartItemId],
+                  unavailableOptionItemIds: {
+                    for (final o in validation.optionIssues)
+                      if (o.cartItemId == line.cartItemId &&
+                          o.issue.itemId != null)
+                        o.issue.itemId!,
+                  },
+                  serverRejectedOption: optionRejected.contains(
+                    line.menuItemId,
+                  ),
+                  onReselectOptions: () => onReselect(line.cartItemId),
                   onQuantityChanged: (q) => ref
                       .read(updateCartItemQuantityUseCaseProvider)
                       .call(cartItemId: line.cartItemId, quantity: q),
@@ -528,7 +621,7 @@ class _CheckoutBar extends StatelessWidget {
             if (blockedCount > 0) ...[
               const SizedBox(height: 4),
               Text(
-                '품절·판매중단 메뉴 $blockedCount개가 포함된 금액이에요',
+                '확인이 필요한 메뉴 $blockedCount개가 포함된 금액이에요',
                 style: const TextStyle(
                   fontSize: 11,
                   color: AppColors.textMuted,

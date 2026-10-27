@@ -210,6 +210,12 @@ Future<void> _runAction(
             .read(paymentRejectedMenuIdsProvider.notifier)
             .addAll(failure.menuItemIds);
       }
+      // 옵션 사유는 따로 기록한다 — 카트 행의 폴백 캡션이 "옵션이 바뀐 메뉴" 라고 말한다 (payment_price_authority design §4.3).
+      if (failure.reason == PaymentFailureReason.optionUnavailable) {
+        ref
+            .read(paymentOptionRejectedMenuIdsProvider.notifier)
+            .addAll(failure.menuItemIds);
+      }
       navigator.pop();
     case PaymentFailureAction.browseStores:
       ref.read(selectedTabIndexProvider.notifier).set(0);
@@ -221,6 +227,9 @@ Future<void> _runAction(
     case PaymentFailureAction.goToLog:
       ref.read(selectedTabIndexProvider.notifier).set(3);
       navigator.popUntil((route) => route.isFirst);
+    case PaymentFailureAction.repriceAndReturn:
+      // 읽기·적용·실패 표시가 필요한 동작이라 [_PriceMismatchBody] 가 직접 처리한다 (상태를 가진 위젯).
+      break;
   }
 }
 
@@ -280,28 +289,52 @@ class _Headline extends StatelessWidget {
 }
 
 class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.label, required this.onPressed});
+  const _PrimaryButton({
+    required this.label,
+    required this.onPressed,
+    this.busy = false,
+  });
   final String label;
   final VoidCallback onPressed;
+
+  /// 진행 중: 라벨 대신 스피너를 그리고 탭을 막는다 (재가격 중 — payment_price_authority design §4.2).
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 54,
       child: ElevatedButton(
-        onPressed: onPressed,
+        onPressed: busy ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.onPrimary,
+          disabledBackgroundColor: AppColors.primary,
+          disabledForegroundColor: AppColors.onPrimary,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
+        child: busy
+            ? Semantics(
+                label: kRepriceBusySemantics,
+                child: const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.onPrimary,
+                  ),
+                ),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
       ),
     );
   }
@@ -310,7 +343,9 @@ class _PrimaryButton extends StatelessWidget {
 class _LineButton extends StatelessWidget {
   const _LineButton({required this.label, required this.onPressed});
   final String label;
-  final VoidCallback onPressed;
+
+  /// null 이면 비활성 (재가격 중).
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -415,6 +450,10 @@ class _GateFailBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 가격 거절은 상태(재가격 중/실패/반복)를 가진 별도 위젯이다.
+    if (failure.reason == PaymentFailureReason.priceMismatch) {
+      return _PriceMismatchBody(failure: failure);
+    }
     final names = failure.reason.isMenuReason
         ? resolveFailureMenuNames(
             ref.watch(cartProvider).value,
@@ -464,7 +503,13 @@ class _GateFailBody extends ConsumerWidget {
           ),
         ),
         if (showList)
-          PaymentMenuListCard(header: copy.listHeader!, names: names),
+          PaymentMenuListCard(
+            header: copy.listHeader!,
+            names: names,
+            icon: failure.reason == PaymentFailureReason.optionUnavailable
+                ? Icons.tune_rounded
+                : Icons.remove_circle_outline_rounded,
+          ),
         if (copy.subBody != null) ...[
           const SizedBox(height: 12),
           Text(
@@ -483,7 +528,8 @@ class _GateFailBody extends ConsumerWidget {
         if (secondaryLabel != null && secondaryAction != null) ...[
           const SizedBox(height: 8),
           // `닫기` 는 텍스트 버튼, `다른 매장 둘러보기` 는 라인 버튼 (design §3.1 — 시각적으로 주 버튼과 구별).
-          secondaryAction == PaymentFailureAction.browseStores
+          copy.secondaryIsLine ||
+                  secondaryAction == PaymentFailureAction.browseStores
               ? _LineButton(
                   label: secondaryLabel,
                   onPressed: () =>
@@ -494,6 +540,230 @@ class _GateFailBody extends ConsumerWidget {
                   onPressed: () =>
                       _runAction(context, ref, secondaryAction, failure),
                 ),
+        ],
+      ],
+    );
+  }
+}
+
+// 갈래 B — PRICE_MISMATCH (payment_price_authority design §4.2)
+//
+// 금액이 안 맞아 서버가 거절해도 카트는 스스로 가격을 갱신하지 않으므로 다시 눌러 봐야 같은 거절이다 (spec §7-2 무한 거절 루프).
+// 그래서 주 버튼은 pop 이 아니라 **카트를 최신 가격으로 다시 읽어 적용하는 동작**이다. 이 화면은 금액 숫자를 그리지 않는다 —
+// 숫자는 카트로 돌아간 뒤 재가격 결과(UseCase 가 계산한 int)로 보인다 (Q6=ⓒ, D4).
+class _PriceMismatchBody extends ConsumerStatefulWidget {
+  const _PriceMismatchBody({required this.failure});
+  final PaymentFailure failure;
+
+  @override
+  ConsumerState<_PriceMismatchBody> createState() => _PriceMismatchBodyState();
+}
+
+class _PriceMismatchBodyState extends ConsumerState<_PriceMismatchBody> {
+  bool _busy = false;
+  int _failures = 0;
+
+  /// 방금 재가격했는데 달라진 게 없었다 → 변형 N 으로 전환 (design P2).
+  bool _noChange = false;
+
+  Future<void> _reprice() async {
+    if (_busy) return;
+    final cart = ref.read(cartProvider).value;
+    if (cart == null || cart.items.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      // 사용자가 직접 누른 동작이다 — 실패는 무음이 아니라 이 화면에 인라인으로 알린다 (design N3). 타임아웃은 UseCase 안의 5초.
+      final validation = await ref
+          .read(validateCheckoutUseCaseProvider)
+          .call(
+            storeId: cart.storeId,
+            menuItemIds: cart.items.map((i) => i.menuItemId),
+            cartItems: cart.items,
+            reportFailure: true,
+          );
+      if (!mounted) return;
+      if (!validation.hasPriceChanges && !validation.hasViolations) {
+        // 재가격해도 같다: 같은 버튼을 다시 주면 두 번째 루프다. 변형 N 으로 바꾸고 서명을 남긴다.
+        ref
+            .read(priceRepricedCartSignatureProvider.notifier)
+            .mark(cartSignature(cart));
+        setState(() {
+          _busy = false;
+          _noChange = true;
+        });
+        return;
+      }
+      final applied = await ref
+          .read(applyRepricedCartUseCaseProvider)
+          .call(validation.repricing);
+      if (!mounted) return;
+      ref.read(cartPriceChangesProvider.notifier).record(applied);
+      ref
+          .read(cartValidationProvider.notifier)
+          .applyKnown(cart.storeId, validation);
+      ref
+          .read(priceRepricedCartSignatureProvider.notifier)
+          .mark(cartSignature(cart));
+      // 체크아웃을 대체한 결제 화면이므로 pop 하면 카트다. 카트가 배너와 라인 표시로 바뀐 금액을 보여 준다.
+      // 자동으로 결제하지 않는다 — 새 금액을 확인하고 고객이 직접 다시 누른다.
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _failures++;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cart = ref.watch(cartProvider).value;
+    final signature = ref.watch(priceRepricedCartSignatureProvider);
+    final repeated =
+        _noChange ||
+        (cart != null && signature != null && signature == cartSignature(cart));
+    final names = repeated
+        ? const <String>[]
+        : resolveFailureMenuNames(cart, widget.failure.menuItemIds);
+    final copy = gateFailureCopy(
+      PaymentFailureReason.priceMismatch,
+      hasNames: names.isNotEmpty,
+      repeated: repeated,
+    );
+    final showList = !repeated && copy.listHeader != null && names.isNotEmpty;
+    final secondaryLabel = copy.secondaryLabel;
+    final secondaryAction = copy.secondaryAction;
+
+    return _FailScaffold(
+      content: [
+        Icon(
+          repeated ? Icons.help_outline_rounded : Icons.price_change_outlined,
+          size: 64,
+          color: AppColors.warning,
+        ),
+        const SizedBox(height: 20),
+        _Headline(copy.headline),
+        const SizedBox(height: 12),
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.info_outline_rounded, size: 16, color: AppColors.info),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                kGateMoneyLine,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textBody,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          copy.body,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 15,
+            height: 1.5,
+            color: AppColors.textBody,
+          ),
+        ),
+        if (showList)
+          PaymentMenuListCard(
+            header: copy.listHeader!,
+            names: names,
+            icon: Icons.price_change_outlined,
+          ),
+        if (copy.subBody != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            copy.subBody!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+          ),
+        ],
+        // 변형 N 은 문의 때 식별 수단이 필요하다 (design Q-D2). 형식 검증을 통과한 토큰 식별자만 — 원문이 아니다.
+        if (repeated) _CodeCaption(widget.failure.rawCode ?? 'PRICE_MISMATCH'),
+      ],
+      buttons: [
+        if (!repeated && _failures > 0) ...[
+          // 재가격 읽기 실패 — 이 화면에 머문다 (원시 예외 문자열은 노출하지 않는다).
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.error_outline_rounded,
+                      size: 16,
+                      color: AppColors.error,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        kRepriceErrorText,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textBody,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_failures >= 2)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Text(
+                      kRepriceErrorHint,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        _PrimaryButton(
+          label: !repeated && _failures > 0
+              ? kRepriceRetryLabel
+              : copy.primaryLabel,
+          busy: _busy,
+          onPressed: () {
+            if (copy.primaryAction == PaymentFailureAction.repriceAndReturn) {
+              _reprice();
+            } else {
+              _runAction(context, ref, copy.primaryAction, widget.failure);
+            }
+          },
+        ),
+        if (secondaryLabel != null && secondaryAction != null) ...[
+          const SizedBox(height: 8),
+          _LineButton(
+            label: secondaryLabel,
+            // 재가격 중에는 비활성. 읽기에 실패해도 '카트로 돌아가기' 는 계속 활성이다 — 카트의 결제하기 탭도 재가격을
+            // 시도하므로 막다른 길이 아니다.
+            onPressed: _busy
+                ? null
+                : () => _runAction(
+                    context,
+                    ref,
+                    secondaryAction,
+                    widget.failure,
+                  ),
+          ),
         ],
       ],
     );

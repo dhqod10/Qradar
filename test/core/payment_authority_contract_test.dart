@@ -5,8 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:qradar/core/utils/checkout_menu_gate.dart';
 import 'package:qradar/core/utils/store_menu_visibility.dart';
 import 'package:qradar/core/utils/store_sellability.dart';
+import 'package:qradar/data/models/menu_item_model.dart';
 import 'package:qradar/data/models/menu_override_model.dart';
-import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/menu_override_entity.dart';
 
@@ -18,15 +18,13 @@ Map<String, dynamic> _load(String name) =>
     jsonDecode(File('test_fixtures/$name').readAsStringSync())
         as Map<String, dynamic>;
 
-MenuItemEntity _master(Map<String, dynamic> m) => MenuItemEntity(
-  id: 'm1',
+/// 마스터 메뉴는 실제 모델 경로(`MenuItemModel.fromData`)로 만든다 — `optionGroupRefs` 해석(scope 부재/모르는 값 = master,
+/// id 부재 = '', 객체가 아닌 요소 건너뜀)을 서버 `menuVisibility.ts` 와 같은 fixture 로 고정하기 위해서다.
+MenuItemEntity _master(Map<String, dynamic> m) => MenuItemModel.fromData(
+  'm1',
+  {'name': '아메리카노', 'mainCategory': 'coffee', 'status': 'approved', ...m},
   storeId: '',
-  name: '아메리카노',
-  mainCategoryCode: 'coffee',
-  basePrice: (m['basePrice'] as num).toInt(),
-  soldOut: m['soldOut'] as bool? ?? false,
-  status: EntityApprovalStatus.approved,
-);
+).toEntity();
 
 MenuItemEntity _storeMenu(Map<String, dynamic> m) => MenuItemEntity(
   id: 'm1',
@@ -80,6 +78,13 @@ void main() {
         expect(r.soldOut, expected['soldOut']);
         expect(r.disabledOptionGroupIds, expected['disabledOptionGroupIds']);
         expect(r.disabledOptionItemIds, expected['disabledOptionItemIds']);
+        expect(
+          [
+            for (final ref in r.optionGroupRefs)
+              {'scope': ref.scope.asString, 'id': ref.id},
+          ],
+          expected['optionGroupRefs'],
+        );
       });
     }
   });

@@ -6,6 +6,7 @@
 import * as admin from "firebase-admin";
 import { GateDetail, GateReader, GateReason, MenuDocs } from "./paymentGate";
 import { RawDoc } from "./menuVisibility";
+import { optionRefKey } from "./optionPricing";
 
 export function makeFirestoreGateReader(db: admin.firestore.Firestore): GateReader {
   return {
@@ -37,6 +38,30 @@ export function makeFirestoreGateReader(db: admin.firestore.Firestore): GateRead
       });
       return out;
     },
+
+    /**
+     * 옵션 그룹 문서 — 한 번의 getAll round-trip (payment_price_authority R3). 경로 조립에 안전하지 않은 id·brandId 없는
+     * brand scope 는 읽지 않고 null(=문서 부재)로 돌려준다.
+     */
+    async getOptionGroups(storeId, brandId, refs) {
+      const out = new Map<string, RawDoc | null>();
+      const reads: Array<{ key: string; ref: admin.firestore.DocumentReference }> = [];
+      for (const r of refs) {
+        const key = optionRefKey(r.scope, r.id);
+        if (out.has(key)) continue;
+        out.set(key, null);
+        if (r.id.length === 0 || r.id.length > 256 || r.id.includes("/") || r.id === "." || r.id === "..") continue;
+        if (r.scope === "master") reads.push({ key, ref: db.collection("optionGroups").doc(r.id) });
+        else if (r.scope === "store") reads.push({ key, ref: db.collection("stores").doc(storeId).collection("optionGroups").doc(r.id) });
+        else if (brandId !== null) reads.push({ key, ref: db.collection("brands").doc(brandId).collection("optionGroups").doc(r.id) });
+      }
+      if (reads.length === 0) return out;
+      const snaps = await db.getAll(...reads.map((x) => x.ref));
+      snaps.forEach((snap, i) => {
+        if (snap.exists) out.set(reads[i].key, snap.data() as RawDoc);
+      });
+      return out;
+    },
   };
 }
 
@@ -46,7 +71,7 @@ export function makeFirestoreGateReader(db: admin.firestore.Firestore): GateRead
  */
 export async function recordGateRejection(
   db: admin.firestore.Firestore,
-  rec: { uid: string; storeId: string; reason: GateReason; detail: GateDetail; amount: number; shadow?: boolean }
+  rec: { uid: string; storeId: string; reason: GateReason; detail: GateDetail | object; amount: number; shadow?: boolean }
 ): Promise<void> {
   try {
     await db.collection("paymentGateRejections").add({

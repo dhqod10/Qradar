@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:qradar/domain/entities/checkout_validation.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
+import 'package:qradar/core/utils/option_availability.dart';
 import 'package:qradar/domain/entities/menu_override_entity.dart';
+import 'package:qradar/domain/entities/option_group_entity.dart';
 import 'package:qradar/domain/repositories/checkout_validation_repository.dart';
 import 'package:qradar/domain/usecases/validate_checkout_use_case.dart';
 
@@ -45,6 +47,13 @@ class _FakeRepo implements CheckoutValidationRepository {
       for (final id in menuItemIds) id: docs[id] ?? const CheckoutMenuDocs(),
     };
   }
+
+  @override
+  Future<Map<String, OptionGroupEntity?>> fetchOptionGroupsFresh({
+    required String storeId,
+    required String? brandId,
+    required List<OptionGroupRef> refs,
+  }) async => {for (final r in refs) optionRefKey(r.scope, r.id): null};
 }
 
 const _approved = StoreSellabilityInput(

@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
+import 'package:qradar/core/utils/option_availability.dart';
+import 'package:qradar/data/models/option_group_model.dart';
+import 'package:qradar/domain/entities/option_scope.dart';
 import 'package:qradar/data/models/menu_item_model.dart';
 import 'package:qradar/data/models/menu_override_model.dart';
 
@@ -98,5 +101,65 @@ class CheckoutValidationRemoteDataSource {
       }),
     );
     return Map.fromEntries(entries);
+  }
+
+  /// 옵션 그룹 문서를 읽는다 (서버 `paymentGateReader.getOptionGroups` 와 같은 대상·같은 규칙).
+  /// 키는 [optionRefKey]. 문서가 없거나 경로 조립에 안전하지 않은 id·brandId 없는 brand scope 는 null.
+  Future<Map<String, OptionGroupModel?>> fetchOptionGroups({
+    required String storeId,
+    required String? brandId,
+    required List<({OptionScope scope, String id})> refs,
+  }) async {
+    final out = <String, OptionGroupModel?>{};
+    final reads = <String, Future<DocumentSnapshot<Map<String, dynamic>>>>{};
+    final meta = <String, ({OptionScope scope, String id})>{};
+    for (final r in refs) {
+      final key = optionRefKey(r.scope, r.id);
+      if (out.containsKey(key)) continue;
+      out[key] = null;
+      if (r.id.isEmpty ||
+          r.id.length > 256 ||
+          r.id.contains('/') ||
+          r.id == '.' ||
+          r.id == '..') {
+        continue;
+      }
+      final DocumentReference<Map<String, dynamic>>? ref = switch (r.scope) {
+        OptionScope.master =>
+          _db.collection(FirestorePaths.optionGroups).doc(r.id),
+        OptionScope.store =>
+          _db
+              .collection(FirestorePaths.stores)
+              .doc(storeId)
+              .collection(FirestorePaths.optionGroupsSubcollection)
+              .doc(r.id),
+        OptionScope.brand =>
+          brandId == null
+              ? null
+              : _db
+                    .collection(FirestorePaths.brands)
+                    .doc(brandId)
+                    .collection(FirestorePaths.brandOptionGroupsSubcollection)
+                    .doc(r.id),
+      };
+      if (ref == null) continue;
+      reads[key] = ref.get(_server);
+      meta[key] = r;
+    }
+    final snaps = await Future.wait(reads.values);
+    final keys = reads.keys.toList();
+    for (var i = 0; i < keys.length; i++) {
+      final snap = snaps[i];
+      if (!snap.exists) continue;
+      final r = meta[keys[i]]!;
+      out[keys[i]] = OptionGroupModel.fromData(
+        snap.id,
+        snap.data() ?? const <String, dynamic>{},
+        scope: r.scope.asString,
+        brandId: r.scope == OptionScope.brand ? brandId : null,
+        storeId: r.scope == OptionScope.store ? storeId : null,
+      );
+    }
+    return out;
   }
 }
