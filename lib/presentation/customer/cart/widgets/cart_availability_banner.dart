@@ -25,11 +25,11 @@ class CartAvailabilityBanner extends StatefulWidget {
 
   static String bodyOf(CartBannerVariant v) => switch (v) {
     CartBannerVariant.unavailableMenus =>
-      '표시된 메뉴를 빼고 결제해 주세요. 방금 다시 판매를 시작했을 수도 있으니 `다시 확인`을 눌러 보세요.',
+      '표시된 메뉴를 빼고 결제해 주세요. 방금 다시 판매를 시작했을 수도 있으니 \'다시 확인\'을 눌러 보세요.',
     CartBannerVariant.serverRejectedOnly =>
-      '표시된 메뉴를 빼거나, 상황이 바뀌었을 수 있으니 `다시 확인`을 눌러 보세요.',
+      '표시된 메뉴를 빼거나, 상황이 바뀌었을 수 있으니 \'다시 확인\'을 눌러 보세요.',
     CartBannerVariant.storeUnavailable =>
-      '잠시 후 `다시 확인`을 눌러 보거나, 다른 매장에서 담아 주세요.',
+      '잠시 후 \'다시 확인\'을 눌러 보거나, 다른 매장에서 담아 주세요.',
   };
 
   @override

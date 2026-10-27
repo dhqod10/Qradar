@@ -233,8 +233,9 @@ class _AdminStoreApprovalDetailPageState
               children: [
                 _InfoRow('제출자 UID', store.submittedBy ?? '-'),
                 _InfoRow('제출 시각', _fmt(store.submittedAt)),
-                if (store.approvedAt != null)
-                  _InfoRow('처리 시각', _fmt(store.approvedAt)),
+                // 반려는 rejectedAt, 승인은 approvedAt (§6.8). 반려 시각 도입 전 데이터는 approvedAt 에 반려 시각이 있다.
+                if (_processedAt(store) != null)
+                  _InfoRow('처리 시각', _fmt(_processedAt(store))),
                 if (store.approvedBy != null && store.approvedBy!.isNotEmpty)
                   _InfoRow('처리자 UID', store.approvedBy!),
               ],
@@ -442,6 +443,12 @@ class _InfoBanner extends StatelessWidget {
     );
   }
 }
+
+/// 처리 시각 — 반려는 [StoreEntity.rejectedAt], 승인은 approvedAt (§6.8).
+DateTime? _processedAt(StoreEntity store) =>
+    store.status == EntityApprovalStatus.rejected
+        ? (store.rejectedAt ?? store.approvedAt)
+        : store.approvedAt;
 
 String _fmt(DateTime? dt) {
   if (dt == null) return '-';

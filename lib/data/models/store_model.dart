@@ -40,6 +40,7 @@ class StoreModel {
   final DateTime? submittedAt;
   final String? approvedBy;
   final DateTime? approvedAt;
+  final DateTime? rejectedAt;
   final String? rejectedReason;
   final String? businessRegistrationNumber;
   final bool temporaryClosed;
@@ -77,6 +78,7 @@ class StoreModel {
     this.submittedAt,
     this.approvedBy,
     this.approvedAt,
+    this.rejectedAt,
     this.rejectedReason,
     this.businessRegistrationNumber,
     this.temporaryClosed = false,
@@ -142,6 +144,7 @@ class StoreModel {
       submittedAt: tsField('submittedAt'),
       approvedBy: data['approvedBy'] as String?,
       approvedAt: tsField('approvedAt'),
+      rejectedAt: tsField('rejectedAt'),
       rejectedReason: data['rejectedReason'] as String?,
       businessRegistrationNumber:
           data['businessRegistrationNumber'] as String?,
@@ -186,6 +189,7 @@ class StoreModel {
       submittedAt: entity.submittedAt,
       approvedBy: entity.approvedBy,
       approvedAt: entity.approvedAt,
+      rejectedAt: entity.rejectedAt,
       rejectedReason: entity.rejectedReason,
       businessRegistrationNumber: entity.businessRegistrationNumber,
       temporaryClosed: entity.temporaryClosed,
@@ -222,6 +226,7 @@ class StoreModel {
       submittedAt: submittedAt,
       approvedBy: approvedBy,
       approvedAt: approvedAt,
+      rejectedAt: rejectedAt,
       rejectedReason: rejectedReason,
       businessRegistrationNumber: businessRegistrationNumber,
       temporaryClosed: temporaryClosed,
@@ -272,10 +277,11 @@ class StoreModel {
         'submittedBy': submittedBy,
         'submittedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-        // T3: 재제출 시 approved/rejected 메타 클리어
+        // T3: 재제출 시 approved/rejected 메타 클리어 (rejectedAt 포함 — Rules 는 null 클리어만 허용)
         if (isResubmit) ...{
           'approvedBy': null,
           'approvedAt': null,
+          'rejectedAt': null,
           'rejectedReason': null,
         },
       };
@@ -329,12 +335,17 @@ class StoreModel {
       };
 
   /// admin 반려용 partial update.
+  ///
+  /// 반려 시각은 `rejectedAt` 에 쓴다 — `approvedAt` 은 **승인 행위에서만** 쓴다
+  /// (payment_server_authority spec §6.8, F-02). 반려가 `approvedAt` 에 값을 쓰면
+  /// "한 번도 승인되지 않고 반려만 된 매장" 이 `approvedAt != null` 이 되어 결제 게이트의
+  /// 승인 이력 판정(canSellNow)을 오염시킨다. `approvedBy` 는 심사자 의미로 유지한다(이름이 사실과 다르지만 이번 범위 밖).
   static Map<String, dynamic> rejectFields(
           String adminUid, String reason) =>
       <String, dynamic>{
         'status': EntityApprovalStatus.rejected.asString,
         'approvedBy': adminUid,
-        'approvedAt': FieldValue.serverTimestamp(),
+        'rejectedAt': FieldValue.serverTimestamp(),
         'rejectedReason': reason,
         'updatedAt': FieldValue.serverTimestamp(),
       };

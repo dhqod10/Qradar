@@ -985,6 +985,24 @@ await rejectedStore('psa_f02_o4');
 await run('PSA-F02g 회귀: owner 가 rejected 를 유지한 채 다른 필드 수정 (status 불변 — 전이 아님)', 'allow', () =>
   updateDoc(doc(asOwner, 'stores', 'psa_f02_o4'), { notice: 'x' }));
 
+// ── C4 (T-1 재작업): rejectedAt (§6.8) — approvedAt 과 같은 모양: null 클리어만 허용, 값 설정 불가 ──
+// 반려는 rejectedAt 을 쓴다(admin). 점주는 재제출에서 null 로 지우는 것만 가능하다.
+await rejectedStore('psa_c4_o1', { rejectedAt: Timestamp.now() });
+await run('PSA-RJ1 owner: rejected → pending + 승인 메타·rejectedAt 전부 null (신 앱 재제출 payload)', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', 'psa_c4_o1'), { ...CLEAR, rejectedAt: null, updatedAt: serverTimestamp() }));
+await rejectedStore('psa_c4_o2', { rejectedAt: Timestamp.now() });
+await run('PSA-RJ2 owner: rejectedAt 에 값 설정 (위조)', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', 'psa_c4_o2'), { rejectedAt: Timestamp.now() }));
+await rejectedStore('psa_c4_b1', { brandId: B_A, rejectedAt: Timestamp.now() });
+await run('PSA-RJ3 brand holder: rejected → pending + rejectedAt null 클리어', 'allow', () =>
+  updateDoc(doc(asBrand, 'stores', 'psa_c4_b1'), { ...CLEAR, rejectedAt: null, updatedAt: serverTimestamp() }));
+await run('PSA-RJ4 brand holder: rejectedAt 에 값 설정 (위조)', 'deny', () =>
+  updateDoc(doc(asBrand, 'stores', 'psa_c4_b1'), { rejectedAt: Timestamp.now() }));
+await seed((db) => setDoc(doc(db, 'stores', 'psa_c4_a1'), { ownerId: OWNER, name: 'P', status: 'pending' }));
+await run('PSA-RJ5 admin 반려 payload (rejectFields — approvedAt 없이 rejectedAt)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'stores', 'psa_c4_a1'), {
+    status: 'rejected', approvedBy: ADMIN, rejectedAt: serverTimestamp(), rejectedReason: '사유', updatedAt: serverTimestamp() }));
+
 // ═══════════════════════════════════════════════════════════════════════════
 // payment_server_authority — Rules-B (spec §10, §18.5 B1)
 // brands/{id}/private/profile (brandKey + PII), brandKeys, keyHistory

@@ -358,6 +358,7 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
         submittedAt: e?.submittedAt,
         approvedBy: e?.approvedBy,
         approvedAt: e?.approvedAt,
+        rejectedAt: e?.rejectedAt,
         rejectedReason: e?.rejectedReason,
       );
 

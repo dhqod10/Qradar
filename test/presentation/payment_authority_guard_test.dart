@@ -183,7 +183,7 @@ void main() {
     }
 
     test(
-      '6-b. StoreModel create payload 2개에 approvedBy/approvedAt/rejectedReason 키가 없다',
+      '6-b. StoreModel create payload 2개에 approvedBy/approvedAt/rejectedAt/rejectedReason 키가 없다',
       () {
         final src = File('lib/data/models/store_model.dart').readAsStringSync();
         for (final name in [
@@ -191,7 +191,12 @@ void main() {
           'toFirestoreForBrandCreate',
         ]) {
           final body = fnBody(src, name);
-          for (final key in ['approvedBy', 'approvedAt', 'rejectedReason']) {
+          for (final key in [
+            'approvedBy',
+            'approvedAt',
+            'rejectedAt',
+            'rejectedReason',
+          ]) {
             expect(
               body.contains("'$key'"),
               isFalse,
@@ -202,14 +207,36 @@ void main() {
       },
     );
 
-    test('firestore.rules 의 stores create 가 승인 메타 3종을 막는다', () {
+    test('firestore.rules 의 stores create 가 승인 메타 4종(rejectedAt 포함)을 막는다', () {
       final rules = File('firestore.rules').readAsStringSync();
-      for (final key in ['approvedAt', 'approvedBy', 'rejectedReason']) {
+      for (final key in [
+        'approvedAt',
+        'approvedBy',
+        'rejectedAt',
+        'rejectedReason',
+      ]) {
         expect(
           rules.contains("get('$key', null) == null"),
           isTrue,
           reason: key,
         );
+      }
+    });
+  });
+
+  group('F-04 문구에 마크다운 백틱 없음 (spec §15 머리말)', () {
+    test('고객 카트·결제 화면 코드(주석 제외)에 백틱 문자가 없다 — 화면에 그대로 출력된다', () {
+      for (final dir in [
+        'lib/presentation/customer/cart',
+        'lib/presentation/customer/checkout',
+      ]) {
+        for (final f in _files(dir, '.dart')) {
+          expect(
+            _code(f).contains('`'),
+            isFalse,
+            reason: '${f.path} — 문구는 작은따옴표 또는 평문으로 쓴다',
+          );
+        }
       }
     });
   });

@@ -46,8 +46,11 @@ abstract class StoreEntity with _$StoreEntity {
     /// admin 이 마지막으로 처리한 uid (approve/reject 양쪽).
     String? approvedBy,
 
-    /// admin 처리 시점 (approve/reject 양쪽).
+    /// admin **승인** 시점. 승인 행위에서만 쓴다 (반려는 [rejectedAt]).
     DateTime? approvedAt,
+
+    /// admin **반려** 시점. 점주 재제출 시 null 로 클리어된다.
+    DateTime? rejectedAt,
 
     /// admin 반려 사유. status=rejected 일 때만 의미 있음.
     String? rejectedReason,
