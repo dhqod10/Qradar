@@ -4,6 +4,8 @@
  * 흐름:
  *   1. 인증 확인 (auth null → unauthenticated)
  *   2. 입력값 검증
+ *   2-b. 결제 게이트 (G1 매장 판매 가능 + G2 메뉴 품절·판매중단) — Toss confirm **전**. 거절하면 돈이 움직이지 않는다
+ *        (payment_server_authority, `paymentGate.ts`). 멱등 가드 직후 ~ confirm 직전이 유일한 "confirm 전 서버 지점"이다.
  *   3. Toss Server API POST /v1/payments/confirm 호출
  *   4. 응답 검증 (status === 'DONE' && totalAmount === amount && orderId 일치)
  *   5. 검증 실패 → Toss cancel + error throw
@@ -19,6 +21,8 @@ import { defineSecret } from "firebase-functions/params";
 import { v4 as uuidv4 } from "uuid";
 import { confirmPayment, cancelPayment } from "./tossClient";
 import { buildOrderData, buildOrderLogData, CartSnapshot } from "./orderBuilder";
+import { buildRejectionMessage, evaluatePaymentGate, GATE_HTTPS_CODE, GateReader, MAX_CART_ITEMS } from "./paymentGate";
+import { makeFirestoreGateReader, recordGateRejection } from "./paymentGateReader";
 
 const tossSecretKey = defineSecret("TOSS_SECRET_KEY");
 
@@ -36,12 +40,37 @@ interface VerifyPaymentInput {
 
 // ── 함수 ─────────────────────────────────────────────────────────────────────
 
+/** 외부 의존 주입 — 거절 경로에서 Toss 를 호출하지 않음을 단위 테스트로 단언하기 위한 이음새 (R5). */
+export interface VerifyDeps {
+  db: admin.firestore.Firestore;
+  secretKey: () => string;
+  confirm: typeof confirmPayment;
+  cancel: typeof cancelPayment;
+  /** 테스트에서 Firestore 대신 주입. 기본은 db 기반 어댑터. */
+  gateReader?: GateReader;
+}
+
 export const verifyTossPayment = onCall(
   {
     region: "asia-northeast3",
     secrets: [tossSecretKey],
   },
-  async (request) => {
+  (request) =>
+    handleVerifyTossPayment(
+      {
+        db: admin.firestore(),
+        secretKey: () => tossSecretKey.value(),
+        confirm: confirmPayment,
+        cancel: cancelPayment,
+      },
+      request
+    )
+);
+
+export async function handleVerifyTossPayment(
+  deps: VerifyDeps,
+  request: { auth?: { uid: string } | null; data: unknown }
+) {
     console.log("[verifyTossPayment] START");
     try {
     // 1. 인증 확인
@@ -74,6 +103,10 @@ export const verifyTossPayment = onCall(
         "필수 입력값이 누락되었습니다. (paymentKey, orderId, amount, idempotencyKey, cart, paymentMethod)"
       );
     }
+    // 품목 수 상한 (spec §15.1) — 토큰 절단을 구조적으로 막고 G2 읽기 비용(품목당 최대 3문서)의 뚜껑이 된다. 토큰 없음 → 앱은 갈래 C.
+    if (!Array.isArray(data.cart.items) || data.cart.items.length > MAX_CART_ITEMS) {
+      throw new HttpsError("invalid-argument", "cart.items 가 올바르지 않습니다.");
+    }
     if (data.amount !== data.cart.totalPrice) {
       throw new HttpsError(
         "invalid-argument",
@@ -85,7 +118,7 @@ export const verifyTossPayment = onCall(
     //   - 정상 처리된 주문(status='paid' 이상) → already-exists 에러 + 기존 orderId 반환
     //   - 비정상 상태(status 누락 / 알 수 없는 값) → internal 에러
     //   - 존재하지 않으면 기존 흐름 진행
-    const db = admin.firestore();
+    const db = deps.db;
     const idempotencyDocRef = db.collection("orders").doc(data.idempotencyKey);
     const idempotencyDocSnap = await idempotencyDocRef.get();
     if (idempotencyDocSnap.exists) {
@@ -115,8 +148,26 @@ export const verifyTossPayment = onCall(
       );
     }
 
+    // 2-b. 결제 게이트 (G1 + G2) — Toss confirm 전. 거절하면 confirm 을 호출하지 않는다 (R5).
+    //   판정은 canSellNow / classifyCartMenu 두 함수뿐이다 (paymentGate.ts). 클라이언트가 선언한 scope/brandId 를 쓰지 않는다.
+    const gate = await evaluatePaymentGate(deps.gateReader ?? makeFirestoreGateReader(db), data.cart);
+    if (!gate.ok) {
+      await recordGateRejection(db, {
+        uid,
+        storeId: String(data.cart.storeId ?? ""),
+        reason: gate.reason,
+        detail: gate.detail,
+        amount: data.amount,
+      });
+      console.warn("[verifyTossPayment] GATE REJECT", gate.reason, JSON.stringify(gate.detail));
+      throw new HttpsError(GATE_HTTPS_CODE[gate.reason], buildRejectionMessage(gate.reason, gate.menuItemIds), {
+        reason: gate.reason,
+        menuItemIds: gate.menuItemIds,
+      });
+    }
+
     // 3. Toss Server API confirm 호출 (또는 Mock 분기 — docs 공개 키 사용 시)
-    const secretKey = tossSecretKey.value();
+    const secretKey = deps.secretKey();
     const isMockMode = secretKey.startsWith("test_gsk_docs_");
     const tossResponse = isMockMode
       ? {
@@ -127,7 +178,7 @@ export const verifyTossPayment = onCall(
           approvedAt: new Date().toISOString(),
           method: data.paymentMethod,
         }
-      : await confirmPayment(secretKey, {
+      : await deps.confirm(secretKey, {
           paymentKey: data.paymentKey,
           orderId: data.orderId,
           amount: data.amount,
@@ -145,7 +196,7 @@ export const verifyTossPayment = onCall(
       // 5. 검증 실패 → Toss cancel 시도 후 에러 throw
       if (!isMockMode) {
         try {
-          await cancelPayment(secretKey, {
+          await deps.cancel(secretKey, {
             paymentKey: data.paymentKey,
             cancelReason: "서버 측 검증 실패로 인한 자동 취소",
           });
@@ -223,8 +274,7 @@ export const verifyTossPayment = onCall(
       }
       throw err;
     }
-  }
-);
+}
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────────────────
 

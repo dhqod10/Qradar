@@ -29,3 +29,11 @@ export { onQoinConfigWritten } from "./onQoinConfigWritten";
 export { claimSubmittedBrand } from "./claimSubmittedBrand";
 // 읽기 전용 운영 점검 도구 (상시) — 쓰기 0, 인자 없음. 데이터 사고 복구 검증에서 값을 했다.
 export { auditBrandLinks } from "./auditBrandLinks";
+
+// payment_server_authority — brandKey 서버 발급·조회, 매장 삭제(admin 전담)
+export { lookupBrandByKey } from "./lookupBrandByKey";
+export { issueBrandKey } from "./issueBrandKey";
+export { deleteStore } from "./deleteStore";
+// payment_server_authority — 임시 마이그레이션 (완료 후 정리 커밋으로 삭제: 배포 ⑪)
+export { migrateStoreApprovalMeta } from "./migrateStoreApprovalMeta";
+export { migrateBrandPrivateProfile } from "./migrateBrandPrivateProfile";

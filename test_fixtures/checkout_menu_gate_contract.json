@@ -1,0 +1,22 @@
+{
+  "_doc": "결제 시점 메뉴 판정 분류 교차 골든 — Dart(lib/core/utils/checkout_menu_gate.dart) 와 TS(functions/src/menuVisibility.ts classifyCartMenu) 가 같은 파일을 읽는다 (spec payment_server_authority §7.2 ③). menuItemId 하나에 대해 stores/{s}/menuItems/{id}(storeMenu), stores/{s}/menuOverrides/{id}(override), brands/{b}/menuItems/{id}(master) 문서의 존재를 보고 분류한다. 클라이언트가 선언한 scope 는 쓰지 않는다. hasBrand=false(store.brandId 없음)이면 master 는 읽지 않는다. storeMenu 존재가 master 보다 먼저다. master/override 의 값 해석은 menu_visibility_contract.json 과 같다.",
+  "cases": [
+    { "name": "개인 매장 메뉴 정상", "hasBrand": false, "storeMenu": { "soldOut": false, "visible": true }, "master": null, "override": null, "expect": "OK" },
+    { "name": "개인 매장 메뉴 품절", "hasBrand": false, "storeMenu": { "soldOut": true, "visible": true }, "master": null, "override": null, "expect": "MENU_SOLD_OUT" },
+    { "name": "개인 매장 메뉴 숨김 (visible:false)", "hasBrand": false, "storeMenu": { "soldOut": false, "visible": false }, "master": null, "override": null, "expect": "MENU_EXCLUDED" },
+    { "name": "개인 매장 메뉴 visible 키 부재 = true", "hasBrand": false, "storeMenu": { "soldOut": false }, "master": null, "override": null, "expect": "OK" },
+    { "name": "개인 매장 메뉴 숨김 + 품절 = 숨김이 먼저", "hasBrand": false, "storeMenu": { "soldOut": true, "visible": false }, "master": null, "override": null, "expect": "MENU_EXCLUDED" },
+    { "name": "점포 한정 메뉴 (가맹점) 정상", "hasBrand": true, "storeMenu": { "soldOut": false, "visible": true }, "master": null, "override": null, "expect": "OK" },
+    { "name": "가맹점 마스터 정상 (override 없음)", "hasBrand": true, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": false }, "override": null, "expect": "OK" },
+    { "name": "가맹점 마스터 자체 품절", "hasBrand": true, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": true }, "override": null, "expect": "MENU_SOLD_OUT" },
+    { "name": "가맹점 마스터 + approved excluded", "hasBrand": true, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": false }, "override": { "status": "approved", "excluded": true }, "expect": "MENU_EXCLUDED" },
+    { "name": "가맹점 마스터 + pending excluded = 허용 (excluded 는 approved 일 때만)", "hasBrand": true, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": false }, "override": { "status": "pending", "excluded": true }, "expect": "OK" },
+    { "name": "가맹점 마스터 + pending soldOut = 거절 (운영 필드는 status 무관)", "hasBrand": true, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": false }, "override": { "status": "pending", "soldOut": true }, "expect": "MENU_SOLD_OUT" },
+    { "name": "가맹점 마스터 품절 + override soldOut:false = 허용 (override 가 이긴다)", "hasBrand": true, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": true }, "override": { "status": "approved", "soldOut": false }, "expect": "OK" },
+    { "name": "가맹점 마스터 + approved excluded + soldOut = excluded 가 먼저", "hasBrand": true, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": false }, "override": { "status": "approved", "excluded": true, "soldOut": true }, "expect": "MENU_EXCLUDED" },
+    { "name": "storeMenu 와 master 가 둘 다 있으면 storeMenu 가 먼저", "hasBrand": true, "storeMenu": { "soldOut": false, "visible": true }, "master": { "basePrice": 4000, "soldOut": true }, "override": null, "expect": "OK" },
+    { "name": "둘 다 없음 (가맹점)", "hasBrand": true, "storeMenu": null, "master": null, "override": null, "expect": "MENU_NOT_FOUND" },
+    { "name": "둘 다 없음 (개인 매장)", "hasBrand": false, "storeMenu": null, "master": null, "override": null, "expect": "MENU_NOT_FOUND" },
+    { "name": "개인 매장(brandId 없음)인데 master 문서가 있어도 읽지 않는다", "hasBrand": false, "storeMenu": null, "master": { "basePrice": 4000, "soldOut": false }, "override": null, "expect": "MENU_NOT_FOUND" }
+  ]
+}
