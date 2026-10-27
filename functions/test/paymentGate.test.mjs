@@ -7,10 +7,11 @@ import { buildRejectionMessage, TOKEN_ID_RE, MAX_CART_ITEMS } from '../lib/payme
 
 // ── fakes ───────────────────────────────────────────────────────────────────
 function fakeDb({ existingOrder = null } = {}) {
-  const state = { rejections: [], batchSets: [], committed: false };
+  const state = { rejections: [], batchSets: [], committed: false, touched: [] };
   const db = {
     state,
     collection(name) {
+      state.touched.push(name);
       return {
         doc(id) {
           return {
@@ -42,10 +43,11 @@ function fakeDb({ existingOrder = null } = {}) {
 
 /** stores / menu 문서를 맵으로 받는 reader. */
 function fakeReader({ store, storeMenus = {}, overrides = {}, masters = {}, failStore = false, failMenus = false }) {
-  const calls = { getMenuDocs: 0, brandId: undefined };
+  const calls = { getStore: 0, getMenuDocs: 0, brandId: undefined };
   return {
     calls,
     async getStore() {
+      calls.getStore++;
       if (failStore) throw new Error('boom');
       return store ?? null;
     },
@@ -66,7 +68,8 @@ function fakeReader({ store, storeMenus = {}, overrides = {}, masters = {}, fail
   };
 }
 
-function setup({ reader, db = fakeDb(), secret = 'live_sk_real' }) {
+// gateMode 기본은 'enforce' — 기존 G1/G2 케이스는 게이트가 켜진 상태를 검증한다. 모드 자체는 아래 "PAYMENT_GATE_MODE" 블록이 검증.
+function setup({ reader, db = fakeDb(), secret = 'live_sk_real', gateMode = () => 'enforce' }) {
   const spy = { confirm: 0, cancel: 0 };
   const deps = {
     db,
@@ -77,6 +80,7 @@ function setup({ reader, db = fakeDb(), secret = 'live_sk_real' }) {
     },
     cancel: async () => { spy.cancel++; return {}; },
     gateReader: reader,
+    gateMode,
   };
   return { deps, spy, db };
 }
@@ -317,4 +321,155 @@ test('최대 품목 수의 토큰 길이가 ids 상한 2048 안이다 (절단이
   assert.ok(m);
   assert.ok(m.groups.ids.length <= 2048);
   assert.ok(ids.every((i) => TOKEN_ID_RE.test(i)));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAYMENT_GATE_MODE (spec §17.0, C2) — 모드 3값 × 위반 유무, 미지값·부재 → off, off 는 읽지 않는다
+// ═══════════════════════════════════════════════════════════════════════════
+import { resolveGateMode } from '../lib/paymentGate.js';
+
+test('resolveGateMode: off/shadow/enforce 만 인정, 그 외 전부 off', () => {
+  assert.equal(resolveGateMode('off'), 'off');
+  assert.equal(resolveGateMode('shadow'), 'shadow');
+  assert.equal(resolveGateMode('enforce'), 'enforce');
+  for (const raw of [undefined, null, '', ' ', 'Enforce', 'ENFORCE', 'enforce ', 'enforced', 'on', 'true', 'shadow,enforce', 0, 1, true, {}, []]) {
+    assert.equal(resolveGateMode(raw), 'off', `off 로 떨어져야 한다: ${JSON.stringify(raw)}`);
+  }
+});
+
+const VIOLATING = { status: 'pending' };            // 미승인 신규 매장 — 게이트가 잡아야 할 것
+const CLEAN = OKSTORE;
+const modeCases = [
+  // [모드 thunk 라벨, thunk, 실효 모드]
+  ['off', () => 'off', 'off'],
+  ['shadow', () => 'shadow', 'shadow'],
+  ['enforce', () => 'enforce', 'enforce'],
+];
+for (const [label, gateMode, effective] of modeCases) {
+  test(`모드 ${label} × 위반 있음`, async () => {
+    const reader = fakeReader({ store: VIOLATING, storeMenus: { m1: OKMENU } });
+    const r = await run({ reader, gateMode }, req([item('m1')]));
+    if (effective === 'enforce') {
+      assert.equal(r.err?.code, 'failed-precondition');
+      assert.ok(r.err.message.endsWith('[STORE_NOT_SELLABLE]'));
+      assert.equal(r.spy.confirm, 0, 'enforce: 거절 경로에서 Toss confirm 미호출');
+      assert.equal(r.db.state.rejections.length, 1);
+      assert.equal('shadow' in r.db.state.rejections[0].detail, false, 'enforce 기록에는 shadow 키가 없다 (런북 ⑥-c 가 이 부재로 enforce 를 확인한다)');
+      assert.equal(r.db.state.committed, false);
+    } else if (effective === 'shadow') {
+      assert.equal(r.err, null, 'shadow: 거절하지 않는다');
+      assert.deepEqual(r.result, { orderId: 'idem1', status: 'paid' });
+      assert.equal(r.spy.confirm, 1, 'shadow: 결제는 그대로 성립한다');
+      assert.ok(r.db.state.committed);
+      assert.equal(r.db.state.rejections.length, 1, 'shadow: 기록은 남긴다');
+      assert.equal(r.db.state.rejections[0].reason, 'STORE_NOT_SELLABLE');
+      assert.equal(r.db.state.rejections[0].detail.shadow, true);
+    } else {
+      assert.equal(r.err, null, 'off: 거절하지 않는다');
+      assert.equal(r.spy.confirm, 1);
+      assert.ok(r.db.state.committed);
+      assert.equal(r.db.state.rejections.length, 0, 'off: 기록도 없다');
+    }
+  });
+
+  test(`모드 ${label} × 위반 없음`, async () => {
+    const reader = fakeReader({ store: CLEAN, storeMenus: { m1: OKMENU } });
+    const r = await run({ reader, gateMode }, req([item('m1')]));
+    assert.equal(r.err, null);
+    assert.equal(r.spy.confirm, 1);
+    assert.ok(r.db.state.committed);
+    assert.equal(r.db.state.rejections.length, 0, '위반이 없으면 어떤 모드에서도 기록이 없다');
+  });
+}
+
+test('모드 shadow × 메뉴 위반(품절) — 기록에 shadow:true + 위반 id, 결제는 성립', async () => {
+  const reader = fakeReader({ store: CLEAN, storeMenus: { m1: { ...OKMENU, soldOut: true } } });
+  const r = await run({ reader, gateMode: () => 'shadow' }, req([item('m1')]));
+  assert.equal(r.err, null);
+  assert.equal(r.spy.confirm, 1);
+  assert.equal(r.db.state.rejections[0].reason, 'MENU_SOLD_OUT');
+  assert.equal(r.db.state.rejections[0].detail.shadow, true);
+  assert.deepEqual(r.db.state.rejections[0].detail.violatedMenuItemIds, ['m1']);
+});
+
+test('모드 shadow × 읽기 실패 — 결제를 막지 않는다 (READ_FAILED 는 기록만)', async () => {
+  const r = await run({ reader: fakeReader({ failStore: true }), gateMode: () => 'shadow' }, req([item('m1')]));
+  assert.equal(r.err, null);
+  assert.equal(r.spy.confirm, 1);
+  assert.equal(r.db.state.rejections[0].reason, 'READ_FAILED');
+  assert.equal(r.db.state.rejections[0].detail.shadow, true);
+});
+
+test('모드 shadow × 게이트 코드가 예상 밖으로 던져도 결제를 막지 않는다 (evaluate 내부 try 밖 예외)', async () => {
+  const reader = fakeReader({ store: CLEAN, storeMenus: { m1: OKMENU } });
+  reader.getMenuDocs = async () => null; // 어댑터 계약 위반 → evaluate 가 null.storeMenus 에서 TypeError (내부 try 밖)
+  const r = await run({ reader, gateMode: () => 'shadow' }, req([item('m1')]));
+  assert.equal(r.err, null);
+  assert.equal(r.spy.confirm, 1);
+  // 같은 예외가 enforce 에서는 결제를 막는다 (게이트를 무력화하지 않는다)
+  const e = await run({ reader, gateMode: () => 'enforce' }, req([item('m1')]));
+  assert.ok(e.err);
+  assert.equal(e.spy.confirm, 0);
+});
+
+test('모드 shadow × 거절 기록 쓰기 실패 — 결제는 그대로 성립', async () => {
+  const db = fakeDb();
+  const orig = db.collection.bind(db);
+  db.collection = (name) => {
+    const c = orig(name);
+    if (name === 'paymentGateRejections') c.add = async () => { throw new Error('write failed'); };
+    return c;
+  };
+  const r = await run({ reader: fakeReader({ store: VIOLATING }), db, gateMode: () => 'shadow' }, req([item('m1')]));
+  assert.equal(r.err, null);
+  assert.equal(r.spy.confirm, 1);
+});
+
+// 미지값·부재 → off: "위반이 있는데도 통과" 해야 한다 (구멍이 열린 채로 유지 — 의도된 선택)
+const offFallbacks = [
+  ['gateMode 주입 자체가 없음 (deps.gateMode 부재)', undefined],
+  ['undefined', () => undefined],
+  ['null', () => null],
+  ['빈 문자열', () => ''],
+  ['오타 "enforse"', () => 'enforse'],
+  ['대소문자 "Enforce"', () => 'Enforce'],
+  ['뒤 공백 "enforce "', () => 'enforce '],
+  ['"on"', () => 'on'],
+  ['숫자 1', () => 1],
+];
+for (const [label, gateMode] of offFallbacks) {
+  test(`미지값·부재 → off: ${label} — 위반이 있어도 통과하고 읽기도 기록도 없다`, async () => {
+    const reader = fakeReader({ store: VIOLATING, storeMenus: { m1: OKMENU } });
+    const { deps, spy, db } = setup({ reader, gateMode });
+    if (gateMode === undefined) delete deps.gateMode;
+    const result = await handleVerifyTossPayment(deps, req([item('m1')]));
+    assert.deepEqual(result, { orderId: 'idem1', status: 'paid' });
+    assert.equal(spy.confirm, 1);
+    assert.equal(reader.calls.getStore, 0);
+    assert.equal(reader.calls.getMenuDocs, 0);
+    assert.equal(db.state.rejections.length, 0);
+  });
+}
+
+test('off 는 읽지 않는다 — stores·메뉴 reader 호출 0, paymentGateRejections 접근 0, 기본 reader(db) 조립도 없음 (비용 0)', async () => {
+  const reader = fakeReader({ store: VIOLATING, storeMenus: { m1: { ...OKMENU, soldOut: true } } });
+  const { deps, spy, db } = setup({ reader: undefined, gateMode: () => 'off' });
+  deps.gateReader = undefined; // 기본 어댑터(makeFirestoreGateReader(db))가 만들어질 상황
+  await handleVerifyTossPayment(deps, req([item('m1')]));
+  assert.equal(spy.confirm, 1);
+  // 멱등 가드의 orders 조회와 최종 batch 외에 Firestore 컬렉션 접근이 없어야 한다 (stores / brands / paymentGateRejections 0)
+  assert.deepEqual([...new Set(db.state.touched)].sort(), ['orders', 'users']);
+  assert.equal(reader.calls.getStore + reader.calls.getMenuDocs, 0);
+});
+
+test('모드 thunk 는 요청마다 평가된다 (배포 후 값 변경이 다음 요청에 반영)', async () => {
+  let mode = 'off';
+  const reader = fakeReader({ store: VIOLATING, storeMenus: { m1: OKMENU } });
+  const mk = () => setup({ reader, gateMode: () => mode });
+  let a = mk(); await handleVerifyTossPayment(a.deps, req([item('m1')]));
+  assert.equal(a.spy.confirm, 1);
+  mode = 'enforce';
+  a = mk();
+  await assert.rejects(() => handleVerifyTossPayment(a.deps, req([item('m1')])), (e) => e.code === 'failed-precondition');
+  assert.equal(a.spy.confirm, 0);
 });

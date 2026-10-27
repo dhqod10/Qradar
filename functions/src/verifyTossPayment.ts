@@ -17,14 +17,22 @@
 
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
+import { defineSecret, defineString } from "firebase-functions/params";
 import { v4 as uuidv4 } from "uuid";
 import { confirmPayment, cancelPayment } from "./tossClient";
 import { buildOrderData, buildOrderLogData, CartSnapshot } from "./orderBuilder";
-import { buildRejectionMessage, evaluatePaymentGate, GATE_HTTPS_CODE, GateReader, MAX_CART_ITEMS } from "./paymentGate";
+import { buildRejectionMessage, evaluatePaymentGate, GATE_HTTPS_CODE, GateReader, MAX_CART_ITEMS, resolveGateMode } from "./paymentGate";
 import { makeFirestoreGateReader, recordGateRejection } from "./paymentGateReader";
 
 const tossSecretKey = defineSecret("TOSS_SECRET_KEY");
+
+/**
+ * 결제 게이트 모드 (payment_server_authority spec §17.0): off | shadow | enforce.
+ * 값은 **배포 시점에** functions params 로 해석된다 — `functions/.env.<projectId>` (또는 `functions/.env`) 의
+ * `PAYMENT_GATE_MODE=...` 한 줄. 값을 바꾸면 재배포해야 반영된다 (docs/tasks/payment_server_authority/implementation.md §8).
+ * default 를 둬서 값이 없어도 배포가 대화형 프롬프트로 멈추지 않는다. 없거나 모르는 값은 `resolveGateMode` 가 `off` 로 떨어뜨린다.
+ */
+const paymentGateMode = defineString("PAYMENT_GATE_MODE", { default: "off" });
 
 // ── 입력 타입 ─────────────────────────────────────────────────────────────────
 // OrderItem / CartSnapshot 은 orderBuilder.ts (주문 문서 구성의 단일 출처, T1).
@@ -48,6 +56,11 @@ export interface VerifyDeps {
   cancel: typeof cancelPayment;
   /** 테스트에서 Firestore 대신 주입. 기본은 db 기반 어댑터. */
   gateReader?: GateReader;
+  /**
+   * 게이트 모드 원시 값을 돌려주는 thunk (spec §17.0). **thunk 인 이유**: 요청마다 읽고, `off` 일 때는 게이트 코드를 아예 타지 않는다.
+   * 생략하면 `off` — "설정이 없으면 평가하지 않는다" 와 같은 방향이다.
+   */
+  gateMode?: () => unknown;
 }
 
 export const verifyTossPayment = onCall(
@@ -62,6 +75,7 @@ export const verifyTossPayment = onCall(
         secretKey: () => tossSecretKey.value(),
         confirm: confirmPayment,
         cancel: cancelPayment,
+        gateMode: () => paymentGateMode.value(),
       },
       request
     )
@@ -150,20 +164,39 @@ export async function handleVerifyTossPayment(
 
     // 2-b. 결제 게이트 (G1 + G2) — Toss confirm 전. 거절하면 confirm 을 호출하지 않는다 (R5).
     //   판정은 canSellNow / classifyCartMenu 두 함수뿐이다 (paymentGate.ts). 클라이언트가 선언한 scope/brandId 를 쓰지 않는다.
-    const gate = await evaluatePaymentGate(deps.gateReader ?? makeFirestoreGateReader(db), data.cart);
-    if (!gate.ok) {
-      await recordGateRejection(db, {
-        uid,
-        storeId: String(data.cart.storeId ?? ""),
-        reason: gate.reason,
-        detail: gate.detail,
-        amount: data.amount,
-      });
-      console.warn("[verifyTossPayment] GATE REJECT", gate.reason, JSON.stringify(gate.detail));
-      throw new HttpsError(GATE_HTTPS_CODE[gate.reason], buildRejectionMessage(gate.reason, gate.menuItemIds), {
-        reason: gate.reason,
-        menuItemIds: gate.menuItemIds,
-      });
+    //   모드 (spec §17.0): off = 평가·읽기 모두 하지 않는다(비용 0) / shadow = 판정·기록만, 거절 없음 / enforce = 판정·기록·거절.
+    //   값이 없거나 모르면 off — 설정 오타로 매출이 멈추는 것보다 구멍이 하루 더 열려 있는 편이 낫다.
+    const gateMode = resolveGateMode(deps.gateMode?.());
+    if (gateMode !== "off") {
+      const shadow = gateMode === "shadow";
+      try {
+        const gate = await evaluatePaymentGate(deps.gateReader ?? makeFirestoreGateReader(db), data.cart);
+        if (!gate.ok) {
+          await recordGateRejection(db, {
+            uid,
+            storeId: String(data.cart.storeId ?? ""),
+            reason: gate.reason,
+            detail: gate.detail,
+            amount: data.amount,
+            shadow,
+          });
+          console.warn(
+            `[verifyTossPayment] GATE ${shadow ? "SHADOW (not rejected)" : "REJECT"}`,
+            gate.reason,
+            JSON.stringify(gate.detail)
+          );
+          if (!shadow) {
+            throw new HttpsError(GATE_HTTPS_CODE[gate.reason], buildRejectionMessage(gate.reason, gate.menuItemIds), {
+              reason: gate.reason,
+              menuItemIds: gate.menuItemIds,
+            });
+          }
+        }
+      } catch (e) {
+        // shadow 는 관측용이다 — 게이트 코드의 예상 밖 예외가 결제를 막아서는 안 된다. enforce 의 거절(HttpsError)은 그대로 던진다.
+        if (!shadow || e instanceof HttpsError) throw e;
+        console.error("[verifyTossPayment] shadow gate error (결제는 계속 진행)", e);
+      }
     }
 
     // 3. Toss Server API confirm 호출 (또는 Mock 분기 — docs 공개 키 사용 시)

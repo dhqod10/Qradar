@@ -24,6 +24,24 @@ export type GateReason =
   | "MENU_NOT_FOUND"
   | "READ_FAILED";
 
+/**
+ * 게이트 모드 (spec §17.0) — `PAYMENT_GATE_MODE` 파라미터 값.
+ *   off     : 평가하지 않는다. stores·메뉴 읽기도 하지 않는다 (비용 0). 게이트 도입 전과 동일.
+ *   shadow  : 판정하고 `paymentGateRejections` 에 `detail.shadow:true` 로 기록하되 거절하지 않는다.
+ *   enforce : 판정 + 기록 + 거절.
+ */
+export type GateMode = "off" | "shadow" | "enforce";
+
+/**
+ * 원시 값 → 모드. **없거나 모르는 값이면 `off`** (명시적 결정, spec §17.0).
+ * 게이트는 돈을 멈추는 장치다 — 설정 오타로 매출이 멈추는 것보다 구멍이 하루 더 열려 있는 편이 낫다.
+ * (Qoin 적립이 fail-closed 인 것과 반대이고, 반대인 것이 맞다: fail 방향은 "그 실패가 누구에게서 무엇을 빼앗는가"로 정한다.)
+ * 정확히 일치만 인정한다 — 대소문자·공백을 너그럽게 받지 않는다 (`Enforce` 는 `off`). 그 대가는 런북 ⑥-c 의 거절 1건 실측이 받는다.
+ */
+export function resolveGateMode(raw: unknown): GateMode {
+  return raw === "shadow" || raw === "enforce" ? raw : "off";
+}
+
 /** spec §15 사유 ↔ HttpsError code. */
 export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-found" | "unavailable"> = {
   STORE_NOT_SELLABLE: "failed-precondition",

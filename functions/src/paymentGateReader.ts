@@ -46,14 +46,15 @@ export function makeFirestoreGateReader(db: admin.firestore.Firestore): GateRead
  */
 export async function recordGateRejection(
   db: admin.firestore.Firestore,
-  rec: { uid: string; storeId: string; reason: GateReason; detail: GateDetail; amount: number }
+  rec: { uid: string; storeId: string; reason: GateReason; detail: GateDetail; amount: number; shadow?: boolean }
 ): Promise<void> {
   try {
     await db.collection("paymentGateRejections").add({
       uid: rec.uid,
       storeId: rec.storeId,
       reason: rec.reason,
-      detail: rec.detail,
+      // shadow 모드의 기록은 detail.shadow:true — 거절이 아니라 '거절되었을 건'이다 (enforce 기록에는 이 키가 없다).
+      detail: rec.shadow ? { ...rec.detail, shadow: true } : rec.detail,
       amount: rec.amount,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
