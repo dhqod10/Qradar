@@ -14,7 +14,7 @@ class Phase1SeedData {
   static const String brandStoreId = 'phase3_brand_store_001';
 
   /// 시드 브랜드의 brandKey. `brandKeys/{brandKey}` 인덱스 문서의 ID 이기도 하다.
-  static const String brandKey = 'BR-SEED0001';
+  static const String brandKey = 'BR-SEED2345';
 
   // ── brand doc (`brands/{brandId}`) ───────────────────────────────────────
   /// 부모 문서 — **brandKey·사업자 PII 는 넣지 않는다** (`private/profile` 로 이동, payment_server_authority B1).
@@ -40,7 +40,7 @@ class Phase1SeedData {
         'representativeName': '김대표',
       };
 
-  // ── brandKeys/{BR-SEED0001} 인덱스 ───────────────────────────────────────
+  // ── brandKeys/{BR-SEED2345} 인덱스 ───────────────────────────────────────
   /// `{brandId, issuedAt, issuedBy}` — 문서 ID 가 brandKey 라 유일성이 구조로 보장된다.
   static Map<String, dynamic> brandKeyDoc() => <String, dynamic>{
         'brandId': brandId,
