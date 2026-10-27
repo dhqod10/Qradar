@@ -322,7 +322,16 @@ checkout_page.dart:45 _handlePay
 | **ⓑ′** 승인 이력으로 판정 — **신규 필드 없이** | `status == 'approved' \|\| (status == 'pending' && approvedAt != null)` | **닫힌다.** 신규/재생성 매장은 `approvedAt` 이 없고(create 경로가 쓰지 않는다), `rejected` 재제출은 `isResubmit` 가 `approvedAt` 를 클리어한다 | 소규모 백필 1건 (§11-1). 점주가 `approvedAt` 를 **null 로만** 바꿀 수 있어 위조 불가 |
 | **ⓒ** 핵심 필드 수정을 `pending` 회귀와 분리 | `status == 'approved'` 를 그대로 쓸 수 있게 된다 | 닫힌다 | **심사 의미가 바뀐다.** `entity_lifecycle.md` 재검토 + admin 재심사 흐름 재설계 + "수정 대기" 개념 폐기. 이번 묶음에 넣으면 범위가 2배가 된다 |
 
-**확정: ⓑ′.** 단 **§6.5 의 Rules create 제약이 성립 조건**이다 (선택적 보강이 아니다).
+**확정: ⓑ′.** 단 **§6.5 의 Rules 제약 2건(create + `rejected` 전이)이 성립 조건**이다
+(선택적 보강이 아니다).
+
+> 🔴 **2026-10-27 T-1 정정 — ⓑ′ 의 전제 한 줄이 틀렸다 (F-02).**
+> 아래 "`rejected` 에서의 수정은 `isResubmit` 가 `approvedAt` 를 클리어한다" 는 **클라이언트 코드의
+> 선택이고 Rules 가 강제하지 않는다.** 게다가 **`rejectFields` (`store_model.dart:331-340`) 가 반려할
+> 때도 `approvedAt: serverTimestamp()` 를 쓴다** — 즉 **한 번도 승인되지 않고 반려만 된 매장도
+> `approvedAt != null` 이다.** 점주가 `updateDoc({status:'pending'})` 만 보내면
+> `pending && approvedAt != null` 을 통과한다(tester 가 에뮬레이터에서 `canSellNow === true` 재현).
+> → **§6.5 의 전이 제약**이 즉시 차단하고, **§6.8 가 근본(`rejectedAt` 분리)을 고친다.**
 
 - backlog 가 ⓑ 에 대해 적은 "승인 이력 필드 필요" 는 **이미 존재한다.** `approvedAt` 이 그 필드다
   (`entity_approval_status.dart:3` 이 그 의미를 명시한다). 새 필드·새 마이그레이션이 필요 없다.
@@ -371,8 +380,29 @@ match /stores/{storeId} {
                 && request.resource.data.get('approvedAt', null) == null
                 && request.resource.data.get('approvedBy', null) == null
                 && request.resource.data.get('rejectedReason', null) == null;
+
+  // ★ Rules-A 신규 2 (F-02) — `rejected` 에서 벗어나는 전이는 승인 메타를 null 로 강제한다.
+  //   isStoreOwnerFieldUpdate / isStoreOwnerBrandUpdate 양쪽 분기에 공통으로 적용한다.
+  function leavingRejectedClearsApproval() {
+    return !(resource.data.get('status', '') == 'rejected'
+             && request.resource.data.get('status', '') != 'rejected')
+           || (request.resource.data.get('approvedAt', null) == null
+               && request.resource.data.get('approvedBy', null) == null);
+  }
+  allow update: if !touchesQoinManaged()
+                && leavingRejectedClearsApproval()
+                && (isAdmin() || isStoreOwnerFieldUpdate(storeId) || isStoreOwnerBrandUpdate());
 }
 ```
+
+**전이 제약(신규 2)의 성질**
+
+| 항목 | 내용 |
+|---|---|
+| 구버전 앱 호환 | ✅ **깨지지 않는다.** 앱의 정상 재제출은 `isResubmit` 에서 `approvedBy`/`approvedAt`/`rejectedReason` 를 **이미 null 로 지운다** (`store_model.dart:276-280`, `store_repository_impl.dart:182`). 따라서 Rules-A 는 **여전히 앱보다 먼저 배포할 수 있다** (§17 ④ 자리 유지) |
+| 걸리는 것 | ⓐ 점주의 SDK 직접 `updateDoc({status:'pending'})` ⓑ **반려 직후 stale entity 로 제출된 앱 폼** — 우연히도 같은 상태를 만든다. 둘 다 막힌다 |
+| admin 영향 | `isAdmin()` 분기도 이 제약을 통과해야 한다. admin 이 `rejected → approved` 로 올릴 때 `approveFields` 는 `approvedAt` 에 **값을 쓴다** → ⚠️ **admin 승인이 막힌다.** 그래서 제약은 **점주·브랜드 분기에만** 적용한다 (위 코드는 `allow update` 전체에 걸었으므로 **developer 가 `isStoreOwnerFieldUpdate`/`isStoreOwnerBrandUpdate` 내부로 옮긴다**). 하네스에 **"admin 이 `rejected → approved` 승인" allow 케이스**를 반드시 넣는다 |
+| 회귀 케이스 (필수) | **"`rejected → pending` + 승인 메타 null 클리어" 가 여전히 허용**되어야 한다. 점주 분기와 **브랜드 보유자 분기 둘 다** (§18.5) |
 
 - **왜 "성립 조건" 인가**: 이것 없이 CF 게이트만 올리면, 게이트를 통과하는 가장 쉬운 방법이
   "`approvedAt` 을 넣어 매장을 만드는 것" 이 된다. **게이트가 아니라 장식이 된다.**
@@ -387,12 +417,30 @@ match /stores/{storeId} {
 
 ⓑ′ 판정식은 `status` 와 `approvedAt` 두 필드를 읽는다. **각 필드를 누가 어느 경로로 쓸 수 있는가.**
 
-| 필드 | 점주 **create** | 점주 **update** | admin | CF (Admin SDK) | Console 수동 |
-|---|---|---|---|---|---|
-| `status` | `'pending'` 만 (`:304`, 기존) | `'pending'` 만 (`:341-344`, 기존) | 전권 (`approveFields`/`rejectFields`) | 전권 | **전권 — Rules 우회** |
-| `approvedAt` | 🔴 **현재 무제한** → **Rules-A 가 null/부재만 허용** | null 클리어만 (`:349-353`, 기존) | 전권 (`approveFields:325`) | 전권 | **전권 — Rules 우회** |
-| `approvedBy` | 🔴 **현재 무제한** → **Rules-A 가 null/부재만 허용** | null 클리어만 (`:345-348`, 기존) | 전권 | 전권 | **전권 — Rules 우회** |
-| `rejectedReason` | 🔴 **현재 무제한** → **Rules-A 가 null/부재만 허용** | 변경 허용(화이트리스트 포함) | 전권 | 전권 | **전권 — Rules 우회** |
+**행위 열을 반드시 채운다 (F-02 가 드러낸 교훈 — 아래 §6.6.1).**
+
+| 필드 | 점주 **create** | 점주 **update** | admin **승인** (`approveFields`) | admin **반려** (`rejectFields`) | 점주 **재제출** (`isResubmit`) | CF | Console |
+|---|---|---|---|---|---|---|---|
+| `status` | `'pending'` 만 (`:304`) | `'pending'` 만 (`:341-344`) | `approved` | `rejected` | `pending` | 전권 | **Rules 우회** |
+| `approvedAt` | 🔴 무제한 → **Rules-A 가 null/부재만** | null 클리어만 (`:349-353`) | **값 설정** (`:325`) | 🔴 **값 설정** (`:338`) — **반려인데 승인 시각을 쓴다** | null 클리어 (`:277`) | 전권 | **Rules 우회** |
+| `approvedBy` | 🔴 무제한 → **Rules-A 가 null/부재만** | null 클리어만 (`:345-348`) | 값 설정 | 🔴 **값 설정** (`:337`) | null 클리어 | 전권 | **Rules 우회** |
+| `rejectedReason` | 🔴 무제한 → **Rules-A 가 null/부재만** | 변경 허용 | `null` | 값 설정 | null 클리어 | 전권 | **Rules 우회** |
+| **전이 `rejected → pending`** | — | 🔴 **승인 메타를 그대로 둔 채 허용** → **Rules-A 전이 제약이 막는다** | — | — | 정상(메타 null) | — | **Rules 우회** |
+
+#### 6.6.1 왜 초판 매트릭스가 F-02 를 못 잡았는가
+
+초판은 **"누가 쓸 수 있는가"** 는 적었지만 **"admin 이 어떤 행위에서 무엇을 쓰는가"** 는 적지 않았다.
+`admin: 전권` 한 칸이 **승인과 반려를 같은 칸에 뭉쳐서** `rejectFields` 가 `approvedAt` 에 값을
+쓴다는 사실을 가렸다. 권한 판정 입력 필드의 매트릭스는 **주체 × 행위**로 쪼개야 한다.
+
+> **드러난 사실: `approvedAt` 은 "승인됨" 을 뜻하지 않는다. 그 필드 이름이 출처를 거짓으로 말한다.**
+> 승인과 반려가 같은 필드에 시각을 쓰므로, `approvedAt != null` 은 "admin 이 이 매장을 **심사했다**"
+> 까지만 의미한다. ⓑ′ 는 그 필드를 "승인 이력" 으로 읽었고 그것이 F-02 의 뿌리다.
+> → **근본 수정은 §6.8** (`rejectedAt` 분리).
+
+**상시 규칙 보강 (§6.7 에 합산)**: 권한 판정에 쓰는 필드는 `create`·`update` **양쪽 경로**에 더해
+**그 필드에 값을 쓰는 모든 행위를 열거**하고, **상태 전이(from → to)** 단위로도 확인한다.
+"필드별 허용" 만 보면 **전이 조합**이 빠진다 — F-02 가 정확히 그 구멍이었다.
 
 - **Console 수동 편집은 Rules 를 우회한다.** 따라서 "데이터가 항상 정합하다" 를 가정할 수 없고,
   게이트는 **데이터가 틀어졌을 때 무슨 일이 일어나는지**를 §8 에 적어 두는 방식으로만 방어된다.
@@ -413,7 +461,52 @@ match /stores/{storeId} {
 
 ---
 
-### 6.8 `temporaryClosed` 는 **아무 일도 하지 않는다** — 판정식에 넣지 않는다
+### 6.8 근본 수정 — 반려는 `approvedAt` 을 쓰지 않는다 (`rejectedAt` 분리)
+
+**`rejectFields` (`store_model.dart:331-340`) 가 `approvedAt` 대신 `rejectedAt` 을 쓰게 바꾼다.**
+
+```dart
+static Map<String, dynamic> rejectFields(String adminUid, String reason) => {
+      'status': 'rejected',
+      'approvedBy': adminUid,        // 심사자 — 유지 (이름이 사실과 맞지 않지만 이번 범위에서 안 건드린다)
+      'rejectedAt': FieldValue.serverTimestamp(),   // ← approvedAt 에서 교체
+      'rejectedReason': reason,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+```
+
+- Rules 화이트리스트(점주 update)에 **`rejectedAt` 를 추가하고 null 클리어만 허용**한다
+  (`approvedAt` 과 같은 모양). create 에서도 `rejectedAt` 설정을 금지한다(§6.5 신규 1 에 1줄 추가).
+- `StoreModel` / `StoreEntity` 에 `rejectedAt` 필드 추가. **G1 판정식은 `rejectedAt` 을 읽지 않는다**
+  — 판정 입력은 `status` + `approvedAt` 그대로다(입력을 늘리면 오탐 방향이 늘어난다).
+- 이 변경으로 **`entity_approval_status.dart:3` 의 주석(`approvedAt != null && status == pending`
+  = "수정 대기")이 더 정확해진다.** 지금은 "반려만 된 매장" 도 그 조건을 만족할 수 있어 주석이
+  반쯤 거짓이었다. 전환 후에는 `approvedAt` 이 **승인 행위에서만** 쓰이므로 주석이 참이 된다.
+  developer 는 그 주석에 "`approvedAt` 은 승인 행위에서만 쓴다(반려는 `rejectedAt`)" 를 덧붙인다.
+
+**과거 데이터는 복구 불가 — 그래서 자동으로 고치지 않는다.**
+
+반려가 승인 시각을 **덮어썼기** 때문에 `status == 'rejected' && approvedAt != null` 인 매장에서
+**"승인 후 반려" 와 "반려만" 을 구분할 수 없다.** 따라서:
+
+- **M1 ⓒ 이상치 감사를 확장**해 `status == 'rejected' && approvedAt != null` 을 **전부 모호 건으로
+  보고**한다(§16). **자동으로 고치지 않고 멈추고 보고한다** — 기존 M1 ⓒ 방침과 같다.
+- 추가 감사 1건(F-02 self-regress 흔적): **`status == 'pending' && rejectedReason != null &&
+  approvedAt != null`**. 기존 감사(`approvedBy == null` 기준)는 이 경우를 **못 잡는다** —
+  `approvedBy` 가 admin 값으로 남아 있기 때문이다.
+
+**M1 감사 결과가 0건이 아니어도 배포를 막지 않는다 (판단 근거)**
+
+- 현재 `rejected` 매장은 판정식의 **첫 항(`approved`)·둘째 항(`pending && …`) 모두 불통과**라
+  **지금 당장 결제를 받지 않는다.**
+- 위험이 발생하는 것은 **점주가 `rejected → pending` 으로 옮기는 순간**뿐이고, **그것을 §6.5 의
+  전이 제약이 막는다.**
+- 따라서 **§6.5 전이 제약이 배포에 포함된다는 전제 아래**, 모호 건은 "기록으로 남기고 사람이
+  판단할 목록" 이며 배포 차단 조건이 아니다. 전이 제약이 빠지면 이 판단도 무효다.
+
+---
+
+### 6.9 `temporaryClosed` 는 **아무 일도 하지 않는다** — 판정식에 넣지 않는다
 
 조사 결과: **`temporaryClosed` 는 쓰기만 되고 아무도 읽지 않는다.** 점주 폼
 (`store_operation_form_page.dart:114`)과 모델·엔티티에만 존재하고, **고객 코드 참조 0건 ·
@@ -531,6 +624,9 @@ confirm 사이에 왕복 지연(수백 ms~수초)의 창이 남는다.
 | G1 | `status` 가 알 수 없는 문자열 | **거절** | 결제 불가 | 수동 편집으로만 생긴다. Console 오타가 매장 매출을 멈춘다 → §9-7 기록으로 탐지 |
 | G1 | `status:'pending'` + `approvedAt` 있음 | **허용** | 정상 | — |
 | G1 | `status:'pending'` + `approvedAt` 없음 | 거절 | 결제 불가 | **신규 미승인 매장.** 의도된 동작. 단 점주가 `approvedAt` 를 null 로 클리어한 승인 매장도 같이 막힌다(재제출 경로뿐이므로 의도와 일치) |
+| **모드** | `PAYMENT_GATE_MODE` 가 **없거나 모르는 값** | **`off`** — 평가하지 않는다 | 결제 성립(현재와 동일) | **구멍이 열린 채로 유지된다.** 의도된 선택이다 — **설정 오타로 매출이 멈추는 것보다 구멍이 하루 더 열려 있는 게 낫다**(§17.0). 대가는 "`enforce` 인 줄 알았는데 `off`" 를 놓치기 쉬운 것이고, 런북 ⑥-c 의 **거절 1건 실측**이 그것을 받는다 |
+| **모드** | `shadow` | 판정·기록만 | 결제 성립 | **오탐이 기록으로만 나타난다.** 돈이 멈추지 않으므로 ⑥-b 에서 정상 매장이 잡히는지 확인하는 창이 된다 |
+| G1 | `status:'rejected'` + `approvedAt` 있음 (반려 매장) | **거절** | 결제 불가 | 의도된 동작. ⚠️ **"영업 중이던 매장의 수정이 반려되면 그 순간 결제가 멈춘다"** (test_report H-08) — 이전에는 장바구니로 계속 결제됐다. 정책 판단이 필요하며 **N2(핵심 수정과 pending 회귀 분리)가 풀어야 할 문제**다. 이번 범위에서는 거절을 유지한다 |
 | G1 | `stores/{id}` 문서 자체 부재 | **거절** | 결제 불가 | 매장이 삭제된 것이다. D1 이 이 경로를 줄인다 |
 | G1 | 매장 문서 **읽기 실패**(Firestore 장애) | **거절** | 결제 불가 | 전 매장 결제 중단. 대안은 "읽기 실패 시 통과" 인데 그것은 게이트를 무력화한다 → **거절 + 기록 + 재시도 안내** |
 | G2 | `soldOut: true` | 거절 | 결제 불가 | **점주가 품절을 끄는 것을 잊으면 정상 손님이 막힌다.** 가장 현실적인 오탐 — 문구가 **어느 메뉴인지 지목**해야 손님이 스스로 복구할 수 있다 |
@@ -709,7 +805,7 @@ Rules: storeDeletionHistory read: isAdmin(), write: false
 - 점주 UI (`my_store_page.dart` `_DangerZone` 호출 **2곳** `:317`·`:391`): 삭제 버튼을 제거하고
   **안내 문구 한 줄**로 바꾼다(design §6.2, Q3 ⓐ 확정). **버튼·링크는 두지 않는다** — 앱에 문의 채널이
   없어서 눌러도 아무 일도 안 일어나는 버튼이 되고, 연락처 하드코딩은 절대 규칙 4 위반 위험이다.
-  ⚠️ **안내 문구에 `temporaryClosed`(임시 휴업)를 권하지 않는다 — 그 토글은 아무 효과가 없다**(§6.8).
+  ⚠️ **안내 문구에 `temporaryClosed`(임시 휴업)를 권하지 않는다 — 그 토글은 아무 효과가 없다**(§6.9).
   `_confirmDelete` 의 Storage 삭제 코드(`:1000-1007`)도 함께 제거한다(이미지 정리는 CF 가 한다).
   폐업 신청 전용 흐름은 **N4**.
   **버튼을 남기고 Rules 만 닫으면 "삭제에 실패했어요" 가 되므로 반드시 UI 를 함께 바꾼다**(U3).
@@ -950,6 +1046,12 @@ StoreCoreFormPage → LookupBrandByKeyUseCase → BrandRepositoryImpl
 > `design.md` §3.1~§3.5(헤드라인 + 본문 + 돈 줄 + 목록 카드)가 상위다.** design 이 바꾼 지점과
 > 이유는 design §3.1 의 "spec §15 문구와 달라진 점" 표에 있고, 설계자는 그 변경을 **수용**한다
 > (한 문장에 메뉴명을 이어 붙이면 여러 건일 때 읽을 수 없다는 근거가 타당하다).
+>
+> ⚠️ **문구 표기 규칙 (F-04) — spec·design 의 문구에 마크다운 백틱을 쓰지 않는다.**
+> `` `다시 확인` `` 처럼 적으면 **구현이 백틱을 문자열에 그대로 복사해 화면에 ` 문자가 출력된다**
+> (실제로 `cart_availability_banner.dart:28,30,32` 에서 발생했다). 문구 안에서 버튼·화면 이름을
+> 가리킬 때는 **작은따옴표('다시 확인')** 또는 꾸밈 없는 평문을 쓴다. 이것은 문서 서식 취향이
+> 아니라 **구현 사고를 막는 규칙**이다 — 문구 칸의 내용은 복사되어 코드가 된다.
 
 CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 싣는다
 (실기기에서 `details` 가 Map 으로 안 올 수 있다는 기존 교훈 — `backlog.md:566-569`). 이중 장치다.
@@ -1021,7 +1123,7 @@ design D5 는 "N개 + 더보기로 줄이지 않고 **전부 열거**" 다. 토�
 
 | # | 대상 | 내용 | 필수 여부 |
 |---|---|---|---|
-| **M1** | `stores` (전건, 현재 7곳) | ⓐ `status` 가 **부재한** 문서에 명시적으로 `status` 를 쓴다 ⓑ `status=='approved'` 인데 **`approvedAt` 이 없는** 문서에 `approvedAt` 를 백필한다 ⓒ **승인 메타 이상치 감사** — `status != 'approved' && approvedAt != null && approvedBy == null` 인 문서를 **목록으로 보고한다.** admin 승인(`approveFields:325-329`)은 `approvedAt` 과 `approvedBy` 를 **항상 함께** 쓰므로, `approvedAt` 만 있고 `approvedBy` 가 없으면 §5-4 🔴 의 create 경로로 심긴 값일 가능성이 있다. **자동 삭제하지 않는다 — 멈추고 보고한다** (정상 경로로도 생길 수 있는지 사람이 판단한다) | **Q1 ⓑ′ 의 필수 선행.** 안 하면 legacy 매장이 전부 결제 거부된다 (§8.1 1·2행) — **G1 의 유일한 오탐 대량 발생 경로** |
+| **M1** | `stores` (전건, 현재 7곳) | ⓐ `status` 가 **부재한** 문서에 명시적으로 `status` 를 쓴다 ⓑ `status=='approved'` 인데 **`approvedAt` 이 없는** 문서에 `approvedAt` 를 백필한다 **ⓓ `willBeRejected` 목록 (F-01 신규) — 백필을 가정한 뒤에도 `canSellNow` 가 false 인 매장**을 `{id, name, status, hasApprovedAt}` 로 보고한다. 운영자가 ⑥ 전에 "이 매장들은 막힌다" 를 눈으로 확인하는 유일한 수단이다 (dry-run 리포트가 이것을 안 보여 주면 **M1 을 돌려도 어느 매장이 막힐지 모른다**) **ⓔ 모호 건 감사 (F-02/§6.8 신규)** — `status=='rejected' && approvedAt != null` **전건**(승인 후 반려와 반려만을 구분할 수 없다) + `status=='pending' && rejectedReason != null && approvedAt != null`(self-regress 흔적 — `approvedBy` 가 admin 값으로 남아 기존 ⓒ 기준이 못 잡는다). **자동으로 고치지 않고 멈추고 보고한다.** ⓔ 가 0건이 아니어도 **배포를 막지 않는다** — 근거는 §6.8 마지막 블록(§6.5 전이 제약이 포함된다는 전제) ⓒ **승인 메타 이상치 감사** — `status != 'approved' && approvedAt != null && approvedBy == null` 인 문서를 **목록으로 보고한다.** admin 승인(`approveFields:325-329`)은 `approvedAt` 과 `approvedBy` 를 **항상 함께** 쓰므로, `approvedAt` 만 있고 `approvedBy` 가 없으면 §5-4 🔴 의 create 경로로 심긴 값일 가능성이 있다. **자동 삭제하지 않는다 — 멈추고 보고한다** (정상 경로로도 생길 수 있는지 사람이 판단한다) | **Q1 ⓑ′ 의 필수 선행.** 안 하면 legacy 매장이 전부 결제 거부된다 (§8.1 1·2행) — **G1 의 유일한 오탐 대량 발생 경로** |
 | **M2** | `brands` (전건) | PII+brandKey 를 `brands/{id}/private/profile` 로 이동(복사 후 부모에서 제거), `brandKeys/{key}` 생성 | **Q2 ⓑ 선택 시 필수** |
 | M3 | `lib/dev/seed/phase1_seed_data.dart:23` | 시드가 `private/profile` + `brandKeys` 를 함께 심게 수정 | 개발 환경용 |
 
@@ -1033,6 +1135,51 @@ design D5 는 "N개 + 더보기로 줄이지 않고 **전부 열거**" 다. 토�
 ---
 
 ## 17. 배포 순서
+
+> **실행 절차와 전체 명령은 `docs/tasks/payment_server_authority/deploy_runbook.md` 에 있다.**
+> 이 절은 **왜 그 순서인가**를 적고, 런북은 **무엇을 어떻게 치는가**를 적는다.
+
+### 17.0 게이트 모드 스위치 `PAYMENT_GATE_MODE` — **확정** (F-01)
+
+게이트는 **되돌릴 수 없는 방향의 실패**(정상 결제 거부)를 만들 수 있고, 그 안전이 지금까지
+**배포 순서에만** 달려 있었다. 순서를 어기는 것을 코드가 막지도 감지하지도 못한다
+(② 와 ⑥ 이 같은 `index.ts`·같은 배포 명령이라 `npm run deploy` 한 번으로 게이트가 켜진다).
+그래서 **순서 전제를 코드 밖에서 코드 안으로 옮긴다.**
+
+```
+functions param   PAYMENT_GATE_MODE  =  off | shadow | enforce
+```
+
+| 값 | 동작 |
+|---|---|
+| `off` | 게이트를 **평가하지 않는다.** `stores`·메뉴 읽기도 하지 않는다(비용 0). 현재와 완전히 동일 |
+| `shadow` | **판정하고 `paymentGateRejections` 에 기록하되 거절하지 않는다** (`detail.shadow: true`). 결제는 그대로 성립 → **무엇이 막혔을지를 돈을 움직이지 않고 본다** |
+| `enforce` | 판정 + 기록 + **거절** (§7 본설계) |
+
+**기본값과 미지값 — `off`** (명시적 결정)
+
+- **값이 없거나 모르는 값이면 `off`.**
+- 근거: 게이트는 **돈을 멈추는 장치**다. **설정 오타로 매출이 멈추는 것보다 구멍이 하루 더 열려 있는
+  것이 낫다.** Qoin 적립(돈을 **주는** 방향)이 fail-closed 인 것과 **반대이고, 반대인 것이 맞다** —
+  fail 방향은 "그 실패가 누구에게서 무엇을 빼앗는가" 로 결정된다.
+- ⚠️ 대가: **`enforce` 로 올렸다고 믿는데 오타로 `off` 인 상태를 알아차리기 어렵다.** 그래서 런북
+  ⑥-c 에서 **전환 직후 미승인 매장으로 거절 1건을 실제로 유도해 확인**한다. 확인 없이는 전환이
+  끝난 것으로 보지 않는다.
+
+**선검증(앱)과의 관계 — 앱은 `enforce` 전환 이후에 배포한다**
+
+선검증은 Dart 쪽이라 **서버 모드와 무관하게 동작**한다. 서버가 `shadow` 인데 앱이 선검증으로
+막으면 **거절 판단이 서버의 안전망 없이 클라이언트로 옮겨간다** — shadow 를 둔 이유가 사라진다.
+→ **⑥-c(`enforce`) → ⑦(앱)** 순서를 고정한다.
+
+**shadow 가 완화하는 제약 — ④ Rules-A 의 단독 배포 압박**
+
+`shadow` 가 있으면 ⑥ 에서 게이트가 켜져도 거절이 없으므로, **"④ 가 ⑥ 보다 먼저" 의 위험도가
+내려간다**(§17.1 의 "위조가 데이터로 굳는다" 는 여전하므로 **순서 자체는 바꾸지 않는다**).
+실무적으로는 **④ 를 놓친 채 ⑥ 을 올려도 `shadow` 면 돈이 멈추지 않는다** — 다만 그때
+`enforce` 로 넘어가면 안 된다. 런북 ⑥-c 의 전제 조건에 **"④ 라이브 확인 완료"** 를 넣는다.
+
+---
 
 **원칙**: Rules 는 앱보다 **나중**이다 (런북 ③→④) — **단 그 원칙의 근거는 "새 Rules 가 구버전 앱의
 쓰기를 거부하면 기능이 전면 실패한다" 다.** 구버전 앱이 애초에 보내지 않는 필드를 막는 Rules 는
@@ -1052,8 +1199,10 @@ design D5 는 "N개 + 더보기로 줄이지 않고 **전부 열거**" 다. 토�
 | **③** **M1 실행** (dry-run → 실행) | `stores.status`/`approvedAt` 백필 + **승인 메타 이상치 감사** | **G1 게이트가 켜지기 전에** 데이터를 정상화한다. 뒤집으면 legacy 매장 결제가 전부 멈춘다 |
 | **④** **Rules-A 배포** | create 승인 메타 금지 | **⑤(게이트 CF) 보다 먼저.** 뒤집으면 §17.1 의 구멍 구간이 생긴다. 구버전 앱 호환이므로 여기 둘 수 있다 |
 | **⑤** **M2 1단계 실행** (dry-run → 실행) | `brands` PII·brandKey 를 `private/profile` 로 **복사** + `brandKeys` 생성 | Rules-B 가 `private/profile` 을 요구하기 전에 문서가 있어야 한다. **부모 필드는 아직 지우지 않는다**(2단 삭제) |
-| **⑥** 본 Cloud Functions 배포 | `verifyTossPayment` 개정(G1·G2) + `lookupBrandByKey` + `issueBrandKey` + `deleteStore` | 게이트가 여기서 켜진다. 데이터(③)와 위조 차단(④)이 **둘 다 선행됐다** |
-| **⑦** 앱 빌드·설치 | callable 경유 brandKey, 삭제 버튼 없음, 거절 문구, 선검증 | **Rules-B+C 보다 먼저** |
+| **⑥** 본 Cloud Functions 배포 — **`PAYMENT_GATE_MODE=shadow`** | `verifyTossPayment` 개정(G1·G2) + `lookupBrandByKey` + `issueBrandKey` + `deleteStore` | 게이트 코드가 올라가지만 **거절하지 않는다.** 데이터(③)와 위조 차단(④)이 선행됐어도 **실측 없이 거절을 켜지 않는다** |
+| **⑥-b** shadow 관측 | `paymentGateRejections` 에서 `shadow:true` 기록을 본다. **정상 매장·정상 메뉴가 잡히면 멈추고 원인부터 찾는다** | 오탐을 **돈이 멈추기 전에** 본다. M1 의 `willBeRejected` 와 교차 확인 |
+| **⑥-c** `PAYMENT_GATE_MODE=enforce` 전환 | 파라미터만 바꿔 재배포 | 전제: ④ 라이브 확인 완료 + ⑥-b 가 깨끗함. **전환 직후 미승인 매장으로 거절 1건을 실제로 유도해 확인**(§17.0 — 확인 없이는 전환이 끝난 것으로 보지 않는다) |
+| **⑦** 앱 빌드·설치 | callable 경유 brandKey, 삭제 버튼 없음, 거절 문구, 선검증 | **⑥-c 이후**(선검증이 서버 안전망 없이 막지 않게) **그리고 Rules-B+C 보다 먼저** |
 | **⑧** **Rules-B+C 배포 — ⑦ 직후 바로** | `brands` private, `brandKeys`, `stores.delete`, 신규 컬렉션 3개 | ⑦ 과의 창을 수 분으로 줄인다 (런북 ③→④) |
 | **⑨** **M2 2단계** — 부모 문서의 PII·brandKey **제거** | ⑧ 이후, 구버전 앱이 없음을 확인한 뒤 | 먼저 지우면 구버전 앱의 brand 정보 화면이 빈다 |
 | **⑩** 라이브 검증 | §17.2 | |
@@ -1163,8 +1312,20 @@ design D5 는 "N개 + 더보기로 줄이지 않고 **전부 열거**" 다. 토�
 - 점주 매장 **create** 에 `rejectedReason` 포함 → **거부**
 - 점주 매장 **create** 에 세 필드를 **명시적 `null`** 로 포함 → **허용** (부재와 동등)
 - 점주 매장 create 정상 payload(현재 앱과 동일한 키 집합) → **허용** (회귀 — 매장 등록이 막히면 안 된다)
+- 점주 매장 **create** 에 `rejectedAt` 포함 → **거부** (§6.8 신규 필드)
 - 점주 매장 **update** 로 `approvedAt` 에 값 설정 → **거부** (기존 보호 회귀)
 - 점주 매장 **update** 로 `approvedAt: null` → **허용** (T3 재제출 회귀)
+- **F-03 — 게이트 입력 `status` 의 create 케이스 (초판 누락)**
+  - 점주 매장 **create** 에 `status:'approved'` → **거부**
+  - 점주 매장 **create** 에 `status:'rejected'` → **거부**
+  - 점주 매장 **create** 에 `status` **부재** → **허용** (앱은 항상 `pending` 을 쓰지만 Rules 는 부재 허용)
+- **F-02 — `rejected` 전이 (초판 누락, 가장 중요)**
+  - `rejected` → `pending` 인데 **`approvedAt` 을 그대로 둠** → **거부** (점주 분기)
+  - 같은 케이스, **브랜드 보유자 분기**(`isStoreOwnerBrandUpdate`) → **거부**
+  - 🔁 **회귀 (필수)** `rejected` → `pending` + **승인 메타 null 클리어** → **허용** (점주 분기)
+  - 🔁 **회귀 (필수)** 같은 케이스, **브랜드 보유자 분기** → **허용**
+  - 🔁 **회귀 (필수)** **admin 이 `rejected` → `approved`** 로 승인(`approveFields` 가 `approvedAt` 에
+    값을 쓴다) → **허용.** 이 케이스가 없으면 전이 제약이 **admin 승인을 막은 것을 아무도 모른다**
 - brand **create** 에 `approvedAt`/`approvedBy` 포함 → **거부** (§6.5 마지막 항목)
 
 **B1 / D1**
@@ -1197,7 +1358,7 @@ spec §8.2 의 fail 방향을 UI 로 정확히 옮긴 것이다. 아래 **수정
 
 | # | 수정 | 근거 |
 |---|---|---|
-| **1** | **§6.2 점주 안내 문구의 첫 문장 제거** — `잠시 쉬려면 '운영 정보 수정'에서 임시 휴업을 켤 수 있어요` | **`temporaryClosed` 는 아무 효과가 없다**(§6.8). 그대로 두면 거짓 안내다. design 이 열어 둔 "developer 가 확인하고 아니라면 빼고 보고" 조건이 **확인 결과 성립하지 않는다.** 두 번째 문장만 남긴다 |
+| **1** | **§6.2 점주 안내 문구의 첫 문장 제거** — `잠시 쉬려면 '운영 정보 수정'에서 임시 휴업을 켤 수 있어요` | **`temporaryClosed` 는 아무 효과가 없다**(§6.9). 그대로 두면 거짓 안내다. design 이 열어 둔 "developer 가 확인하고 아니라면 빼고 보고" 조건이 **확인 결과 성립하지 않는다.** 두 번째 문장만 남긴다 |
 | **2** | **§7.2 영향 범위 섹션에 `진행 중인 주문 n건` 행 추가** + n ≥ 1 이면 삭제 버튼 비활성 + 사유·이유 2줄 + 경쟁 상황 문구 | §11.4 — 근거가 UX 가 아니라 **돈**이다. 매장을 지우면 그 주문의 취소·환불이 영구히 막힌다 |
 | **3** | **§3.5·§3.6 에 "일부 해석 실패" 행 명시** — 일부만 해석되면 **해석된 이름만 그리고 부족하다는 표시를 하지 않는다** | §15.1. design 은 "전부 해석 실패" 만 적었다. 일부 실패가 더 흔하다(카트가 그 사이 바뀜) |
 | **4** | **§2 인벤토리 4-4 의 `카운트 출처 미정` 을 `deleteStore(dryRun: true)` 로 확정 기입** | §11.3 |
@@ -1228,11 +1389,23 @@ Q6 선검증 타임아웃 **3초** / Q7 빠른 재주문은 **이름 열거 후 
 > 전달 사항: **§12 표면 인벤토리 표를 design.md 에 그대로 옮기고 행을 추가한다.** 화면을 추가하면서
 > 표에 행을 넣지 않으면 리뷰 FAIL (§21.7 R2).
 
-### developer
+### developer — **T-1 FAIL 재작업 (2026-10-27, 우선)**
 
-산출물: `docs/tasks/payment_server_authority/implementation.md`
+`test_report.md` F-01~F-04. **아래 4커밋으로 끊는다** (커밋 경계가 롤백 단위다).
 
-**순서를 지킨다** (의존 때문):
+| 커밋 | 내용 | 왜 이 경계인가 |
+|---|---|---|
+| **C1 — Rules-A 보강 + 하네스** | ⓐ `firestore.rules`: §6.5 **전이 제약**(`leavingRejectedClearsApproval`)을 **`isStoreOwnerFieldUpdate` / `isStoreOwnerBrandUpdate` 내부에** 넣는다(`allow update` 전체에 걸면 **admin 승인이 막힌다** — §6.5 표) + create 에 `rejectedAt` 금지 1줄 ⓑ `test_rules/rules.test.mjs` PSA-A 블록에 **§18.5 의 F-02 6건 + F-03 3건** 추가 | **Rules-A 는 ④ 에서 가장 먼저 나간다.** 이 보강이 ④ 이전에 들어가야 Rules 를 두 번 배포하지 않는다. 하네스를 같은 커밋에 두는 이유는 F-03 이 "규칙의 결함이 아니라 회귀 방지 장치의 공백" 이기 때문이다 — 규칙과 그 규칙을 지키는 테스트가 떨어지면 안 된다 |
+| **C2 — 게이트 모드 스위치** | `PAYMENT_GATE_MODE` param(`off`/`shadow`/`enforce`, **미지값 → `off`**), `verifyTossPayment` 에 모드 분기, `shadow` 기록에 `detail.shadow:true`, **`off` 에서는 읽기조차 하지 않는다**(비용 0). `functions/test/paymentGate.test.mjs` 에 **모드 3값 × 위반 유무** 케이스 | ⑥ 을 **어떤 명령으로 올려도 안전**하게 만드는 보험이다. C1 과 분리하는 이유: Rules 와 CF 는 배포 단위가 다르고 롤백도 따로 한다 |
+| **C3 — M1 리포트 확장** | `migrateStoreApprovalMeta` dry-run 에 **ⓓ `willBeRejected`** + **ⓔ 모호 건 2종**(§16). **자동 수정 없음 — 목록만** | 운영자가 ⑥ 전에 "어느 매장이 막힌다" 를 보는 **유일한 수단**이다. 코드 변경 범위가 작고 독립적이다 |
+| **C4 — `rejectedAt` 분리 + F-04** | ⓐ `rejectFields` 가 `rejectedAt` 을 쓴다(§6.8), `StoreModel`/`StoreEntity` 에 필드 추가, Rules 화이트리스트에 `rejectedAt`(null 클리어만), `entity_approval_status.dart:3` 주석 보강 ⓑ `cart_availability_banner.dart:28,30,32` **백틱 3곳 제거** | 근본 수정이지만 **배포를 막지 않는다**(§6.8 마지막 블록 — C1 이 즉시 차단을 담당한다). F-04 를 여기 붙이는 이유는 둘 다 "급하지 않고 독립적" 이라서다. **C4 없이 C1~C3 만으로도 배포 가능** |
+
+> **배포 차단 조건은 C1 + C2 + C3 다.** C4 는 같은 배포에 넣는 것이 좋지만 빠져도 GO 다.
+> C1 이 빠지면 §6.8 의 "모호 건이 배포를 막지 않는다" 판단도 **무효**가 된다.
+
+추가 산출물: **`deploy_runbook.md`** (§17 + 런북 파일. 아래 "런북" 항목)
+
+#### (1차) 구현 순서 — **순서를 지킨다** (의존 때문):
 
 | 순서 | 항목 |
 |---|---|
@@ -1339,6 +1512,14 @@ Q6 선검증 타임아웃 **3초** / Q7 빠른 재주문은 **이름 열거 후 
       Rules 하네스에 **판정 입력 필드별 create 거부 케이스가 1건씩** 있다 (§18.5).
       *표면 인벤토리 표와 같은 급의 가드다. 이 누락은 같은 패턴의 네 번째였다.*
 - [ ] **Rules-A 가 ⑥(게이트 CF)보다 먼저 배포됐다** — 뒤집히면 위조가 데이터로 굳는다 (§17.1)
+- [ ] **F-02 — `rejected → pending` 전이가 승인 메타를 유지한 채 통과하지 못한다.** 그리고
+      **정상 재제출(메타 null 클리어)과 admin 승인은 여전히 허용된다** (§18.5 회귀 3건)
+- [ ] **F-03 — 게이트 입력 `status` 의 create 거부 케이스가 하네스에 있다** (3건)
+- [ ] **`PAYMENT_GATE_MODE` 가 없거나 모르는 값일 때 `off` 로 떨어진다** (§17.0)
+- [ ] **`enforce` 전환 직후 거절 1건을 실제로 유도해 확인했다** — 확인 없이는 전환 완료가 아니다
+- [ ] **M1 dry-run 이 `willBeRejected` 와 모호 건 2종을 보여준다** (§16 ⓓⓔ)
+- [ ] **`deploy_runbook.md` 가 있고 11+2단계의 전체 한 줄 명령이 적혀 있다** (모든 명령에 `--project`)
+- [ ] 화면 문구에 **마크다운 백틱이 0건** (F-04 + §15 머리말 규칙)
 - [ ] `design.md` 작성 완료 (§19 designer 7항목 + §12 표면 인벤토리 이전·확장)
 - [ ] `implementation.md` 작성 완료
 - [ ] `test_report.md` 작성 완료 (T-1 + T-2)
@@ -1374,4 +1555,4 @@ Q6 선검증 타임아웃 **3초** / Q7 빠른 재주문은 **이름 열거 후 
 | N3 | 매장 `status` 전이 이력 (승인/반려) + `rejectedReason` 덮어쓰기 | §9-주의 |
 | N4 | 매장 폐업 신청 흐름 / 소프트 삭제 | §11.1 ⓒ |
 | N5 | `quick_reorder_section` 의 단가 역산 제거 | §5-2 |
-| **N6** | **`temporaryClosed` 가 아무 일도 하지 않는다** — 점주가 켤 수 있는 스위치가 고객·CF 어디에도 효과가 없다 | §6.8. 같은 계열("서버가 권위를 갖는가")이지만 범위를 넓히지 않는다. 할 때는 ⓐ 고객 노출 ⓑ 결제 게이트 ⓒ 점주 화면 표시를 **한 번에** |
+| **N6** | **`temporaryClosed` 가 아무 일도 하지 않는다** — 점주가 켤 수 있는 스위치가 고객·CF 어디에도 효과가 없다 | §6.9. 같은 계열("서버가 권위를 갖는가")이지만 범위를 넓히지 않는다. 할 때는 ⓐ 고객 노출 ⓑ 결제 게이트 ⓒ 점주 화면 표시를 **한 번에** |
