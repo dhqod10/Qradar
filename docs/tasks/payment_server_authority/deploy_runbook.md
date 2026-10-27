@@ -57,7 +57,13 @@ cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 functions:l
 
 ## ③ M1 실행 — `stores` 승인 메타 정상화 + **거절 예정 목록 확인**
 
-**dry-run 먼저.** admin 계정으로 앱(또는 임시 callable)에서 `migrateStoreApprovalMeta {dryRun:true}`.
+**dry-run 먼저.** admin 계정으로 앱에서 → 하단 탭 **더보기** → **배포 마이그레이션 (임시)**
+→ **③ 매장 승인 메타 정상화** 카드 → `시험 실행 (dryRun)`.
+
+이 화면은 ③⑤⑨ 전용 임시 카드다 (`TEMP_MIGRATION_CARD`, ⑪ 에서 삭제). **이 카드가 들어간 앱을
+admin 기기에 먼저 설치해야 ③ 을 할 수 있다** — 런북의 ⑦(앱)은 고객용 배포 순서이고, 이 임시 빌드는
+신규 화면 추가뿐이라 구버전 호환에 영향이 없다. 단 **③ 을 하는 동안 그 기기로 고객 결제를 하지
+않는다**(선검증이 서버보다 먼저 올라간 상태가 되므로).
 
 확인할 것 — **하나라도 어긋나면 멈추고 보고한다. 자동 수정하지 않는다.**
 
@@ -139,7 +145,8 @@ cd /Users/Byeonguk/Developer/OrderApp && cp firestore.rules /tmp/rules_head.rule
 
 ## ⑤ M2 1단계 — `brands` PII·brandKey **복사** (부모는 아직 지우지 않는다)
 
-admin 계정으로 `migrateBrandPrivateProfile {mode:'copy', dryRun:true}` → 확인 → `{dryRun:false}`.
+admin 앱 → **더보기** → **배포 마이그레이션 (임시)** → **⑤⑨ 브랜드 private profile 이동** 카드
+→ 칩에서 **`copy`** 선택 → `시험 실행 (dryRun)` → 확인 → `실행`.
 
 - 복사는 **private 의 기존 값을 덮지 않는다.**
 - ⚠️ **⑤ 가 ⑥ 보다 먼저여야 한다.** 어기면 `issueBrandKey` 가 기존 키를 "이미 발급" 으로 인식하지
@@ -246,7 +253,8 @@ cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 deploy --on
 
 ## ⑨ M2 2단계 — 부모 문서의 PII·brandKey **제거**
 
-admin 계정으로 `migrateBrandPrivateProfile {mode:'cleanup', dryRun:true}` → 확인 → `{dryRun:false}`.
+같은 화면(**더보기** → **배포 마이그레이션 (임시)** → **⑤⑨** 카드) → 칩에서 **`cleanup`** 선택
+→ `시험 실행 (dryRun)` → 확인 → `실행`. (칩을 바꾸면 이전 dry-run 결과가 버려져 다시 시험 실행해야 한다.)
 
 - cleanup 은 **private 값과 부모 값이 일치할 때만** 부모 필드를 지운다. 불일치·부재는 `invalid` 로
   정지한다 — `invalid` 가 있으면 **멈추고 보고**한다.
@@ -266,6 +274,11 @@ admin 계정으로 `migrateBrandPrivateProfile {mode:'cleanup', dryRun:true}` �
 `아직 결제가 완료되지 않았어요`(design Q1 ⓑ)로 **즉시 교체**한다.
 
 ## ⑪ 정리 커밋 (며칠 뒤)
+
+**임시 마이그레이션 카드를 지운다.** 대상은 `implementation.md` §11.5 에 있고
+`grep -rn TEMP_MIGRATION_CARD lib test` 로 전부 찾을 수 있다 — 신규 9파일 +
+`admin_more_page.dart` 의 타일 1개·import 1줄. 임시 callable 2개
+(`migrateStoreApprovalMeta`, `migrateBrandPrivateProfile`)도 함께 삭제한다.
 
 ③ 과 ⑨ 의 dry-run 이 **0건**이고 ⑩ 이 전건 통과일 때만.
 
