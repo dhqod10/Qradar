@@ -305,7 +305,14 @@ service cloud.firestore {
                     && !hasQoinManagedOnCreate()
                     && (!('brandId' in request.resource.data)
                         || request.resource.data.brandId == null
-                        || get(/databases/$(database)/documents/brands/$(request.resource.data.brandId)).data.get('status', '') == 'approved');
+                        || get(/databases/$(database)/documents/brands/$(request.resource.data.brandId)).data.get('status', '') == 'approved')
+                    // [payment_server_authority Rules-A] 승인 메타 자가 설정 금지 (부재 또는 null 만 허용).
+                    // 결제 게이트(canSellNow)가 approvedAt 을 권한 판정 입력으로 쓴다 → 이 필드는 권한 값이고
+                    // create 도 쓰기 경로다. onlyChangedFields 는 update 전용이라 create 를 보호하지 않는다.
+                    // 이것이 없으면 approvedAt 을 넣어 매장을 만드는 것이 게이트를 통과하는 가장 쉬운 방법이 된다.
+                    && request.resource.data.get('approvedAt', null) == null
+                    && request.resource.data.get('approvedBy', null) == null
+                    && request.resource.data.get('rejectedReason', null) == null;
 
       // delete: 점주 본인 또는 admin
       allow delete: if isAdmin() || isStoreOwner(storeId);
@@ -445,7 +452,10 @@ service cloud.firestore {
                         || (isBrand()
                             && request.resource.data.get('submittedBy', '') == uid()
                             && request.resource.data.get('status', '') == 'pending'
-                            && request.resource.data.get('brandKey', '') == ''));
+                            && request.resource.data.get('brandKey', '') == ''
+                            // [Rules-A] 승인 메타 자가 설정 금지 (부재 또는 null 만). admin 분기는 해당 없음.
+                            && request.resource.data.get('approvedAt', null) == null
+                            && request.resource.data.get('approvedBy', null) == null));
 
       // delete: admin 만
       allow delete: if isAdmin();

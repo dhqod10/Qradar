@@ -905,6 +905,43 @@ for (const [label, mk] of [
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// payment_server_authority — Rules-A (spec §6.5, §6.7, §18.5)
+// 결제 게이트(canSellNow)가 stores.approvedAt 을 권한 판정 입력으로 쓴다 → create 경로도 막혀야 한다.
+// onlyChangedFields 는 update 전용 장치이고 create 에는 아무 보호도 주지 않는다 (같은 패턴 네 번째).
+// ═══════════════════════════════════════════════════════════════════════════
+const PSA_STORE = { ownerId: OWNER, name: 'N', status: 'pending' };
+await run('PSA-A1 owner 매장 create 에 approvedAt 포함', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a1'), { ...PSA_STORE, approvedAt: Timestamp.now() }));
+await run('PSA-A2 owner 매장 create 에 approvedBy 포함', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a2'), { ...PSA_STORE, approvedBy: ADMIN }));
+await run('PSA-A3 owner 매장 create 에 rejectedReason 포함', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a3'), { ...PSA_STORE, rejectedReason: 'x' }));
+await run('PSA-A4 owner 매장 create 에 세 필드를 명시적 null (부재와 동등)', 'allow', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a4'), { ...PSA_STORE, approvedAt: null, approvedBy: null, rejectedReason: null }));
+// 회귀: 현재 앱의 create payload(toFirestoreForCreate) 와 같은 키 집합 — 매장 등록이 막히면 안 된다.
+await run('PSA-A5 owner 매장 create 정상 payload (회귀 — 앱과 동일 키 집합)', 'allow', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a5'), {
+    ownerId: OWNER, name: '신규 매장', description: '', phone: '010', address: '서울', location: { lat: 1, lng: 2 },
+    imageUrl: '', imageUrls: [], menuCategories: ['coffee'], isOpen: false, status: 'pending',
+    businessRegistrationNumber: '123-45-67890', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    submittedBy: OWNER, submittedAt: serverTimestamp(),
+  }));
+await run('PSA-A5b owner 가맹 매장 create 정상 payload (brandId, 회귀)', 'allow', () =>
+  setDoc(doc(asOwner, 'stores', 'psa_a5b'), { ...PSA_STORE, brandId: B_A, submittedBy: OWNER, submittedAt: serverTimestamp() }));
+await run('PSA-A6 owner update 로 approvedAt 에 값 설정 (기존 보호 회귀)', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_P), { approvedAt: Timestamp.now() }));
+await run('PSA-A7 owner update 로 approvedAt: null (T3 재제출 회귀)', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', S_P), { approvedAt: null }));
+await run('PSA-A8 brand create 에 approvedAt 포함', 'deny', () =>
+  setDoc(doc(asBrand, 'brands', 'psa_b1'), { name: 'N', status: 'pending', submittedBy: BRAND_U, brandKey: '', approvedAt: Timestamp.now() }));
+await run('PSA-A8b brand create 에 approvedBy 포함', 'deny', () =>
+  setDoc(doc(asBrand, 'brands', 'psa_b2'), { name: 'N', status: 'pending', submittedBy: BRAND_U, brandKey: '', approvedBy: ADMIN }));
+await run('PSA-A8c brand create 정상 payload (회귀)', 'allow', () =>
+  setDoc(doc(asBrand, 'brands', 'psa_b3'), { name: 'N', status: 'pending', submittedBy: BRAND_U, brandKey: '', companyName: 'C' }));
+await run('PSA-A8d admin brand create (승인 메타 허용 — 해당 없음, 회귀)', 'allow', () =>
+  setDoc(doc(asAdmin, 'brands', 'psa_b4'), { name: 'N', status: 'approved', approvedBy: ADMIN, approvedAt: Timestamp.now() }));
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {
