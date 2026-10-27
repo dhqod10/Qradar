@@ -21,8 +21,8 @@
 | Domain | `lib/core/utils/cart_pricing.dart`(신규, 순수) · `lib/core/utils/option_availability.dart`(신규, 기존 구현 **추출**) · `ValidateCheckoutUseCase` 반환 확장 · `CheckoutValidation` 확장 |
 | Data | `option_repository_impl.dart` 가 추출된 함수를 호출하게 변경(동작 동일) · `CheckoutValidationRepository` 가 옵션 그룹까지 읽게 확장 · `menu_override_model.dart:52` 비방어 cast 수정 · `payment_gateway_repository_impl.dart` cart 직렬화 |
 | Presentation | `checkout_page.dart`(재가격) · `cart_page.dart`(가격 변동 표시) · `menu_item_detail_page.dart`(담기 금액 계산을 공용 함수로) · `PaymentFailure` 사유 2종 |
-| Cloud Functions | `verifyTossPayment.ts`(재계산 삽입) · `optionPricing.ts`(신규) · `cartPricing.ts`(신규) · `menuVisibility.ts`(`MergedMenu` 확장) · `paymentGate.ts`(`ResolvedMenu` 소비) · `orderBuilder.ts`(서버 값으로 주문 구성 + 타입 거짓 수정) · `auditOrderPriceIntegrity.ts`(신규, 임시) |
-| Firebase | **Rules 변경 1건 확정** — `menuOverrides` create·update 의 승인 메타 금지(§13-8 🔴) · Q7 ⓐ 선택 시 `priceHistory` 1줄 추가 · 인덱스 변경 없음 · **데이터 마이그레이션 없음** |
+| Cloud Functions | `verifyTossPayment.ts`(재계산 삽입) · `optionPricing.ts`(신규) · `cartPricing.ts`(신규) · `menuVisibility.ts`(`MergedMenu` 확장) · `paymentGate.ts`(`ResolvedMenu` 소비) · `orderBuilder.ts`(서버 값으로 주문 구성 + 타입 거짓 수정) · `auditOrderPriceIntegrity.ts`(신규, 임시) · `onMenuPriceWritten.ts`(신규, 가격 이력 트리거 — R16) |
+| Firebase | **Rules 변경 2건 확정** — ⓐ `menuOverrides` create·update 의 승인 메타 금지(§13-8 🔴) ⓑ `priceHistory` 읽기 전용 1줄(Q7=ⓐ, R16) · 신규 트리거 `onMenuPriceWritten` · 인덱스 변경 없음 · **데이터 마이그레이션 없음** |
 | 권한 / 환경 | `PAYMENT_PRICE_MODE` 신규 param (Q3) |
 | 테스트 | 교차 골든 2종 신규 · grep 가드 5항목 신규 · functions 단위 · Rules 하네스 회귀 |
 
@@ -136,7 +136,7 @@
 
 - [ ] **R1** `verifyTossPayment` 가 Toss confirm **전에** 카트 금액을 Firestore 문서에서 재계산하고, 불일치면 confirm 을 호출하지 않고 거절한다.
 - [ ] **R2** 재계산은 `basePrice` 를 **G2 가 이미 읽은 문서에서** 얻는다(추가 읽기 0). `MergedMenu`/`ResolvedMenu` 를 소비하고 메뉴 문서를 다시 읽지 않는다.
-- [ ] **R3** 옵션 단가를 서버가 재계산한다 (**Q1 확정 후 확정**). 옵션 그룹 문서 읽기는 `getAll` **1 round-trip** 으로 묶고 (scope, groupId) 로 중복 제거한다.
+- [ ] **R3** 옵션 단가를 서버가 재계산한다 (**Q1=ⓐ 확정 — 전체 재계산**). 옵션 그룹 문서 읽기는 `getAll` **1 round-trip** 으로 묶고 (scope, groupId) 로 중복 제거한다.
 - [ ] **R4** 옵션 선택의 유효성을 서버가 검증한다: ⓐ 선택한 그룹이 그 메뉴의 `optionGroupRefs` 에 있다 ⓑ 선택한 `itemId` 가 그 그룹의 `items` 에 있다 ⓒ `active=false` 그룹·`disabled*` 그룹·항목이 선택되지 않았다 ⓓ `required` 그룹에 1개 이상 선택됐다 ⓔ `single` 그룹에 2개 이상 선택되지 않았다.
 - [ ] **R5** 금액 판정 함수는 **순수 함수**이고 Firestore 에 의존하지 않는다. 거절 경로에서 **Toss confirm 이 호출되지 않음**을 단위 테스트로 단언한다(선행 R5 패턴).
 - [ ] **R6** 옵션 선택 가능 판정을 `option_repository_impl.dart` 에서 **순수 함수로 추출**하고(`lib/core/utils/option_availability.dart`) TS 로 **포팅**한다. 복제가 아니다. **교차 골든**으로 고정한다.
@@ -146,9 +146,10 @@
 - [ ] **R10** `menu_override_model.dart:52` 비방어 cast 를 `(num?)?.toInt()` 로 고친다(§1-7).
 - [ ] **R11** 거절 사유 2종을 선행 §15.1 **토큰 문법 그대로** 추가한다: `PRICE_MISMATCH`, `OPTION_UNAVAILABLE`. 메뉴 사유 계열로 취급해 `menuItemId` 를 토큰에 싣는다.
 - [ ] **R12** 거절 1건을 `paymentGateRejections` 에 영구 기록한다. `detail` 에 **클라 선언액 · 서버 계산액 · 부호 있는 차액 · 라인별 차이**를 담는다(오탐 분석의 유일한 수단).
-- [ ] **R13** 모드 스위치 (**Q3 확정 후 확정**). `off`(평가·읽기 0) / `shadow`(판정·기록, 거절 없음) / `enforce`(판정·기록·거절). 없거나 모르는 값은 `off`.
+- [ ] **R13** 모드 스위치 **`PAYMENT_PRICE_MODE` 신설**(Q3=ⓑ 확정, 품절 게이트와 독립). `off`(평가·읽기 0) / `shadow`(판정·기록, 거절 없음) / `enforce`(판정·기록·거절). 없거나 모르는 값은 `off`. 의미·운영은 `operations.md §6` 단일 진실원. 모드용 UI·admin 토글은 만들지 않는다(서버 설정).
 - [ ] **R14** 기존 주문의 **금액 내부 정합성 감사 도구**를 만든다(읽기 전용, dry-run, admin 전용). §12.
-- [ ] **R15** `deploy_runbook.md` 를 작성한다 — 선행 런북 패턴(전체 한 줄 명령 + `--project` + 중단 기준 + 비상 정지 + 양성 대조).
+- [ ] **R15** `deploy_runbook.md` 를 작성한다 — 선행 런북 패턴(전체 한 줄 명령 + `--project` + 중단 기준 + 배포 기록). 비상 정지는 `operations.md §6.3` 을 가리킨다.
+- [ ] **R16** (Q7=ⓐ) `onMenuPriceWritten` Firestore 트리거가 `basePrice`/`priceOverride`/`optionGroups.items[].priceDelta` 변경을 `priceHistory/{autoId}` 에 남긴다. 쓰기 경로 비간섭. Rules 1줄(`read: isAdmin()`, `write: false`).
 
 ### UI 요구사항
 
@@ -320,14 +321,17 @@ detail = {
 
 ---
 
-## 8. 모드 스위치
+## 8. 모드 스위치 — **`PAYMENT_PRICE_MODE` 신설** (Q3 = ⓑ 확정)
 
-**Q3 가 결정한다.** 설계상 분명한 것만 적는다.
+> **모드 값(off/shadow/enforce)의 의미 · 바꾸는 명령 · 비상 정지 · 현재값 확인(양성 대조) · 일일 점검은 `docs/operations.md §6` 이 단일 진실원이다.** `PAYMENT_PRICE_MODE` 는 그 §6.1 표에 이미 등재돼 있다. 이 절은 **왜 이렇게 설계했는가**만 둔다 — 운영 방법을 중복 기술하지 않는다.
+>
+> **모드 스위치는 서버 설정(개발자만, `functions/.env.*` + 재배포)이다. admin 앱에서 바꿀 수 없고, 바꿀 수 있게 두지 않는다** — `off` 는 검증을 제거하는(되돌릴 수 없는 방향) 배포 안전장치라, 손이 더 가는 경로에 두는 것 자체가 안전장치로 기능한다. 이 task 는 모드용 UI·admin 토글을 만들지 않는다.
 
+- **품절 게이트(`PAYMENT_GATE_MODE`)와 독립이다.** 두 게이트의 오탐 양상이 다르다 — 품절 오탐은 고객이 그 메뉴를 빼면 복구되지만, 금액 오탐은 카트 전체가 막히고 §7-2 의 루프 위험이 있다. 금액 쪽 오탐으로 `PAYMENT_PRICE_MODE` 를 내려도 **검증 끝난 품절 게이트를 함께 끄지 않는다.** 이것이 플래그를 나눈 이유다.
 - `off` 면 **옵션 그룹을 읽지 않는다**(비용 0). 선행 `off` 와 같은 성질.
-- ⚠️ **의존 관계**: 금액 재계산은 `GateResult.resolved`(= G2 의 산출물)를 필요로 한다. 따라서 **`PAYMENT_GATE_MODE=off` + 가격 모드 `enforce` 는 성립하지 않는다.** 두 플래그를 분리하면 이 조합이 **조용히 아무 일도 하지 않는** 상태가 된다 — 선행 task 에서 가장 비쌌던 실패("켜졌다고 믿었는데 off")의 재현이다.
-  → **분리하는 경우 반드시**: ⓐ 가격 모드가 `off` 가 아닌데 게이트 모드가 `off` 면 **메뉴 읽기를 가격 모드가 직접 수행**한다(게이트 판정은 하지 않는다), 또는 ⓑ 그 조합을 **기동 시 로그 경고 + 가격 모드를 `off` 로 강등**하고 그 사실을 기록한다. **조용히 통과시키는 선택지는 없다.** 추천은 ⓐ(기능이 플래그 조합에 의존하지 않게 된다).
-- 어느 쪽을 택하든 **양성 대조가 필수**다: 전환 직후 금액을 일부러 틀린 호출로 거절 1건을 유도해 확인한다. **확인 없이는 전환이 끝난 것으로 보지 않는다.**
+- ⚠️ **의존 관계 — 이 분리가 만드는 유일한 함정**: 금액 재계산은 `GateResult.resolved`(= G2 의 산출물)를 필요로 한다. 따라서 **`PAYMENT_GATE_MODE=off` + 가격 모드 `enforce` 조합**은 입력이 없어 **조용히 아무 일도 하지 않을** 수 있다 — 선행 task 에서 가장 비쌌던 실패("켜졌다고 믿었는데 off")의 재현이다.
+  → **처리 = ⓐ 확정**: 가격 모드가 `off` 가 아닌데 게이트 모드가 `off` 면 **가격 모드가 메뉴 읽기를 직접 수행**한다(게이트 판정은 하지 않는다). 기능이 플래그 조합에 의존하지 않게 된다. **조용히 통과시키는 선택지는 없다** — 19-3 이 이 조합을 테스트로 고정한다.
+- enforce 전환의 **양성 대조는 필수**다(원리: operations §6.4). 전환 직후 금액을 일부러 틀린 호출로 거절 1건을 유도해 확인한다. **확인 없이는 전환이 끝난 것으로 보지 않는다.**
 
 ---
 
@@ -548,6 +552,7 @@ match /menuOverrides/{masterMenuItemId} {
 - `orderBuilder.ts` — 거짓 타입 수정(§1-5) + 서버 재계산값으로 금액 필드 구성(R8).
 - `verifyTossPayment.ts` — 2-c 삽입.
 - `auditOrderPriceIntegrity.ts` **신규(임시)**.
+- `onMenuPriceWritten.ts` **신규** — 가격 변경 이력 트리거(R16). `menuItems`/`menuOverrides`/`optionGroups` write 를 받아 `priceHistory` 에 `before`/`after` 를 남긴다. 쓰기 경로 비간섭.
 
 ### 레이어 규칙 주의 (developer 에게)
 
@@ -604,7 +609,9 @@ admin → 더보기 > 배포 마이그레이션(임시) → auditOrderPriceInteg
 
 ## 18. 배포 순서 — **런북 필요** (R15)
 
-> **필요하다.** 선행 런북이 받은 위험(되돌릴 수 없는 방향의 실패 = 정상 손님의 결제 거부)이 **그대로**이고, 이번에는 오탐 경로가 하나 더 있다(§7-2 카트 stale → **무한 거절 루프**). `docs/tasks/payment_price_authority/deploy_runbook.md` 를 선행 패턴(전체 한 줄 명령 + 모든 명령에 `--project order-app-5957e` + 중단 기준 + 비상 정지 + 배포 기록 표)으로 작성한다.
+> **필요하다.** 선행 런북이 받은 위험(되돌릴 수 없는 방향의 실패 = 정상 손님의 결제 거부)이 **그대로**이고, 이번에는 오탐 경로가 하나 더 있다(§7-2 카트 stale → **무한 거절 루프**). `docs/tasks/payment_price_authority/deploy_runbook.md` 를 선행 패턴(전체 한 줄 명령 + 모든 명령에 `--project order-app-5957e` + 중단 기준 + 배포 기록 표)으로 작성한다.
+>
+> **런북의 비상 정지 절은 `operations.md §6.3` 을 가리킨다**(운영 방법은 거기가 단일 진실원). 다만 **이번 배포 고유의 중단 기준**(무한 거절 루프 관측 시 `PRICE` 만 `off` 등 §18-2)은 런북 본문에 둔다 — 배포 중에만 쓰는 지식이기 때문이다.
 
 | 단계 | 내용 | 왜 이 자리인가 |
 |---|---|---|
@@ -622,9 +629,10 @@ admin → 더보기 > 배포 마이그레이션(임시) → auditOrderPriceInteg
 
 ### 18-1. 비상 정지
 
-**가장 싼 순서**: 가격 모드를 `off` 로 재배포 → `verifyTossPayment` 만 함수 단위 배포. 선행 런북의 "파일 수정 + 배포를 한 줄로" 명령 패턴을 그대로 쓴다(급할 때 나누면 파일만 고치고 배포를 잊는다).
-⚠️ **가격 모드를 `off` 로 내릴 때 품절 게이트(`PAYMENT_GATE_MODE`)를 같이 내려서는 안 된다** — 선행 배포의 성과를 함께 끈다. **Q3 가 ⓐ(공유)로 결정되면 이것이 불가능해진다.** Q3 추천의 가장 큰 근거다.
-⚠️ **`off` 로 내린 뒤 잊지 않는다.** `off` 는 1원 결제가 가능한 상태다.
+**방법은 `operations.md §6.3` 이 단일 진실원이다** — 해당 모드를 `off` 로 재배포(명령은 §6.2). 이번 task 에서는 `PAYMENT_PRICE_MODE=off` 다.
+- `PAYMENT_PRICE_MODE` 를 내릴 때 품절 게이트(`PAYMENT_GATE_MODE`)는 **건드리지 않는다** — 두 플래그를 나눈 이유가 이것이다(§8).
+- ⚠️ `off` 는 **1원 결제가 가능한 상태**다. 내린 뒤 잊지 않는다(§6.3 과 동일 경고).
+- **이번 배포 고유의 발동 신호**: §7-2 의 **무한 거절 루프**가 라이브에서 관측되면(같은 고객·같은 카트의 `PRICE_MISMATCH` 거절이 반복) → 데이터·앱 원인을 찾기 전에 **`PAYMENT_PRICE_MODE=off`** 로 먼저 내린다. 품절 게이트는 유지된다.
 
 ### 18-2. 중단 기준
 
@@ -713,7 +721,9 @@ Dart 테스트와 `functions npm test` 가 **같은 파일**을 읽는다. 한�
   5. `orderBuilder.ts` 거짓 타입 수정 + R8
   6. 선검증 확장(R9) + 앱 UI
   7. 감사 CF + admin 카드
-  8. grep 가드 + Rules 하네스
+  8. `onMenuPriceWritten` 트리거 + `priceHistory` Rules 1줄(R16)
+  9. grep 가드 + Rules 하네스
+- **구현 후 확인 1건 (`operations.md §6`)**: `PAYMENT_PRICE_MODE` 는 `operations.md §6.1` 표에 이미 등재돼 있다. 구현이 끝나면 **그 행이 실제와 맞는지** 확인한다 — 값이 **어느 파일/코드에서 읽히는지**(`defineString("PAYMENT_PRICE_MODE", {default:"off"})` 가 `verifyTossPayment.ts` 에 있고 `resolveGateMode` 와 같은 폴백을 타는지), §6.2 의 바꾸는 명령이 실제 키 이름과 맞는지. 어긋나면 `operations.md §6` 을 고친다(단일 진실원이므로 spec 이 아니라 그쪽을 맞춘다).
 - 재사용할 기존 구조: `GateReader`/`makeFirestoreGateReader`(getAll 패턴) · `recordGateRejection` · `resolveGateMode` · `buildRejectionMessage`/`TOKEN_ID_RE` · `PaymentFailure` · 임시 CF + admin 카드 진입 경로(선행 `implementation.md §11`) · dry-run 리포트 규약
 - 주의할 레이어 규칙: §15 "레이어 규칙 주의" 3항목
 - **금지**: `CartItemEntity`/`CartEntity` 에 신뢰 필드 추가 · 판정 함수 신설 · `option_repository_impl` 에 판정을 남긴 채 TS 만 작성 · `presentation` 에서 직접 재계산
@@ -736,9 +746,22 @@ Dart 테스트와 `functions npm test` 가 **같은 파일**을 읽는다. 한�
 
 ---
 
-## 21. 사용자 결정 (Q) — **직접 결정하지 않았다**
+## 21. 사용자 결정 (Q) — **전건 확정** (2026-10-27)
 
-> Q1·Q2·Q3 은 **설계 확정에 필요**하다(designer 호출 전). Q4~Q8 은 developer 호출 전까지.
+> **Q1~Q8 전부 확정됐다(전건 설계자 추천안).** 아래 요약표가 확정값이고, 각 Q 의 상세 표는 **근거 보존용**으로 남긴다. 확정이 무엇을 바꾸는지는 요약표의 "반영" 열을 본다.
+
+| Q | 확정 | 반영 |
+|---|---|---|
+| **Q1** | **ⓐ 전체 재계산** (옵션 단가 포함) | §4·§6·R3. 옵션 그룹 `getAll` +1 round-trip |
+| **Q2** | **ⓐ 거절 + 재가격 복구 경로**, 오차 0원 | §7-2·R9. 서버 견적(quote)은 P1 후속 |
+| **Q3** | **ⓑ `PAYMENT_PRICE_MODE` 신설** (품절 게이트와 독립) + 조합 처리 ⓐ | §8·R13. 운영은 `operations.md §6` |
+| **Q4** | **ⓐ 금액 필드만** 서버가 다시 만든다 | §10·R8. 이름·라벨은 클라 값. ⓑ 는 P3 |
+| **Q5** | **ⓐ Tier 1 감사만** | §12·R14. Tier 2 는 P4(가격 이력 선행) |
+| **Q6** | **ⓒ 토큰은 id 만, 숫자는 카트 재가격** | §9·§4-3 토큰 문법 불변. designer DQ2/DQ3 |
+| **Q7** | **ⓐ 트리거 `onMenuPriceWritten` 로 가격 변경 이력** | §13-1. 쓰기 경로 비간섭(아래 R16) |
+| **Q8** | **ⓑ 현행 유지 + 명시 + 후속 등재** | §4-4·§13-8. 건수는 감사 ②-ⓒ 가 측정 → P2 |
+
+> Q7 확정으로 **R16** 이 추가된다: `onMenuPriceWritten` Firestore 트리거가 `basePrice`/`priceOverride`/`optionGroups.items[].priceDelta` 변경을 `priceHistory/{autoId}`(`changedBy`/`before`/`after`/`targetId`/`scope`/`changedAt`)에 남긴다. 트리거여야 하는 이유는 §13-1(클라이언트 직접 쓰기도 포착 — Rules 로는 이력을 강제할 수 없다). Rules 1줄(`read: isAdmin()`, `write: false`) 추가. 쓰기 경로는 건드리지 않는다.
 
 ### Q1. 옵션 단가를 서버가 재계산하는가 — **이 task 의 범위를 가르는 결정**
 
@@ -843,11 +866,13 @@ Dart 테스트와 `functions npm test` 가 **같은 파일**을 읽는다. 한�
 - [ ] **체크아웃 진입 재가격이 동작하고, 읽기 실패 시 결제를 막지 않는다** (R9 + 선행 §8.2)
 - [ ] 결제 실패 화면에 **원시 예외·서버 원문·미해석 id 가 0건** (선행 D4 가드 유지)
 - [ ] 거절 기록에 **`delta` 부호와 라인별 차이**가 남는다 (§7-3 — 오탐 탐지의 유일한 수단)
+- [ ] **가격 변경 이력(`priceHistory`)이 실제로 쓰인다** (R16 — `onMenuPriceWritten` 트리거, 쓰기 경로 비간섭)
+- [ ] **모드 스위치용 UI·admin 토글이 없다** (서버 설정 전용) · `operations.md §6` 의 `PAYMENT_PRICE_MODE` 행이 구현과 일치한다
 - [ ] 표면 인벤토리: **design §2 에 사실 5·6 행이 추가**되고 ⓐⓑⓒ 가 전부 채워졌다
 - [ ] grep 가드 8항목 통과 (허용 목록 1건에 사유 주석)
 - [ ] `deploy_runbook.md` 가 있고 **⑥(앱)가 ⑦(enforce)보다 먼저인 이유**가 머리말에 적혀 있다 (선행과 순서가 반대다)
 - [ ] 화면 문구에 **"조작/비정상/위조" 가 0건**이고 마크다운 백틱이 0건
-- [ ] 문서 갱신: `audit_trail.md`(가격 이력 결정) · `data_ownership.md`(§4-4 우회로 + 신규 컬렉션) · `role_flows.md` · `backlog.md`(N1 완료, N5 사유 갱신, 신규 후속 등재)
+- [ ] 문서 갱신: `audit_trail.md`(가격 이력 = Q7 ⓐ 확정, `priceHistory` 등재) · `data_ownership.md`(§4-4 우회로 + 신규 컬렉션 `priceHistory`) · `role_flows.md` · `operations.md §6`(`PAYMENT_PRICE_MODE` 행 실측 반영) · `backlog.md`(N1 완료, N5 사유 갱신, P1~P5 등재)
 - [ ] `design.md` / `implementation.md` / `test_report.md` 작성 완료
 - [ ] `flutter analyze` 무경고 / `flutter test` / `functions npm test` 전건 통과
 - [ ] FAIL 없음 또는 후속으로 분리
