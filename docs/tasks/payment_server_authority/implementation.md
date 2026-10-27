@@ -4,6 +4,7 @@
 - 작성자: developer
 - 기준: `spec.md`(§19 분배·§17 배포 순서), `design.md`
 - 상태: **코드 완료, 배포 전.** 라이브 검증(spec §17.2 / T-2)은 하지 않았다.
+- **2026-10-27 T-1 재작업(C1~C4) 완료 — 맨 아래 §8~§10 참조.** §0 의 수치는 1차 시점이며 재작업 후 수치는 §8.6.
 
 ## 0. 검증 결과
 
@@ -137,3 +138,111 @@ Rules-A/B/C 는 각각 `firestore.rules` 의 서로 다른 블록만 만진다 (
 ## 7. 코드 생성
 
 필요함 — `dart run build_runner build --delete-conflicting-outputs`. 변경된 생성 파일은 `brand_entity.freezed.dart` 하나(이미 반영됨). 새 코드는 freezed 를 쓰지 않았다.
+
+---
+
+## 8. T-1 재작업 (C1~C4) — 2026-10-27
+
+기준: spec §19 의 C1~C4 표, test_report F-01~F-04, `deploy_runbook.md`.
+
+### 8.1 커밋
+
+| 커밋 | 해시 | 내용 | 배포 차단 |
+|---|---|---|---|
+| **C1** Rules-A 보강 + 하네스 | `6c1c831` | `firestore.rules` 전이 제약 `leavingRejectedClearsApproval()` — **`isStoreOwnerFieldUpdate` / `isStoreOwnerBrandUpdate` 내부**(admin 분기 제외) + stores create 에 `rejectedAt` 금지 1줄. 하네스 `PSA-A9/A9b/A9c`(F-03 3건) + `PSA-A10`(rejectedAt create) + `PSA-F02a~g`(F-02 7건) | 예 |
+| **C2** `PAYMENT_GATE_MODE` | `dcfe1fc` | `resolveGateMode`(paymentGate.ts), `verifyTossPayment` 모드 분기, `recordGateRejection` 의 `shadow` 플래그, `.env.example`, 테스트 21건 | 예 |
+| **C3** M1 리포트 | `e06b7b5` | `planStoreMigration` 에 `willBeRejected`(ⓓ) · `ambiguousRejected` · `ambiguousSelfRegress`(ⓔ), `migrationHistory` 에 건수, 테스트 5건 | 예 |
+| **C4** `rejectedAt` 분리 + F-04 | `7bdda20` | `rejectFields` 가 `rejectedAt` 을 씀 · `StoreModel`/`StoreEntity`(+ `store_entity.freezed.dart` 재생성) 필드 추가 · 재제출이 `rejectedAt:null` 도 클리어 · Rules 화이트리스트 `rejectedAt`(null 클리어만) · `entity_approval_status.dart` 주석 · 배너 백틱 3곳 · 테스트 | 아니오 |
+
+각 커밋은 그 시점에 하네스·테스트가 전건 통과한다. 경계를 섞지 않았다(C1 은 rules+하네스만, C2/C3 는 functions 만, C4 는 앱 + C4 용 Rules 한 덩어리).
+
+### 8.2 `PAYMENT_GATE_MODE` — 어디서 읽고 어떻게 바꾸는가 (런북 ⑥ / ⑥-c 가 가리키는 지점)
+
+- **읽는 곳: functions params** — `defineString("PAYMENT_GATE_MODE", { default: "off" })` (`functions/src/verifyTossPayment.ts`). Secret Manager 가 아니다(돈이 아니라 스위치이므로 비밀이 아니고, Secret 은 버전 접근 권한·비용이 따로 든다). 요청마다 `paymentGateMode.value()` 를 읽고 `resolveGateMode` 로 정규화한다.
+- **값이 놓이는 곳: 배포 머신의 `functions/.env.order-app-5957e`** 한 줄(`PAYMENT_GATE_MODE=shadow`). 이 파일은 `.gitignore`(`functions/.env.*`)로 **저장소에 없다** — 배포하는 머신에만 존재한다. `functions/.env.example` 에 항목과 설명을 추가했다. **값은 배포 시점에 함수 환경변수로 박힌다 — 파일만 고치면 반영되지 않고 재배포해야 한다.**
+- **값 바꾸는 명령 (전체 한 줄, 레포 루트에서 실행)**
+
+```bash
+cd /Users/Byeonguk/Developer/OrderApp && echo "PAYMENT_GATE_MODE=shadow" > functions/.env.order-app-5957e && npx --yes firebase-tools@14 deploy --only functions:verifyTossPayment --project order-app-5957e
+```
+
+  `shadow` 를 `enforce`(⑥-c) 또는 `off`(비상 정지)로 바꿔 같은 명령을 다시 친다. 이 파일에는 다른 키를 두지 않으므로 `>` 로 덮어써도 안전하다.
+- **기본값·미지값·부재 → `off`.** 파일이 없으면 `default: "off"`. 오타·대소문자(`Enforce`)·뒤 공백(`enforce `)도 `off`(정확 일치만 인정, `resolveGateMode`). 이것이 spec §17.0 의 명시적 결정이며 런북 ⑥-c 의 **거절 1건 실측**이 그 대가를 받는다.
+- **`off` 는 읽지 않는다**: 게이트 분기 전체를 건너뛴다 — `stores`/메뉴 reader 조립·호출 0, `paymentGateRejections` 접근 0. 테스트가 Firestore 컬렉션 접근 집합이 `{orders, users}` 뿐임을 단언한다.
+- **`shadow`**: 판정 + 기록(`detail.shadow:true`)하되 거절하지 않는다. 게이트 코드의 **예상 밖 예외도 삼켜 결제를 계속**한다(관측용이 결제를 막으면 안 된다). `enforce` 의 같은 예외는 그대로 던져진다(게이트를 무력화하지 않음).
+- **`enforce` 기록에는 `detail.shadow` 키가 없다** — 런북 ⑥-c 의 "shadow 플래그 없음" 확인이 이 부재에 근거한다(테스트로 고정).
+- **현재 상태 확인법**: 모드를 로그로 찍지는 않는다(요청마다 로그 노이즈). Cloud Console → Cloud Run(함수) `verifytosspayment` → 수정 버전의 환경변수에서 `PAYMENT_GATE_MODE` 값을 본다. 부재하면 `off`.
+
+### 8.3 변이 실험 — 새 케이스가 실제로 깨지는가
+
+방법: 1차 Rules-A 와 같다. `firestore.rules` 를 변이시켜 `test_rules` 를 돌리고, 끝나면 복원.
+
+| 변이 | 결과 |
+|---|---|
+| **C1 이전 Rules**(`git show HEAD~:firestore.rules` 상당) | **415 중 4건 FAIL**: `PSA-A10`(rejectedAt create) · `PSA-F02a`(owner) · `PSA-F02b`(brand holder) · `PSA-F02c`(approvedBy 만 클리어). 즉 **F-02 의 deny 3건 + rejectedAt 1건이 구 Rules 의 구멍을 실제로 잡는다** |
+| 전이 제약을 **`allow update` 전체**에 건 변이(spec 이 지목한 함정) | **`PSA-F02f`(admin rejected→approved) 1건 FAIL** (`PERMISSION_DENIED`) — admin 승인 allow 케이스가 없으면 아무도 몰랐을 결함을 잡는다 |
+| create 의 `status == 'pending'` 줄 삭제 | **`PSA-A9`, `PSA-A9b` FAIL** — F-03 deny 가 보호함을 확인 |
+| **F-03 은 구 Rules 에서 FAIL 하지 않는다**(A9/A9b/A9c 통과) | **정상이다.** test_report F-03 이 "규칙의 결함이 아니라 회귀 방지 장치의 공백" 이라고 적은 그대로다. 위 세 번째 변이로 *규칙을 깎으면* 깨진다는 것을 확인했다 |
+| **C4 Rules 없이(= C1 Rules 에서) 신 앱 재제출 payload** | `PSA-RJ1`·`PSA-RJ3`(rejected→pending + `rejectedAt:null`) **FAIL** (`PERMISSION_DENIED`) — 아래 §9-1 의 배포 순서 위험 |
+| C2 `resolveGateMode` 를 "미지값→enforce" 로 변이 | 10건 FAIL (resolveGateMode 1 + 미지값 9) |
+| C2 `if (gateMode !== "off")` 를 `if (true)` 로 변이 | 12건 FAIL (off 가 읽기·기록을 하는 것을 잡음) |
+
+`PSA-F02d/e/f`(회귀 3건: owner·brand 정상 재제출, admin 승인)는 구 Rules 에서도 통과해야 하는 회귀 케이스라 변이 FAIL 대상이 아니다 — 전이 제약이 정상 경로를 막지 않음을 고정한다.
+
+### 8.4 하네스 케이스 맵 (spec §18.5)
+
+| spec §18.5 | 케이스 |
+|---|---|
+| F-02 owner 분기 deny | `PSA-F02a`, `PSA-F02c`(approvedBy 만 클리어) |
+| F-02 brand 분기 deny | `PSA-F02b` |
+| 회귀: owner 정상 재제출 | `PSA-F02d` |
+| 회귀: brand 정상 재제출 | `PSA-F02e` |
+| 회귀: admin rejected→approved | `PSA-F02f` |
+| (추가) status 불변 수정은 전이가 아님 | `PSA-F02g` |
+| F-03 `status` create approved/rejected 거부 · 부재 허용 | `PSA-A9`, `PSA-A9b`, `PSA-A9c` |
+| create `rejectedAt` 거부 | `PSA-A10` |
+| §6.8 `rejectedAt` null 클리어만 | `PSA-RJ1`(owner 허용) `PSA-RJ2`(owner 값 설정 거부) `PSA-RJ3`/`RJ4`(brand 허용/거부) `PSA-RJ5`(admin 반려 payload 허용) |
+
+### 8.5 M1 리포트 (C3) 응답 모양
+
+`migrateStoreApprovalMeta` 의 dry-run/실행 응답에 3키가 추가된다(기존 키 유지):
+
+- `willBeRejected: [{id, name, status, hasApprovedAt}]` — **백필을 가정한 뒤**에도 `canSellNow` 가 false. `status`/`hasApprovedAt` 은 백필 후 값. 미지 status(`invalid` 에도 있음)도 포함된다. 판정은 `canSellNow` 재사용(중복 생성 없음, 소스 단언 테스트).
+- `ambiguousRejected: [{id, name}]` — `status=='rejected' && approvedAt != null` 전건.
+- `ambiguousSelfRegress: [{id, name}]` — `status=='pending' && rejectedReason != null && approvedAt != null`. `approvedBy` 가 있어 기존 ⓒ(`approvedBy==null` 기준)가 못 잡는다(테스트가 그 비중첩을 단언).
+- **ⓓⓔ 는 실행을 막지 않는다.** `failed-precondition` 은 기존대로 `anomalies`/`invalid` 만 건다(소스 단언 테스트). 자동 수정 없음 — 목록만.
+
+### 8.6 검증 결과 (재작업 후)
+
+| 항목 | 결과 |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **735 전부 통과** (기준 729 이상 — 1차 729 + 신규 6) |
+| `functions` `npm test` | **205 통과** (1차 178 → C2 +22 → C3 +5) |
+| `test_rules` `npm test` | **420/420 통과** (1차 404 + C1 11 + C4 5) |
+| 미실행 | 에뮬레이터 E2E(`test:emulator`, `test:flow`), 라이브, 실기기 — 1차와 동일 |
+
+### 8.7 tester 용 테스트 포인트 (재작업분)
+
+1. 라이브 ④: 점주 계정으로 **반려 매장에서 `updateDoc({status:'pending'})`만** 보내면 거부, **앱의 정상 재제출은 성공**.
+2. admin 이 반려 매장을 승인하면 성공(`approveFields`).
+3. 신규 반려 매장 문서에 `approvedAt` 이 **생기지 않고** `rejectedAt` 이 생김. admin 매장 상세의 "처리 시각" 이 반려 매장에서 `rejectedAt` 을 보임.
+4. 재제출 후 `rejectedAt` 이 null 로 지워짐.
+5. 카트 배너 3변형 본문에 ` 문자 없음, '다시 확인' 으로 보임.
+6. `PAYMENT_GATE_MODE` 3값: 런북 ⑥ / ⑥-c 절차대로.
+
+## 9. 작업표와 현실의 차이 (재작업분만 — 문서는 고치지 않았다, 판단 요청)
+
+1. **[높음 · 배포 순서] C4 의 앱은 C4 의 Rules 화이트리스트가 먼저 있어야 재제출이 된다.** 신 앱의 재제출 payload 는 `rejectedAt: null` 을 포함하는데, Rules-A(C1)만 있는 Rules 는 `rejectedAt` 를 화이트리스트에 두지 않아 `permission-denied` 가 난다(§8.3 변이 `PSA-RJ1/RJ3`). 런북 ⑦(앱) → ⑧(Rules-B+C, **HEAD 의 Rules 라 C4 화이트리스트 포함**) 사이의 수 분 창에서 **반려 매장 점주의 재제출이 실패**한다. 선택지: (a) ④ 에 올리는 Rules-A 파일을 **C1 + C4 의 stores 변경을 포함**하게 한다 — 검증했다: `git show 11c90c7:firestore.rules` 에 `6c1c831`·`7bdda20` 의 `firestore.rules` diff 를 `patch` 로 얹으면 충돌 없이 적용되고, 그 파일에서 하네스 PSA-A/F02/RJ 전건이 통과한다(실패 15건은 전부 Rules-B/C 케이스). (b) 앱이 `rejectedAt:null` 을 보내지 않게 한다(저장 데이터에 잔존 `rejectedAt` 이 남아 의미가 흐려진다). **(a) 를 권한다.** 런북 ④ 가 "Rules-A 파일" 을 만드는 절차를 이 방식으로 적어야 한다(런북은 고치지 않았다).
+2. **C1 의 F-02 케이스는 spec 의 5건이 아니라 7건**(`PSA-F02a~g`): approvedBy 만 클리어하는 우회(`c`)와 status 불변 수정이 막히지 않는 회귀(`g`)를 더했다. spec §19 "F-02 6건" 과 숫자가 다르나 의미 있는 추가다. 전이 제약이 `status` 변경이 없는 수정까지 막지 않음을 `g` 가 고정한다.
+3. **C4 가 admin 매장 상세 화면을 1곳 고쳤다**(`admin_store_approval_detail_page.dart` "처리 시각"). 작업표에 없으나 `rejectFields` 가 `approvedAt` 을 더 이상 쓰지 않으면 새로 반려된 매장의 처리 시각이 화면에서 사라지는 회귀가 생기므로 `rejectedAt ?? approvedAt` 로 표시한다(과거 데이터는 `approvedAt` 에 반려 시각이 있음). 이 밖에 `approvedAt` 을 읽는 화면(`isRevision` 판정 등)은 "승인 이력" 의미로 쓰이므로 그대로 두었다 — 오히려 반려 매장이 `approvedAt` 으로 "수정 대기" 로 오인되던 것이 이제 정확해진다.
+4. **C4 의 `StoreEntity` 필드 추가는 freezed 재생성을 동반**한다: `store_entity.freezed.dart` 1파일만 바뀌었다.
+5. **`.env.<project>` 는 저장소에 없다**(`.gitignore`). 모드 값의 단일 진실원이 "배포 머신의 파일 한 줄"이라 *코드 리뷰로 모드가 바뀌지 않는다* — 의도된 선택이 아니라 gitignore 규칙의 결과다. 모드를 저장소에 남기고 싶다면 `.gitignore` 예외 + 파일 커밋이 필요하다(시크릿이 아니므로 가능). 판단 요청.
+6. **`dart format` 은 변경한 새 파일(`store_reject_fields_test.dart`)과 가드 테스트에만** 적용했다. 기존 파일(`store_model.dart` 등)은 포맷되지 않은 상태가 기본이라 포맷하면 diff 가 수백 줄 늘어 되돌렸다.
+7. **`PSA-C4*` 이름 충돌 회피**: 하네스에 이미 Rules-C 의 `PSA-C4*`(paymentGateRejections) 가 있어 C4 의 `rejectedAt` 케이스는 `PSA-RJ1~5` 로 이름 지었다.
+8. **H-08**(영업 중 매장의 수정 반려 → 결제 중단)은 이번 범위가 아니다. `rejectedAt` 분리로 해소되지 않는다(반려 매장은 여전히 `canSellNow=false`). N2 가 풀어야 한다.
+
+## 10. 보고용 요약
+
+- 커밋: C1 `6c1c831` · C2 `dcfe1fc` · C3 `e06b7b5` · C4 `7bdda20`
+- 배포 차단 조건 C1+C2+C3 충족. 단 §9-1 (④ 에 올릴 Rules 파일이 C4 를 포함해야 함) 은 C4 를 같은 배포에 넣을 때의 순서 조건이다.
