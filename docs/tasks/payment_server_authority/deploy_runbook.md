@@ -14,7 +14,7 @@
 | # | 경로 | 막는 장치 |
 |---|---|---|
 | 1 | **② 를 평범한 `npm run deploy` 로 치면 게이트가 ③④ 이전에 켜진다.** 임시 마이그레이션 CF 와 `verifyTossPayment` 가 **같은 `index.ts` 에서 export** 되고 `functions/package.json:10` 의 `deploy` 는 `firebase deploy --only functions`(**전 함수**)다 | ② 는 **함수 단위 배포**(아래 명령) + **`PAYMENT_GATE_MODE=shadow`** (spec §17.0) |
-| 2 | **④ Rules-A 를 HEAD 파일로 배포하면 Rules-B+C 가 같이 나간다.** HEAD 의 `firestore.rules` 에는 A·B·C 가 모두 들어 있고, B+C 가 앱(⑦)보다 먼저 나가면 **구버전 앱의 브랜드 정보 저장·`brands.create` 가 거부**된다 | ④ 는 **`git show` 로 Rules-A 시점 파일을 꺼내 배포**(아래 명령) |
+| 2 | **④ Rules-A 를 HEAD 파일로 배포하면 Rules-B+C 가 같이 나간다.** HEAD 의 `firestore.rules` 에는 A·B·C 가 모두 들어 있고, B+C 가 앱(⑦)보다 먼저 나가면 **구버전 앱의 브랜드 정보 저장·`brands.create` 가 거부**된다 | ④ 는 저장소의 **`docs/tasks/payment_server_authority/firestore.rules.stage4`** 를 복사해 배포(아래 명령). 이 파일은 **C4 의 `stores` 변경도 함께** 담는다 — 안 담으면 ⑦~⑧ 사이에 반려 매장의 재제출이 막힌다 |
 | 3 | **M1 이 빠진 채 게이트가 켜지면 legacy 매장이 전면 거절되는데 알람이 없다.** 고객 목록은 `fromString` 폴백으로 그 매장을 계속 보여주고, 매출이 멈춘 것을 알려주는 것은 `paymentGateRejections` 기록뿐이다 | ③ 의 **`willBeRejected` 목록**을 사람이 눈으로 확인 + ⑥ 을 `shadow` 로 올려 **⑥-b 에서 실측** |
 
 **롤백 단위**: ④ 단독 / ⑥ 단독(또는 `PAYMENT_GATE_MODE` 를 `off` 로) / ⑦+⑧ 함께.
@@ -73,18 +73,23 @@ cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 functions:l
 
 ## ④ Rules-A 배포 — **HEAD 가 아니라 Rules-A 시점 파일**
 
-HEAD 의 `firestore.rules` 에는 Rules-B+C 가 들어 있다. **반드시 아래처럼 꺼내 쓴다.**
+HEAD 의 `firestore.rules` 에는 Rules-B+C 가 들어 있어 그대로 쓸 수 없다. **④ 전용 파일이
+저장소에 있다** — `docs/tasks/payment_server_authority/firestore.rules.stage4`.
 
-먼저 차이를 눈으로 본다.
+배포 중에 `git show` 와 `patch` 를 치지 않는다. 그 파일은 미리 만들어 하네스로 검증해 뒀다
+(`PSA-A` / `PSA-F02` / `PSA-RJ` 전건 통과, 실패 15건은 전부 Rules-B/C 케이스 — 즉 A 만 들어 있고
+B·C 는 안 들어 있다는 확인이다). **파일이 리뷰 대상이고, 배포는 복사 한 번이다.**
+
+먼저 차이를 눈으로 본다 (나와야 하는 차이는 Rules-B+C 뿐이다).
 
 ```bash
-cd /Users/Byeonguk/Developer/OrderApp && git show 11c90c7:firestore.rules | diff - firestore.rules
+cd /Users/Byeonguk/Developer/OrderApp && diff docs/tasks/payment_server_authority/firestore.rules.stage4 firestore.rules
 ```
 
-Rules-A 파일을 임시 경로에 꺼낸다 (**F-02 보강 커밋 C1 이 들어간 뒤에는 그 커밋 해시를 쓴다**).
+임시로 교체한다.
 
 ```bash
-cd /Users/Byeonguk/Developer/OrderApp && git show <RULES_A_COMMIT>:firestore.rules > /tmp/rules_a.rules && cp firestore.rules /tmp/rules_head.rules && cp /tmp/rules_a.rules firestore.rules
+cd /Users/Byeonguk/Developer/OrderApp && cp firestore.rules /tmp/rules_head.rules && cp docs/tasks/payment_server_authority/firestore.rules.stage4 firestore.rules
 ```
 
 ```bash
@@ -97,10 +102,29 @@ cd /Users/Byeonguk/Developer/OrderApp && npx --yes firebase-tools@14 deploy --on
 cd /Users/Byeonguk/Developer/OrderApp && cp /tmp/rules_head.rules firestore.rules && git status --short firestore.rules
 ```
 
-- `<RULES_A_COMMIT>`: F-02 보강 **이전**이면 `11c90c7`, 보강 **이후**면 **C1 커밋 해시**
-  (C1 이 Rules-A 에 전이 제약을 더한다 — spec §6.5).
+- 이 파일은 **Rules-A + C1(전이 제약) + C4 의 `stores` 변경**을 담는다. **C4 를 함께 담는 이유가
+  중요하다** — 신 앱의 재제출 payload 가 `rejectedAt: null` 을 보내는데(`store_model.dart`
+  `toFirestoreForCoreUpdate`) C1 까지만 올리면 그 필드가 화이트리스트에 없어
+  `onlyChangedFields` 가 **업데이트 전체를 거부**한다. 그러면 ⑦(앱) 과 ⑧(Rules-B+C) 사이에
+  **반려 매장 점주가 재제출을 못 한다.** (C1 Rules 의 점주 화이트리스트에 `rejectedAt` 0건,
+  HEAD 에 4건 — 실측 확인.)
 - ⚠️ **C1 이 아직 없다면 ④ 를 치지 않는다.** F-02 경로가 열린 채 게이트를 켜는 것은
   "게이트가 장식" 인 상태다 (spec §6.2 정정 블록).
+- Rules 를 더 고치면 이 파일도 같이 갱신해야 한다. 갱신 방법은 §④-b 에 적었다.
+
+### ④-b. `firestore.rules.stage4` 를 다시 만드는 방법
+
+`stores`/`brands` 쪽 Rules 를 추가로 고쳤다면 이 파일이 낡는다. 다시 만들 때는 아래로 한다.
+
+```bash
+cd /Users/Byeonguk/Developer/OrderApp && git show 11c90c7:firestore.rules > /tmp/s4.rules && for c in 6c1c831 7bdda20 <추가커밋>; do git show $c -- firestore.rules > /tmp/$c.patch && patch /tmp/s4.rules < /tmp/$c.patch; done && cp /tmp/s4.rules docs/tasks/payment_server_authority/firestore.rules.stage4
+```
+
+만든 뒤 **반드시 하네스로 검증한다** — 교체해서 돌리고, 실패가 Rules-B/C 케이스뿐인지 본다.
+
+```bash
+cd /Users/Byeonguk/Developer/OrderApp && cp firestore.rules /tmp/rules_head.rules && cp docs/tasks/payment_server_authority/firestore.rules.stage4 firestore.rules && npx --yes firebase-tools@14 emulators:exec --only firestore --project order-app-5957e "node test_rules/rules.test.mjs" ; cp /tmp/rules_head.rules firestore.rules
+```
 
 **라이브 확인 (점주 계정 SDK 로, spec ⑩-3b/3c + F-02)**
 
