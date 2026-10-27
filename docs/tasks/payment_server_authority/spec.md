@@ -27,10 +27,11 @@
 
 | 영역 | 내용 |
 |---|---|
-| 화면 | `checkout_page.dart` (선검증·거절 문구), `payment_result_page.dart` (거절 사유 매핑), `cart_page.dart` (품절 표시), `my_store_page.dart` (매장 삭제 → 폐업 신청), `brand_info_page.dart` (brandKey 출처 변경), `store_core_form_page.dart` (brandKey 조회 경로 변경) |
+| 화면 | **결제 — `lib/presentation/customer/checkout/`** (`checkout_page.dart` 선검증·거절 전달 / `payment_result_page.dart` 거절 사유 매핑). ⚠️ **`customer/payment/` 는 존재하지 않는다 — 경로는 `customer/checkout/` 이다** (design 경로 정정 수용). **카트 — `lib/presentation/customer/cart/`** (`cart_page.dart`, `widgets/cart_line_tile.dart`). **빠른 재주문 — `lib/presentation/customer/home/widgets/quick_reorder_section.dart`**. **점주 — `owner/my_store/my_store_page.dart` 의 `_DangerZone` 호출 2곳(`:317` 개인 매장 / `:391` 브랜드 가맹 매장) 둘 다** (design 4-1·4-2 — spec 초판이 1곳으로 적은 것을 정정). **브랜드 — `brand/brand_info/brand_info_page.dart`**(brandKey 출처), **`owner/my_store/store_core_form_page.dart`**(brandKey 조회). **admin 신규 2화면 — `AdminStoreListPage` · `AdminStoreDeletePage`**(design §7, Q5 ⓐ 확정) + `admin_more_page.dart` 항목 1개 |
 | Domain | `canSellNow` 판정 함수(신규, 순수 Dart), `LookupBrandByKeyUseCase` 경로 교체, `DeleteStoreUseCase` 폐기 또는 교체, `CartEntity`/`CartItemEntity` **무변경** |
 | Data | `store_remote_data_source.deleteStore` 폐기, `brand_remote_data_source.findByBrandKey`/`isBrandKeyTaken` → callable 로 교체, `BrandModel` 의 비공개 필드 분리 |
-| Presentation | checkout/cart/my_store/brand_info/store_core_form 의 Provider 소폭 |
+| Presentation | checkout/cart/my_store/brand_info/store_core_form 의 Provider 소폭 + **`paymentRejectedMenuIdsProvider`(메모리 전용)** + **admin 매장 목록·삭제 화면용 Provider 2개** |
+| 라우팅 | **admin 더보기 → `매장 관리` → 목록 → 삭제 화면** (신규 경로 2개, design §7.0 / Q5 ⓐ). `role_flows.md` §4.4 admin 표에 1행 추가 · §4.2 owner 의 매장 삭제 행 제거 |
 | Cloud Functions | **`verifyTossPayment` 개정**(게이트 2개 + 거절 사유 토큰), **`menuVisibility.ts` 신규**(머지 규칙 TS 포팅), `lookupBrandByKey` 신규 callable, `deleteStore` 신규 callable(admin), `approveBrand` 계열의 brandKey 발급 이전 |
 | Firestore 구조 | `brands/{id}/private/profile`(신규), `brandKeys/{key}`(신규), `storeDeletionHistory/{id}`(신규), `paymentGateRejections/{id}`(신규) |
 | Rules | **`stores` `allow create` 에 승인 메타 설정 금지**(G1 의 성립 조건, §6.5) + `brands` read 축소 + 서브문서 2개 + `brandKeys` + `stores.delete` 축소 + 신규 컬렉션 3개 |
@@ -412,6 +413,33 @@ match /stores/{storeId} {
 
 ---
 
+### 6.8 `temporaryClosed` 는 **아무 일도 하지 않는다** — 판정식에 넣지 않는다
+
+조사 결과: **`temporaryClosed` 는 쓰기만 되고 아무도 읽지 않는다.** 점주 폼
+(`store_operation_form_page.dart:114`)과 모델·엔티티에만 존재하고, **고객 코드 참조 0건 ·
+CF 참조 0건**이며 `update_store_operation_fields_use_case.dart:6` 주석에만 등장한다.
+→ **점주가 임시 휴업을 켜도 고객 주문이 막히지 않는다.** 점주가 켤 수 있는 스위치가
+아무 효과도 내지 못하는 상태다.
+
+**G1 판정식과의 관계 — 이번 범위에 넣지 않는다 (명시적 결정).**
+
+| 안 | 판정식 | 대가 |
+|---|---|---|
+| **넣지 않는다 (확정)** | `approved \|\| (pending && approvedAt != null)` 그대로 | 임시 휴업 매장의 결제가 **계속 성립한다**(현재와 동일). 구멍이 아니라 **기존 상태 유지**다 |
+| 넣는다 | `... && temporaryClosed != true` | **오탐 방향이 하나 늘어난다** — 점주가 휴업을 끄는 것을 잊으면 **매출이 멈춘다.** 그런데 그 필드는 지금껏 아무 효과가 없었으므로 **점주들이 켜 둔 채 방치했을 가능성이 있고, 그 값은 아무도 검증한 적이 없다.** 돈을 멈추는 게이트의 입력으로 쓰기에 **신뢰도가 가장 낮은 필드**다 |
+
+이 필드는 **별개 결함**이다 (주제는 같은 계열 — "서버가 권위를 갖는가"). **N6 으로 등재**하고
+이번 묶음의 범위를 넓히지 않는다. N6 을 할 때는 ⓐ 고객 노출 ⓑ 결제 게이트 ⓒ 점주 화면의
+"지금 휴업 중" 표시를 **한 번에** 설계해야 한다 — 셋 중 하나만 하면 또 반쪽이 된다.
+
+> **design 에 넘길 수정 1건**: design §6.2 의 점주 안내 문구 첫 문장
+> (`잠시 쉬려면 '운영 정보 수정'에서 임시 휴업을 켤 수 있어요`)은 **근거가 사실이 아니다.**
+> 그 토글은 고객에게 아무 효과가 없으므로, 점주에게 "쉴 수 있다" 고 안내하면 **거짓 안내**가 된다.
+> design §6.2 가 "developer 가 확인하고 아니라면 첫 문장을 빼고 보고한다" 로 열어 둔 조건이
+> **확인 결과 성립하지 않는다** → **첫 문장을 제거**한다 (§19 designer 수정 목록 1번).
+
+---
+
 ## 7. 설계 — G2 품절·판매중단 게이트
 
 ### 7.1 판정은 기존 규칙 1개를 TS 로 **포팅**한다 (복제가 아니다)
@@ -658,28 +686,130 @@ Rules: read: if false;  write: if false;    ← CF(Admin SDK) 전담
 
 ```
 deleteStore (callable, admin only)
-  입력: storeId, reason
-  ① storeDeletionHistory/{autoId}  ← 먼저 쓴다
+  입력: { storeId, reason, dryRun }
+  ① storeDeletionHistory/{deletionId}  ← 먼저 쓴다 (phase:'started')
        storeId, storeName, ownerId, brandId, status, deletedBy, deletedAt, reason,
-       snapshot(매장 문서 전체), affected{ menuItems: n, menuOverrides: n, subCategories: n,
-                                        optionGroups: n, qoinRateHistory: n }
-  ② 서브컬렉션 재귀 삭제 (batch 500 단위)
-  ③ Storage 이미지 삭제  ← ②·④ 사이가 아니라 **마지막 직전**
-  ④ stores/{storeId} 삭제
+       snapshot(매장 문서 전체), phase, affected{ menuItems, menuOverrides, subCategories,
+                                              optionGroups, qoinRateHistory, images }
+  ② stores/{storeId} 삭제          ← 쓰기를 먼저 봉쇄한다 (§11.5)
+  ③ 서브컬렉션 재귀 삭제 (batch 500 단위)
+  ④ Storage 이미지 삭제
+  ⑤ 이력 phase:'done' + 실제 affected 확정
 Rules: storeDeletionHistory read: isAdmin(), write: false
 ```
 
 - **①을 가장 먼저 쓰는 이유**: 중간에 실패해도 "지우려 했다 + 당시 스냅샷" 이 남는다. 현재 점주 경로는
   **이미지를 먼저 지우고 문서를 나중에 지워서** 실패 시 복구 불가 상태를 만든다 (§5-7).
-- 점주 UI (`my_store_page.dart:967-1013`): 삭제 버튼 → **"폐업 신청"**. 이번 범위에서는
-  ⓐ `temporaryClosed` 안내 + admin 문의 경로로 둔다(폐업 신청 전용 흐름은 ⓒ 와 함께 별도 task).
+- **②(매장 문서)를 서브컬렉션보다 먼저 지우는 이유 — spec 초판을 뒤집는다.** 점주의 하위 문서 쓰기는
+  Rules 가 `isStoreOwner(storeId)`(= `get(store).ownerId`)로 판정하므로, **매장 문서가 사라지면
+  점주의 모든 하위 쓰기가 즉시 거부된다.** 하위를 먼저 지우면 지우는 동안 점주가 메뉴를 추가해
+  **새 고아가 생기는 창**이 열린다. 초판 순서(문서 삭제 마지막)는 "중간 실패 시 재진입점이
+  사라진다" 를 걱정한 것이지만, **재진입점은 매장 문서가 아니라 ① 의 이력 문서**다 (§11.5).
+  따라서 순서를 바꾸는 쪽이 모든 면에서 낫다.
+- 점주 UI (`my_store_page.dart` `_DangerZone` 호출 **2곳** `:317`·`:391`): 삭제 버튼을 제거하고
+  **안내 문구 한 줄**로 바꾼다(design §6.2, Q3 ⓐ 확정). **버튼·링크는 두지 않는다** — 앱에 문의 채널이
+  없어서 눌러도 아무 일도 안 일어나는 버튼이 되고, 연락처 하드코딩은 절대 규칙 4 위반 위험이다.
+  ⚠️ **안내 문구에 `temporaryClosed`(임시 휴업)를 권하지 않는다 — 그 토글은 아무 효과가 없다**(§6.8).
+  `_confirmDelete` 의 Storage 삭제 코드(`:1000-1007`)도 함께 제거한다(이미지 정리는 CF 가 한다).
+  폐업 신청 전용 흐름은 **N4**.
   **버튼을 남기고 Rules 만 닫으면 "삭제에 실패했어요" 가 되므로 반드시 UI 를 함께 바꾼다**(U3).
 - 점주 삭제가 닫히면 **"적립 중단된 매장의 점주가 삭제·재생성으로 중단 상태를 지우고 미승인 상태에서
   결제를 태워 적립을 재개" 경로가 양쪽에서 막힌다** — G1(`approvedAt` 없음 → 거절)과 D1(삭제 불가).
+- ⚠️ **점주 공백을 수용한다** (design Q3 ⓐ 확정): 폐업·중복 등록·**브랜드 반려 후 정리**
+  (`_BrandRejectedBanner` — 재제출은 본사만 가능)를 점주가 스스로 할 길이 없어지고,
+  **앱에 문의 채널 자체가 없다.** 이번 범위에서는 안내 문구만 두고 **공백은 N4(폐업 신청 흐름)로
+  미룬다.** design §6.2 의 문구가 그 최선이다.
+
+### 11.3 영향 범위 숫자의 출처 — `dryRun` **확정** (design 전달 사항 2)
+
+design §7.2 의 삭제 확인 화면은 **삭제 전에** 영향 범위 숫자가 필요하다. 확정:
+
+```
+deleteStore({ storeId, reason?, dryRun: true })
+  → 쓰기 0건. { affected{...}, blockedBy{...} } 만 반환한다.
+  → reason 은 dryRun 일 때 선택(미검증).
+```
+
+| 결정 | 근거 |
+|---|---|
+| **클라이언트 `count()` 쿼리를 쓰지 않는다** | 화면이 보여준 숫자와 삭제가 실제로 센 숫자가 **다른 코드로 계산되면 한 사실에 두 판정**이 된다 (원칙 3). 서브컬렉션 6종에 대한 admin read 권한 분기도 새로 필요해진다 |
+| **같은 CF 의 같은 카운트 함수를 `dryRun` 과 실행이 공유한다** | 숫자가 갈라질 길이 없다 |
+| **dryRun 숫자는 스냅샷이 아니다** | 세고 나서 실제 삭제까지 사이에 값이 변할 수 있다. 화면 숫자는 "확인 시점의 값" 이고 **이력에 기록되는 `affected` 는 실행 시점 값**이다 (⑤ 에서 확정). 둘이 달라도 버그가 아니다 — developer 는 **화면 숫자를 이력에 쓰지 않는다** |
+| **dryRun 은 이력을 남기지 않는다** | 쓰기 0건이고 파괴적 동작이 아니다. §9-주의 와 같은 판단(볼륨 대비 가치) |
+| **dryRun 실패 시 삭제 버튼 비활성** (design 4-4) | 파괴적 동작은 **fail-closed.** 결제 선검증과 반대 방향인 것이 맞다 — design §7.2 가 그 대비를 정확히 적었다 |
+
+### 11.4 진행 중인 주문이 있는 매장의 삭제 — **가드를 둔다** (design 전달 사항 3)
+
+design 은 이 행을 넣지 않았다. **넣어야 한다. 근거가 UX 가 아니라 돈이다.**
+
+- `cancelTossPayment.ts:85` 와 `processRefund.ts:80` 이 **`stores/{storeId}` 를 읽어 점주 자격을
+  확인**한다. 매장 문서가 없으면 `!storeSnap.exists` → `permission-denied`.
+- 즉 **매장을 지우면 그 매장의 진행 중 주문을 점주가 취소할 수도, 환불을 승인할 수도 없게 된다.
+  돈이 묶인다.** (고객의 `paid` 단계 직접 취소는 `stores` 를 읽지 않아 살아남는다 — 부분적 생존이
+  오히려 더 헷갈리는 상태다.)
+
+**"진행 중" 의 정의**
+
+| status | 판정 | 근거 |
+|---|---|---|
+| `paid` · `accepted` · `making` · `ready` | **진행 중 → 삭제 차단** | 아직 돈·물건이 움직일 수 있다. 취소·환불 경로가 `stores` 를 필요로 한다 |
+| `completed` · `cancelled` · `refunded` | 종결 → 차단하지 않음 | 더 이상 `stores` 를 읽는 전이가 없다 |
+
+- 별도의 "환불 요청 중" 절은 **필요 없다.** 환불 요청은 `status` 를 `accepted` 로 유지한 채
+  `refundRequest` 만 채우므로(`firestore.rules:229` O2) 위 4개에 이미 포함된다.
+- 쿼리: `orders where storeId == {id} and status in ['paid','accepted','making','ready'] limit 1`
+  (건수 표시용으로는 `count()`). **복합 인덱스 필요 여부를 developer 가 확인**하고 필요하면
+  `firestore.indexes.json` 에 추가한다 → 배포 ① 단계가 비어 있지 않을 수 있다.
+- CF 는 `dryRun` 과 실행 **양쪽에서** 이 쿼리를 돌리고, **실행 경로에서는 ① 이력 쓰기보다 먼저**
+  검사해 차단한다(차단은 삭제 시도가 아니므로 이력을 남기지 않는다).
+- 반환: `blockedBy: { inFlightOrders: n }` → `failed-precondition` + 토큰 `[STORE_HAS_INFLIGHT_ORDERS]`.
+
+**design 에 넘길 화면 요구** (designer 재호출 시 §7.2 에 추가):
+
+| 요소 | 내용 |
+|---|---|
+| 영향 범위 섹션에 행 추가 | `진행 중인 주문` **n건** — 0 이면 다른 행과 같이 `0` 을 표시한다(숨기지 않는다) |
+| n ≥ 1 일 때 | **삭제 버튼 비활성** + 그 자리에 사유: `진행 중인 주문이 n건 있어요. 모두 완료·취소된 뒤에 삭제할 수 있어요.` 그리고 **왜**를 한 줄: `지금 삭제하면 그 주문의 취소·환불을 처리할 수 없게 돼요.` |
+| 복구 동작 | `다시 불러오기`(카운트 갱신). admin 이 주문을 강제 종결시키는 수단은 이번에 만들지 않는다 |
+| 경쟁 상황 | 화면은 0건이었는데 실행 시 1건이 되어 CF 가 거부할 수 있다 → §7.2 "삭제 실패" 박스의 변형으로 `방금 새 주문이 들어왔어요. 다시 확인해 주세요.` |
+
+### 11.5 `deleteStore` 재실행 멱등 — 보장 범위 **확정** (design 전달 사항 4)
+
+design §7.2 의 실패 문구 "**같은 매장을 다시 삭제하면 이어서 진행돼요. 삭제 이력은 중복 기록되지
+않아요**" 는 성립한다. 아래가 그 성립 조건이다.
+
+```
+deletionId = `${storeId}_${storeCreatedAtMillis}`      // createdAt 부재(legacy) → `${storeId}_0`
+storeDeletionHistory/{deletionId}   phase: 'started' | 'docDeleted' | 'subDeleted' | 'storageDeleted' | 'done'
+```
+
+- **이력 문서가 재진입점이다** (매장 문서가 아니다 — ② 에서 이미 사라진다). 재실행은
+  `storeDeletionHistory/{deletionId}` 를 읽어 `phase` 이후 단계만 수행한다. 쓰기는 `set(merge)` 라
+  **같은 삭제 시도에 대해 이력 문서는 1건**이다.
+- **`deletionId` 에 `createdAt` 을 넣는 이유**: 같은 ID 로 매장이 재생성된 뒤 다시 삭제되면
+  `createdAt` 이 달라 **별도 이력**이 남는다. `storeId` 만 쓰면 두 번째 삭제가 첫 번째 이력을
+  덮어써 **과거 삭제 기록이 사라진다** (§9-2 가 막으려던 바로 그 일).
+
+| 멱등을 **보장**하는 것 | 보장하지 **않는** 것 |
+|---|---|
+| 이력 1건 (중복 기록 없음) | **dryRun 숫자와 실행 `affected` 의 일치** (§11.3) |
+| 서브컬렉션·Storage 삭제 (이미 없으면 skip — 본질적으로 멱등) | **삭제 도중 admin/CF 가 새로 만든 하위 문서** — 점주 쓰기는 ② 로 봉쇄되지만 Admin SDK 는 봉쇄되지 않는다. 재실행이 그것을 치운다 |
+| 매장 문서 삭제 (이미 없으면 skip) | **Storage 삭제의 부분 실패 복구 순서** — 재실행이 남은 것부터 지운다. 그래서 `phase:'storageDeleted'` 를 별도 단계로 둔다 |
+| `phase == 'done'` + 매장 문서 없음 → **`이미 삭제된 매장이에요`** 반환 (design §7.2 마지막 행) | — |
+
+- **중단 가능 단계는 ②~④ 다.** ① 이 실패하면 아무것도 지워지지 않는다(이력 없이 삭제가 시작되는
+  경로가 없다 — §4-2 요구).
+- developer 가 이 구조를 구현하지 못하면 **design §7.2 의 실패 문구를 바꿔야 한다.** 그 경우
+  구현 전에 보고한다.
 
 ---
 
 ## 12. 표면 인벤토리 (§21.7 R2 — ⓑ 가 빈 칸이면 미설계)
+
+> **design §2 가 이 표를 이전·확장했다 (행 번호 부여 + `신규`/`변경`/`기존` 구분 + 누락 행 2개 추가
+> — `frequent_menu_items_section`(2-11), `store_menu_page` 하단 카트 바(2-12)).
+> 구현·검증의 기준은 design §2 다.** 아래는 설계 시점 원본으로 남긴다. 새 표면을 만들면
+> **design §2 에 행을 추가**한다(여기가 아니다).
 
 ### 사실 1 — "지금 이 매장이 주문을 받을 수 있는가" (`canSellNow`)
 
@@ -816,6 +946,11 @@ StoreCoreFormPage → LookupBrandByKeyUseCase → BrandRepositoryImpl
 
 ## 15. 에러 처리 / 문구
 
+> **아래 문구표는 사유 ↔ 코드 ↔ 의미의 계약이다. 화면에 실제로 나가는 문장·구조는
+> `design.md` §3.1~§3.5(헤드라인 + 본문 + 돈 줄 + 목록 카드)가 상위다.** design 이 바꾼 지점과
+> 이유는 design §3.1 의 "spec §15 문구와 달라진 점" 표에 있고, 설계자는 그 변경을 **수용**한다
+> (한 문장에 메뉴명을 이어 붙이면 여러 건일 때 읽을 수 없다는 근거가 타당하다).
+
 CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 싣는다
 (실기기에서 `details` 가 Map 으로 안 올 수 있다는 기존 교훈 — `backlog.md:566-569`). 이중 장치다.
 
@@ -827,6 +962,8 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 | `MENU_EXCLUDED` | `failed-precondition` | **"이 매장에서 더 이상 판매하지 않는 메뉴가 있어요 — {메뉴명}"** | |
 | `MENU_NOT_FOUND` | `not-found` | **"메뉴 정보가 변경됐어요. 카트를 비우고 다시 담아주세요"** | |
 | `READ_FAILED` | `unavailable` | **"일시적인 오류예요. 잠시 후 다시 시도해주세요"** | 전 매장 영향 가능 → 기록으로 즉시 탐지 |
+| `STORE_HAS_INFLIGHT_ORDERS` | `failed-precondition` | **admin 전용** — 고객 경로가 아니다. design §7.2 의 비활성 사유 문구(§11.4) | 신규. `deleteStore` 전용 사유이며 결제 6종과 **다른 목록**이다 — 결제 화면의 "알려진 6개" 에 넣지 않는다 |
+| (입력 품목 초과) | `invalid-argument` | 토큰 없음 → **갈래 C** | `cart.items.length > 50` (§15.1). 정상 고객 도달 불가 |
 | (brandKey 미매칭) | `not-found` | **"브랜드를 찾을 수 없어요. 키를 다시 확인해주세요"** | 미존재/미승인 동일 문구 |
 | (brandKey rate limit) | `resource-exhausted` | **"조회를 너무 많이 시도했어요. 잠시 후 다시 시도해주세요"** | |
 | (매장 삭제 시도) | `permission-denied` | **점주 UI 에서 버튼 자체를 없앤다** | Rules 만 닫고 버튼을 남기면 "삭제에 실패했어요" 가 된다 |
@@ -834,6 +971,49 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 **`payment_result_page.dart:71` 의 `_mapErrorCode(errorCode, errorMessage)` 가 현재 `message`
 기본 폴백으로 `e.toString()` 을 노출한다.** 게이트 사유 매핑을 추가하면서 **원시 예외 문자열 노출을
 제거**한다 (R6).
+
+### 15.1 거절 토큰 형식 — **확정** (design 전달 사항 1)
+
+design §3.5 는 품절 거절 시 **어느 메뉴인지 반드시 지목**한다(오탐일 때 고객의 유일한 복구 수단).
+spec 초판은 `[REASON]` 만 적어 **id 가 없어 그 요구사항이 성립하지 않았다.** 아래로 확정한다.
+
+```
+HttpsError.message 의 맨 끝에 토큰 1개를 붙인다.
+
+  메뉴 사유 3종 :  [MENU_SOLD_OUT:id1,id2]   [MENU_EXCLUDED:id1]   [MENU_NOT_FOUND:id1,id2,id3]
+  그 외 3종     :  [STORE_NOT_SELLABLE]      [STORE_NOT_FOUND]     [READ_FAILED]
+
+문법:  \[(?<reason>[A-Z][A-Z0-9_]{2,39})(?::(?<ids>[A-Za-z0-9_,-]{1,2048}))?\]$
+id   :  ^[A-Za-z0-9_-]{1,64}$  (Firestore 문서 ID — `,` `:` `[` `]` 가 들어가지 않는다)
+```
+
+| 결정 | 내용 | 근거 |
+|---|---|---|
+| **서버는 `menuItemId` 만 싣는다. 이름을 싣지 않는다** | 이름은 **고객 카트의 `menuItemName`** 으로 그린다 (design D5) | ⓐ 고객이 카트에서 보던 이름과 같아야 알아본다 ⓑ 한글·쉼표 인코딩 문제가 없다 ⓒ `details` 가 실기기에서 Map 으로 안 오는 기존 문제(`backlog.md:566-569`)에 토큰만으로 버틴다 |
+| **D4("서버 문자열을 화면에 보간하지 않는다")와 일관된다** | id 는 **조회 키로만** 쓰이고 **화면에 출력되지 않는다.** 해석에 성공하면 카트의 이름이 그려지고, 실패하면 그 id 는 **건너뛴다 — 미해석 id 를 화면에 그리지 않는다** | 화면에 나가는 문자열은 여전히 ⓐ 코드 안의 상수 ⓑ 고객 카트의 값 둘뿐이다. 서버가 보낸 바이트가 화면에 도달하는 경로가 없다 |
+| **형식 검증을 통과하지 못한 토큰 조각은 버린다** | `reason` 이 알려진 6개가 아니면 **갈래 C**, `ids` 중 id 정규식에 안 맞는 조각은 **그 조각만 폐기** | 서버가 예상 밖 문자열을 실어도 화면에 새지 않는다 |
+| **중복 제거는 클라이언트가 한다** | 같은 `menuItemId` 가 옵션이 달라 카트에 여러 줄이면 이름을 한 번만 (design D5) | 서버는 **메뉴 종류 단위**로 id 를 보낸다(라인 단위가 아니다) |
+
+**id 가 카트에서 해석되지 않을 때 화면이 그리는 것** (design §3.6 empty 행과 일치):
+
+| 경우 | 화면 |
+|---|---|
+| 일부 해석 실패 | 해석된 이름만 목록에 그린다. **부족하다는 표시를 하지 않는다** — 고객이 할 일(그 메뉴를 뺀다)은 달라지지 않는다 |
+| **전부 해석 실패** | 목록 카드를 **그리지 않고** 이름 없는 문구("품절된 메뉴가 있어요. 카트에서 확인해 주세요.")로 내려간다. 버튼은 동일 | 
+| 카트가 비어 있다(앱 재시작 등) | 위와 같다. 카트는 로컬·비영속이다 (§5-1) |
+
+**품목 수 상한 — 토큰을 절단하지 않고 입력을 제한한다**
+
+design D5 는 "N개 + 더보기로 줄이지 않고 **전부 열거**" 다. 토큰을 절단하면 그 요구가 깨진다.
+그래서 **토큰에 상한을 두지 않고 `cart.items` 길이에 상한을 둔다.**
+
+- **CF 입력 검증에 `cart.items.length <= 50` 을 추가한다.** 초과 시 `invalid-argument`
+  (토큰 없음 → 갈래 C). 메뉴 **종류** 수는 이보다 적으므로 토큰은 최대 50개 id ≈ 1,050자 —
+  위 `ids` 상한 2048 안에 들어온다. **절단이 구조적으로 발생하지 않는다.**
+- 이 상한은 **별도의 이득**도 있다: G2 는 품목당 최대 3문서를 읽으므로(§7.2) 상한이 없으면
+  **품목 수 × 3 만큼 읽기가 늘어난다.** 1,000품목 카트 1건이 3,000 reads 다.
+  상한은 **G2 가 새로 만드는 비용의 뚜껑**이기도 하다.
+- 50 은 카트 UI 의 현실 상한을 크게 넘는 값이라 정상 고객에게 **도달 불가**다(오탐 0).
 
 ---
 
@@ -907,7 +1087,13 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 7. 점주 계정에서 brandKey 조회 → 정상. 다른 브랜드 문서 직접 read 시도 → `private/profile` **거부**
 8. brandKey 를 아는 점주의 매장 등록 → 정상 (R10)
 9. 점주 계정으로 `stores/{자기매장}` delete 직접 시도 → **거부**
-10. admin `deleteStore` 1회(테스트 매장) → `storeDeletionHistory` 1건 + 서브컬렉션 0 확인
+10. admin **더보기 → 매장 관리 → 목록 → 삭제 화면** 진입 → `dryRun` 숫자 표시 →
+   `deleteStore` 1회(테스트 매장) → `storeDeletionHistory` 1건(`phase:'done'`) + 서브컬렉션 0 +
+   Storage 이미지 0 확인
+10-b. **진행 중 주문이 있는 매장**의 삭제 화면 → 버튼 비활성 + 사유 표시 (§11.4)
+10-c. **Q1 사실 확인 (T-2 전용)** — 실제 테스트 카드/카카오페이로 게이트 거절을 일으키고
+   **카드사 알림·결제 내역에 아무것도 남지 않는지** 확인한다. 남으면 design §3.4 의 돈 줄을
+   `아직 결제가 완료되지 않았어요`(Q1 ⓑ)로 **즉시 교체**한다
 11. **품절을 되돌린 뒤 같은 카트로 결제 → 성공** (오탐 복구 경로)
 
 ### 17.3 중단 기준
@@ -949,6 +1135,12 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 4. `stores.doc(...).delete()` 가 클라이언트 코드에 **0건**이다
 5. `where('brandKey'` 가 클라이언트 코드에 **0건**이다
 6. `payment_result_page.dart` 에 `e.toString()` 류 원시 예외 노출이 **0건**이다
+6-c. **design §9.2 가 제안한 가드 4건을 채택한다**: ⓐ 모르는 토큰·임의 예외 문자열을
+   `PaymentFailure.from` 에 넣으면 **결과 어떤 텍스트에도 입력 문자열이 포함되지 않는다**
+   (§15.1 의 "서버 바이트가 화면에 도달하는 경로가 없다" 를 기계로 고정) ⓑ 알려진 6개 사유가
+   각각 design §3.1 의 헤드라인·버튼을 가진다(사유 추가 시 표 누락이 테스트 실패) ⓒ **갈래 C
+   화면에 `요금`/`청구` 단어가 0건**(돈을 단정하지 않는 규칙) ⓓ `CartLineAvailability` 에
+   `verified`/`ok` 값이 **없다**(design N2 — UI 가 "확인됨" 을 그릴 수 있는 길 자체를 없앤다)
 6-b. `StoreModel` 의 **create payload 2개**(`toFirestoreForCreate` · `toFirestoreForBrandCreate`)에
    `approvedBy`/`approvedAt`/`rejectedReason` 키가 **0건**이다 — 누군가 나중에 추가하면 Rules-A 가
    매장 등록을 전면 거부하므로 **빠르게 실패하도록** 고정한다
@@ -997,7 +1189,29 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 
 ## 19. 작업 분배
 
-### designer — **필요하다** (작음~중간)
+### designer — **1차 완료** (`design.md`, 702줄, `88b6e4c`) → **재호출 1회 필요**
+
+**design.md 1차는 수용한다.** spec §15 문구를 구조로 바꾼 판단, 실패를 돈 상태에 따라
+3갈래(A/B/C)로 나눈 판단, 선검증에 **긍정 표시 금지(N1·N2)** 를 규칙으로 세운 판단은 모두
+spec §8.2 의 fail 방향을 UI 로 정확히 옮긴 것이다. 아래 **수정 4건 + 추가 1건**만 반영한다.
+
+| # | 수정 | 근거 |
+|---|---|---|
+| **1** | **§6.2 점주 안내 문구의 첫 문장 제거** — `잠시 쉬려면 '운영 정보 수정'에서 임시 휴업을 켤 수 있어요` | **`temporaryClosed` 는 아무 효과가 없다**(§6.8). 그대로 두면 거짓 안내다. design 이 열어 둔 "developer 가 확인하고 아니라면 빼고 보고" 조건이 **확인 결과 성립하지 않는다.** 두 번째 문장만 남긴다 |
+| **2** | **§7.2 영향 범위 섹션에 `진행 중인 주문 n건` 행 추가** + n ≥ 1 이면 삭제 버튼 비활성 + 사유·이유 2줄 + 경쟁 상황 문구 | §11.4 — 근거가 UX 가 아니라 **돈**이다. 매장을 지우면 그 주문의 취소·환불이 영구히 막힌다 |
+| **3** | **§3.5·§3.6 에 "일부 해석 실패" 행 명시** — 일부만 해석되면 **해석된 이름만 그리고 부족하다는 표시를 하지 않는다** | §15.1. design 은 "전부 해석 실패" 만 적었다. 일부 실패가 더 흔하다(카트가 그 사이 바뀜) |
+| **4** | **§2 인벤토리 4-4 의 `카운트 출처 미정` 을 `deleteStore(dryRun: true)` 로 확정 기입** | §11.3 |
+| **5 (추가)** | **품목 수 상한 50 의 UI 영향 없음을 확인만** — design D5 의 "전부 열거" 는 그대로 유효하다. 토큰 절단 처리를 UI 에 만들지 **않는다** | §15.1. 입력 상한으로 절단이 구조적으로 발생하지 않는다 |
+
+**design Q1~Q7 전건 추천안 확정** (사용자, 2026-10-27): Q1 "요금 청구 없음" **사용**(T-2 에서
+실결제로 사실 확인, 어긋나면 ⓑ 약한 문구로 교체) / Q2 오류 코드 캡션은 **갈래 A 기본 문구·갈래 C
+화면에만** / Q3 점주 공백 **수용**(안내 문구만, 후속 N4) / Q4 브랜드 `pending` 회귀 시 **키를
+보여주고 주의 문구** / Q5 **더보기 → 매장 관리 → 목록 → 삭제**(전체 매장 목록 화면 **신설**) /
+Q6 선검증 타임아웃 **3초** / Q7 빠른 재주문은 **이름 열거 후 "나머지만 담기"**.
+
+> **Q5 가 화면 1개를 신설한다** → §0 영향 범위·라우팅, §19 developer, §17.2 배포 검증에 반영했다.
+
+#### (참고) 1차 design 에 요청했던 범위
 
 산출물: `docs/tasks/payment_server_authority/design.md`
 
@@ -1025,11 +1239,12 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 | 1 | `test_fixtures/menu_visibility_contract.json` + `store_sellability_contract.json` **먼저** 만든다. Dart 측 테스트를 통과시킨 뒤 TS 포팅을 한다 (갈라짐을 구조적으로 막는다) |
 | 2 | `functions/src/storeSellability.ts` · `menuVisibility.ts` + npm test |
 | 3 | `verifyTossPayment.ts` 게이트 — **`:116`~`:118` 사이**. `getAll` 1회로 묶는다. **거절 경로에서 Toss 를 호출하지 않는다.** 조회 결과는 **단가(`basePrice`/`priceOverride`)까지 포함한 구조로 반환**한다 — N1(서버 가격 재계산)이 그 반환값만 소비하면 되게 (§20 Q6) |
-| 4 | `paymentGateRejections` 쓰기 + `[REASON]` 토큰 |
+| 4 | `paymentGateRejections` 쓰기 + **`[REASON]` / `[REASON:id1,id2]` 토큰 (§15.1 문법 그대로)** + **`cart.items.length <= 50` 입력 검증** |
 | 5 | 임시 마이그레이션 CF 2개 (dry-run 필수) |
-| 6 | `lookupBrandByKey` · `issueBrandKey` · `deleteStore` |
-| 7 | Dart: `store_sellability.dart`, `ValidateCheckoutUseCase`, repository/datasource 교체 |
-| 8 | 화면 7곳 (§13 Presentation) |
+| 6 | `lookupBrandByKey` · `issueBrandKey` · **`deleteStore`(`dryRun` 분기 + 진행 중 주문 가드 + `phase` 멱등 — §11.3·§11.4·§11.5. 순서는 ①이력 → ②매장문서 → ③서브컬렉션 → ④Storage → ⑤done)** |
+| 6-b | **`orders` 진행 중 주문 쿼리의 복합 인덱스 필요 여부 확인** → 필요하면 `firestore.indexes.json` 에 추가하고 **배포 ① 단계를 비워 두지 않는다** (§11.4) |
+| 7 | Dart: `store_sellability.dart`, `ValidateCheckoutUseCase`(반환 타입에 `failed` 를 UI 로 노출하지 않는다 — design §4.0), **`PaymentFailure.from(Object)` 순수 Dart 1개**(design §3.0, 토큰 파싱은 §15.1 정규식), `paymentRejectedMenuIdsProvider`, repository/datasource 교체 |
+| 8 | 화면: 결제 실패 3갈래 · 카트 행·배너 · 체크아웃 차단 시트 · 빠른 재주문 다이얼로그 · `_ClosingGuide`(2곳) · brandKey 행 5상태 · **`AdminStoreListPage` + `AdminStoreDeletePage` + `admin_more_page` 항목**(design §7, Q5 ⓐ). admin 목록은 **기존 `watch_all_stores_for_admin_use_case.dart` 재사용**(신규 UseCase 금지) |
 | 9 | `firestore.rules` — **Rules-A(§6.5 create 제약) / Rules-B(B1) / Rules-C(D1) 를 각각 분리 커밋**한다. Rules-A 는 **앱과 독립이고 ④ 에서 먼저 배포**되므로 반드시 독립 적용 가능한 패치여야 한다 (§1 · §17) |
 | 10 | grep 가드 테스트 (§18.3) + **Rules 하네스의 create·update 교차 블록** (§18.5, §6.7) |
 | 11 | 문서 갱신: `data_ownership.md` §2.5(**create 제약 1행 추가** + delete 정책 교체)·§2.x(신규 컬렉션 4개) / `entity_lifecycle.md` **§3.3 의 낡은 "확인 필요" 를 확정 사실로 교체**(§5-4) / `audit_trail.md` 에 신규 이력 3종 **+ §6.7 의 create·update 교차 확인을 §4 체크리스트 7번으로 추가** / `tester_guide.md` 상시 항목 1건 / `backlog.md`(⬜ 4건 → ✅, F8 흡수, 신규 후속 N1~N5 등재) |
@@ -1075,7 +1290,16 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 9-b. **권한 판정에 쓰는 필드의 `create`·`update` 양쪽 경로를 교차 확인했는가** (§6.7 — `tester_guide.md`
    상시 항목으로 **신규 등재**. 이번 분배에 포함). 구체적으로 `approvedAt` 을 담은 매장 create 가 거부되는지 —
    **이 1건이 FAIL 이면 G1 게이트 전체가 우회 가능하다**
-10. 빠른 재주문으로 품절 메뉴를 재투입했을 때의 동작
+10. **빠른 재주문에서 전부 위반일 때 기존 카트가 유지되는가** — 현행 `quick_reorder_section.dart:225`
+   가 **카트를 먼저 비우고 담는다.** design §4.5 가 선검증을 비우기 **앞**으로 옮겨 이것을 막는다.
+   이 항목이 FAIL 이면 고객의 카트가 통째로 날아간다
+11. **품절 거절 토큰에 id 가 실려 오고, 화면에 이름이 보이는가** (§15.1). 2개 이상 전부 열거되는가.
+   같은 메뉴가 옵션 2줄일 때 이름이 한 번만 나오는가. **미해석 id 가 화면에 그대로 그려지지 않는가**
+12. **진행 중 주문이 있는 매장의 삭제가 차단되는가** (§11.4). 차단 뒤 그 주문의 **점주 취소·환불
+   승인이 정상 동작하는가**(`cancelTossPayment` / `processRefund` 가 `stores` 를 읽는다)
+13. **`deleteStore` 를 중간 실패 후 재실행하면 이력이 1건인가** (§11.5). 같은 ID 로 재생성 후 다시
+   삭제하면 **이력이 2건**인가(`createdAt` 이 다르므로)
+14. admin 신규 2화면의 loading / error / empty(0건) / empty(검색 0건)
 
 ---
 
@@ -1121,7 +1345,13 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 - [ ] **R1~R14 각 항목이 구현 또는 보류 사유 명시**
 - [ ] **승인 매장이 핵심 필드를 수정한 직후 결제가 성공한다** (불변식 — 이 항목이 FAIL 이면 배포 중단)
 - [ ] 게이트 거절 경로에서 **Toss confirm 이 호출되지 않는다** (단위 테스트로 단언)
-- [ ] 품절 거절 문구에 **메뉴명이 보인다**
+- [ ] 품절 거절 문구에 **메뉴명이 보인다** (토큰에 id 가 실리고 카트 이름으로 해석된다 — §15.1)
+- [ ] **미해석 id·서버 원문이 화면 어느 문자열에도 포함되지 않는다** (§15.1 + design D4 가드 테스트)
+- [ ] **진행 중 주문이 있는 매장은 삭제되지 않는다** (§11.4) — 이 항목이 FAIL 이면 그 매장의
+      취소·환불이 영구히 막힌다
+- [ ] **`deleteStore` 재실행이 이력을 중복 기록하지 않는다** (§11.5). 구현이 달라지면
+      **design §7.2 실패 문구를 먼저 고친 뒤** 구현한다
+- [ ] admin 매장 목록·삭제 화면이 동작하고 `role_flows.md` §4.4 에 1행이 추가됐다 (Q5 ⓐ)
 - [ ] `payment_result_page` 에 원시 예외 문자열 노출이 **0건**
 - [ ] Dart↔TS 교차 골든 2종이 양쪽 테스트에서 통과한다
 - [ ] grep 가드 7항목 통과
@@ -1144,3 +1374,4 @@ CF 는 `HttpsError` 의 `code` + **message 끝에 `[REASON]` 토큰**을 함께 
 | N3 | 매장 `status` 전이 이력 (승인/반려) + `rejectedReason` 덮어쓰기 | §9-주의 |
 | N4 | 매장 폐업 신청 흐름 / 소프트 삭제 | §11.1 ⓒ |
 | N5 | `quick_reorder_section` 의 단가 역산 제거 | §5-2 |
+| **N6** | **`temporaryClosed` 가 아무 일도 하지 않는다** — 점주가 켤 수 있는 스위치가 고객·CF 어디에도 효과가 없다 | §6.8. 같은 계열("서버가 권위를 갖는가")이지만 범위를 넓히지 않는다. 할 때는 ⓐ 고객 노출 ⓑ 결제 게이트 ⓒ 점주 화면 표시를 **한 번에** |
