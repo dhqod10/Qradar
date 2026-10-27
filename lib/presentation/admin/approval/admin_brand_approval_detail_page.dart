@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:qradar/core/errors/brand_key_collision_exception.dart';
+import 'package:qradar/core/errors/brand_key_issue_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
+import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/admin/providers/admin_brand_approval_providers.dart';
 import 'package:qradar/presentation/admin/widgets/approval_actions_bar.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
@@ -41,7 +42,8 @@ class _AdminBrandApprovalDetailPageState
         ),
       );
       Navigator.pop(context);
-    } on BrandKeyCollisionException {
+    } on BrandKeyIssueException {
+      // 키 발급이 실패하면 승인은 일어나지 않았다 (repository 가 발급 성공 뒤에만 status 를 바꾼다).
       if (!mounted) return;
       await showErrorDialog(context, '브랜드 키 발급에 실패했어요. 다시 시도해주세요');
     } catch (_) {
@@ -172,31 +174,8 @@ class _AdminBrandApprovalDetailPageState
                   _InfoRow('이전 처리 시각', _fmt(brand.approvedAt)),
               ],
             ),
-            if (brand.companyName.isNotEmpty ||
-                brand.businessRegistrationNumber.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              _SectionCardWithTitle(
-                title: '사업자 정보',
-                children: [
-                  if (brand.companyName.isNotEmpty)
-                    _InfoRow('회사명', brand.companyName),
-                  if (brand.businessRegistrationNumber.isNotEmpty)
-                    _InfoRow('사업자번호', brand.businessRegistrationNumber),
-                  if (brand.contactName.isNotEmpty ||
-                      brand.contactPhone.isNotEmpty)
-                    _InfoRow(
-                      '담당자',
-                      [brand.contactName, brand.contactPhone]
-                          .where((s) => s.isNotEmpty)
-                          .join(' / '),
-                    ),
-                  if (brand.headOfficeAddress != null)
-                    _InfoRow('본사 주소', brand.headOfficeAddress!),
-                  if (brand.representativeName != null)
-                    _InfoRow('대표자', brand.representativeName!),
-                ],
-              ),
-            ],
+            const SizedBox(height: 16),
+            BrandBusinessInfoSection(brand: brand),
             if (brand.status == EntityApprovalStatus.rejected &&
                 brand.rejectedReason != null) ...[
               const SizedBox(height: 16),
@@ -213,6 +192,94 @@ class _AdminBrandApprovalDetailPageState
               onReject: _reject,
             )
           : null,
+    );
+  }
+}
+
+/// 사업자 정보 섹션 — 회사명은 부모 문서, 나머지(PII)는 `brands/{id}/private/profile` 에서 읽는다.
+///
+/// 읽기 실패는 **이 섹션만** 오류로 표시한다 (승인/반려 액션과 나머지 정보는 정상). 빈 정보로 폴백하지 않는다 —
+/// admin 이 PII 를 못 본 채 "원래 비어 있다" 고 오해하고 승인하지 않게 한다.
+class BrandBusinessInfoSection extends ConsumerWidget {
+  const BrandBusinessInfoSection({super.key, required this.brand});
+  final BrandEntity brand;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final provider = brandPrivateProfileProvider(brand.id);
+    final async = ref.watch(provider);
+    return _SectionCardWithTitle(
+      title: '사업자 정보',
+      children: [
+        if (brand.companyName.isNotEmpty) _InfoRow('회사명', brand.companyName),
+        ...async.when(
+          skipLoadingOnRefresh: false,
+          skipLoadingOnReload: false,
+          loading: () => const [
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                '사업자 정보를 불러오는 중이에요',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ),
+          ],
+          error: (_, _) => [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    size: 16,
+                    color: AppColors.error,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '사업자 정보를 불러오지 못했어요',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textBody,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => ref.invalidate(provider),
+                    child: const Text(
+                      '다시 시도',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primaryBright,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          data: (p) {
+            if (p == null) return const <Widget>[];
+            return [
+              if (p.businessRegistrationNumber.isNotEmpty)
+                _InfoRow('사업자번호', p.businessRegistrationNumber),
+              if (p.contactName.isNotEmpty || p.contactPhone.isNotEmpty)
+                _InfoRow(
+                  '담당자',
+                  [p.contactName, p.contactPhone]
+                      .where((s) => s.isNotEmpty)
+                      .join(' / '),
+                ),
+              if (p.headOfficeAddress != null)
+                _InfoRow('본사 주소', p.headOfficeAddress!),
+              if (p.representativeName != null)
+                _InfoRow('대표자', p.representativeName!),
+            ];
+          },
+        ),
+      ],
     );
   }
 }

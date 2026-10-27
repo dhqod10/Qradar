@@ -208,7 +208,7 @@ Qoin 1차의 원장·잔액·멱등성·회수·고객 화면은 **그대로 재
 
 ---
 
-### ⬜ `stores.delete` 정책 재설계 (Q3 수용의 대가 — 2026-10-22 신규)
+### ✅ `stores.delete` 정책 재설계 (Q3 수용의 대가 — 2026-10-22 신규) — **payment_server_authority 로 구현 (코드 완료, 배포 ⑧ 후 확정)**
 
 **출처**: `qoin_accrual_rate_hierarchy` tester F4 → 사용자 결정 Q3 ⓐ(수용). 수용의 근거는 "재생성 매장은 `status: 'pending'` 이라 admin 재승인 전까지 적립이 발생하지 않는다" 이고, 그것은 **적립률 1필드의 문제가 아니라 삭제 정책의 문제**임을 드러낸다.
 
@@ -277,7 +277,7 @@ Qoin 1차의 원장·잔액·멱등성·회수·고객 화면은 **그대로 재
 
 ---
 
-### ⬜ 결제 시점 매장 `status` 게이트 — **별도 task 로 분리 확정 (Q-S1)** (2026-10-22 신규)
+### ✅ 결제 시점 매장 `status` 게이트 — **별도 task 로 분리 확정 (Q-S1)** (2026-10-22 신규) — **payment_server_authority 로 구현 (코드 완료, 배포 ⑥ 후 확정)**
 
 > **`status == 'approved'` 를 그대로 강제하면 안 된다.** 사용자가 "고객 앱에서 안 보이는데 결제가 되는
 > 경우의 수가 있나" 를 물어 경우를 열거하다 찾은 제약이다.
@@ -308,7 +308,7 @@ Qoin 1차의 원장·잔액·멱등성·회수·고객 화면은 **그대로 재
 
 ---
 
-### ⬜ `brands` 문서 read 범위 축소 / `brandKey` 비공개화 (2026-10-22 신규)
+### ✅ `brands` 문서 read 범위 축소 / `brandKey` 비공개화 (2026-10-22 신규) — **payment_server_authority 로 구현 (코드 완료, 배포 ⑧⑨ 후 확정)**
 
 `match /brands/{brandId} { allow read: if isSignedIn(); }` — 로그인한 누구나 **모든 브랜드의 `brandKey`** 와 `companyName` / `businessRegistrationNumber` / `representativeName` / `contactPhone` / `headOfficeAddress` 를 읽는다.
 
@@ -493,6 +493,9 @@ sub-phase 9 의 메인 카테고리 admin 관리 패턴 차용. 현재 12개 str
 ### F7 — 서브 카테고리 NLP 유사명 감지
 sub-phase 8 의 약한 검증 강화. "콜드브루" vs "콜드부루" 같은 오타 자동 감지.
 
+### F8 (home_search) → payment_server_authority 로 흡수
+`home_search` 의 F8(장바구니·결제 품절 검증)은 `docs/tasks/payment_server_authority/` 의 G2 로 흡수됐다 (`home_search/spec.md:1229` 의 "backlog 에 F8 등재" 완료 기준은 이 1행으로 대체 이행). 아래 F8 은 sub-phase 8/7 의 별개 항목(admin 분포 모니터링)이다.
+
 ### F8 — admin 서브/옵션 그룹 분포 모니터링
 sub-phase 8/7. brand/매장이 만든 사용자 정의 분류/옵션 그룹의 분포 audit.
 
@@ -600,7 +603,7 @@ bool get _canSubmit =>
 
 ---
 
-### ⬜ 묶음 제안 — "서버가 권위를 갖는가" 3건 (2026-10-26)
+### ✅ 묶음 제안 — "서버가 권위를 갖는가" 3건 (2026-10-26) — **`docs/tasks/payment_server_authority/` 로 착수·구현 (배포 대기)**
 
 아래 셋은 **같은 질문**의 다른 얼굴이다. 따로 하면 Rules 를 세 번 배포해야 하고,
 Rules 배포는 앱 배포와 순서를 맞춰야 해서(런북 ③→④) 한 번이 훨씬 싸다.
@@ -701,3 +704,17 @@ stores/{storeId}
 
 **그 위 단계**: 매장 수백~수천이면 요약 필드로도 부족하고 검색을 서버로 분리한다
 (`home_search/spec.md` 의 비범위, 외부 검색 엔진). 단계마다 **이전 단계가 깨질 때** 넘어간다.
+
+
+---
+
+### ⬜ payment_server_authority 후속 (2026-10-27 신규) — ID 는 기존 N1(알림 테스트)과 충돌하지 않게 `PSA-` 접두
+
+| # | 과제 | 근거 |
+|---|---|---|
+| **PSA-N1** | **서버 가격 재계산** — 클라이언트가 보낸 가격이 그대로 주문·적립 기준이 된다. `verifyTossPayment` 의 금액 검증(`amount === cart.totalPrice`)은 클라 값끼리의 비교라 의미가 없다 | spec §5-6. **Q6 ⓑ — 이번 묶음 직후 최우선.** 게이트(`paymentGate.ts evaluatePaymentGate`)가 이미 `resolved[].merged.basePrice`(마스터 + override 적용 단가) 를 반환한다 → **추가 읽기 0** 으로 닫을 수 있다. 실결제 0회라는 착수 창이 동일하게 적용된다 |
+| PSA-N2 | 핵심 필드 수정을 `pending` 회귀와 분리 (심사 정책) | spec §6.2 ⓒ. "이름 고치면 고객 목록에서 사라진다" 기존 결함 포함 |
+| PSA-N3 | 매장 `status` 전이 이력 (승인/반려) + `rejectedReason` 덮어쓰기 | spec §9-주의 |
+| PSA-N4 | 매장 폐업 신청 흐름 / 소프트 삭제 (점주 공백 해소) | spec §11.1 ⓒ |
+| PSA-N5 | `quick_reorder_section` 의 단가 역산 제거 | spec §5-2 |
+| PSA-N6 | **`temporaryClosed` 가 아무 일도 하지 않는다** — 점주 스위치가 고객·CF 어디에도 효과가 없다. 할 때는 고객 노출·결제 게이트·점주 표시를 **한 번에** | spec §6.8 |

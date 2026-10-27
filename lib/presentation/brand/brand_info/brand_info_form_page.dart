@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kpostal/kpostal.dart';
+import 'package:qradar/core/errors/brand_private_profile_save_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
+import 'package:qradar/domain/entities/brand_private_profile_entity.dart';
 import 'package:qradar/presentation/brand/providers/brand_di_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_link_gate_provider.dart';
@@ -55,16 +57,143 @@ String missingBrandFormFieldsMessage(List<String> missing) =>
     '다음 항목을 확인해주세요: ${missing.join(', ')}';
 
 /// 브랜드 등록(brand == null) / 수정(brand != null) 통합 폼.
-class BrandInfoFormPage extends ConsumerStatefulWidget {
+///
+/// 사업자 PII(사업자번호·담당자·대표자·본사 주소)는 부모 문서가 아니라 `brands/{id}/private/profile` 에 있다.
+/// 수정 모드는 그것을 **먼저 읽어 와서** 폼을 그린다 — 읽기 실패를 빈 폼으로 폴백하지 않는다
+/// (빈 값을 "원래 비어 있다" 로 오해하고 저장하면 PII 를 덮어쓴다). 실패하면 `다시 시도` 만 준다.
+class BrandInfoFormPage extends ConsumerWidget {
   final BrandEntity? brand;
 
   const BrandInfoFormPage({super.key, required this.brand});
 
   @override
-  ConsumerState<BrandInfoFormPage> createState() => _BrandInfoFormPageState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final b = brand;
+    if (b == null) {
+      return const _BrandInfoFormBody(brand: null, privateProfile: null);
+    }
+    final provider = brandPrivateProfileFetchProvider(b.id);
+    return ref
+        .watch(provider)
+        .when(
+          skipLoadingOnRefresh: false,
+          skipLoadingOnReload: false,
+          loading: () => const _FormShell(
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.primaryBright),
+            ),
+          ),
+          error: (_, _) => _FormShell(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      size: 48,
+                      color: AppColors.error,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '사업자 정보를 불러오지 못했어요',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textHeading,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '저장된 정보는 그대로예요. 잠시 후 다시 시도해 주세요',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () => ref.invalidate(provider),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: const Text(
+                        '다시 시도',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          data: (profile) => _BrandInfoFormBody(
+            key: ValueKey('brandForm.${b.id}'),
+            brand: b,
+            privateProfile: profile,
+          ),
+        );
+  }
 }
 
-class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
+/// 수정 모드 로딩/실패 중 껍데기 (뒤로가기만 있다).
+class _FormShell extends StatelessWidget {
+  const _FormShell({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppColors.textHeading,
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          '브랜드 수정',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textHeading,
+          ),
+        ),
+      ),
+      body: child,
+    );
+  }
+}
+
+class _BrandInfoFormBody extends ConsumerStatefulWidget {
+  final BrandEntity? brand;
+
+  /// 수정 모드의 기존 PII (`private/profile`). 문서가 아직 없으면 null.
+  final BrandPrivateProfileEntity? privateProfile;
+
+  const _BrandInfoFormBody({
+    super.key,
+    required this.brand,
+    required this.privateProfile,
+  });
+
+  @override
+  ConsumerState<_BrandInfoFormBody> createState() => _BrandInfoFormPageState();
+}
+
+class _BrandInfoFormPageState extends ConsumerState<_BrandInfoFormBody> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _descCtrl;
@@ -80,6 +209,10 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
   bool _isLoading = false;
   double? _uploadProgress;
   String? _imageError;
+
+  /// 신규 등록에서 부모 문서는 만들어졌는데 PII 쓰기가 실패한 경우의 brandId.
+  /// 다음 저장은 이 id 로 "수정" 경로를 타 부모 문서를 또 만들지 않는다 (고아 브랜드 방지).
+  String? _createdBrandId;
 
   bool get _isEditMode => widget.brand != null;
 
@@ -102,19 +235,20 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
   void initState() {
     super.initState();
     final b = widget.brand;
+    final p = widget.privateProfile;
     _nameCtrl = TextEditingController(text: b?.name ?? '');
     _descCtrl = TextEditingController(text: b?.description ?? '');
     _companyNameCtrl = TextEditingController(text: b?.companyName ?? '');
     _bizRegNoCtrl = TextEditingController(
-      text: b?.businessRegistrationNumber ?? '',
+      text: p?.businessRegistrationNumber ?? '',
     );
-    _contactNameCtrl = TextEditingController(text: b?.contactName ?? '');
-    _contactPhoneCtrl = TextEditingController(text: b?.contactPhone ?? '');
+    _contactNameCtrl = TextEditingController(text: p?.contactName ?? '');
+    _contactPhoneCtrl = TextEditingController(text: p?.contactPhone ?? '');
     _headOfficeAddressCtrl = TextEditingController(
-      text: b?.headOfficeAddress ?? '',
+      text: p?.headOfficeAddress ?? '',
     );
     _representativeNameCtrl = TextEditingController(
-      text: b?.representativeName ?? '',
+      text: p?.representativeName ?? '',
     );
     _logoUrl = b?.logoUrl;
 
@@ -258,7 +392,7 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
       if (_logoFile != null) {
         setState(() => _uploadProgress = 0.0);
         final storage = ref.read(brandStorageDataSourceProvider);
-        final brandId = widget.brand?.id ?? '';
+        final brandId = widget.brand?.id ?? _createdBrandId ?? '';
         logoUrl = await storage.uploadBrandImage(
           brandId: brandId.isEmpty ? 'temp' : brandId,
           file: _logoFile!,
@@ -267,13 +401,16 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
       }
 
       final brand = BrandEntity(
-        id: widget.brand?.id ?? '',
+        id: widget.brand?.id ?? _createdBrandId ?? '',
         name: _nameCtrl.text.trim(),
         logoUrl: logoUrl,
         description: _descCtrl.text.trim().isEmpty
             ? null
             : _descCtrl.text.trim(),
         companyName: _companyNameCtrl.text.trim(),
+      );
+      // 사업자 PII 는 부모 문서가 아니라 private/profile 로 저장된다. brandKey 는 보내지 않는다 (서버 전담).
+      final privateProfile = BrandPrivateProfileEntity(
         businessRegistrationNumber: _bizRegNoCtrl.text.trim(),
         contactName: _contactNameCtrl.text.trim(),
         contactPhone: _contactPhoneCtrl.text.trim(),
@@ -285,7 +422,9 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
             : _representativeNameCtrl.text.trim(),
       );
 
-      await ref.read(upsertBrandUseCaseProvider).call(brand);
+      await ref
+          .read(upsertBrandUseCaseProvider)
+          .call(brand, privateProfile: privateProfile);
 
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -302,6 +441,11 @@ class _BrandInfoFormPageState extends ConsumerState<BrandInfoFormPage> {
       }
     } on ArgumentError catch (e) {
       setState(() => _imageError = e.message);
+    } on BrandPrivateProfileSaveException catch (e) {
+      // 부모 문서는 생겼다 — 같은 id 로 재시도하게 기억한다.
+      _createdBrandId = e.brandId;
+      if (!mounted) return;
+      await showErrorDialog(context, '저장에 실패했어요. 다시 시도해주세요');
     } catch (_) {
       if (!mounted) return;
       await showErrorDialog(context, '저장에 실패했어요. 다시 시도해주세요');

@@ -102,11 +102,6 @@ class StoreRepositoryImpl implements StoreRepository {
         .map((model) => model?.toEntity());
   }
 
-  @override
-  Future<void> deleteStore(String storeId) {
-    return _dataSource.delete(storeId);
-  }
-
   // ── admin 진입점 ─────────────────────────────────────────────────────────
 
   @override

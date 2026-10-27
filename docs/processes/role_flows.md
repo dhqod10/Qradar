@@ -134,7 +134,7 @@ stateDiagram-v2
 
 | 액션 | 화면(파일) | 의존 데이터 |
 |---|---|---|
-| 매장 등록 / 재등록 | `owner/my_store/store_core_form_page.dart` | `stores.create` (status=pending) + brandKey 매칭(`findByBrandKey`) |
+| 매장 등록 / 재등록 | `owner/my_store/store_core_form_page.dart` | `stores.create` (status=pending) + brandKey 매칭(`lookupBrandByKey` CF — `brands.brandKey` 는 비공개라 클라이언트 쿼리 불가). ⚠️ 점주 매장 **삭제 버튼은 없다**(payment_server_authority D1 — 폐업·정리는 admin 문의, 안내 문구만. 폐업 신청 흐름은 후속 PSA-N4) |
 | 매장 핵심 필드 수정 (이름/주소/사업자번호 등) | `owner/my_store/store_core_form_page.dart` | `submitStoreForApproval` (status=pending 회귀) |
 | 매장 운영 필드 수정 (이미지/영업시간/공지 등) | `owner/my_store/**` | `updateStoreOperationFields` (status 보존) |
 | 점포 한정 메뉴 CRUD (개인 매장) | `owner/store_menu/**` | `menu_item_repository_impl.createStoreOnlyMenu` (status=approved 즉시) |
@@ -180,13 +180,14 @@ stateDiagram-v2
 | 액션 | 화면(파일) | 의존 데이터 |
 |---|---|---|
 | 승인 큐 (브랜드/메뉴/매장/매장 커스텀) | `admin/approval/admin_approval_queue_page.dart` | 각 컬렉션의 `status=pending` 스트림 |
-| 브랜드 승인/반려 | `admin/approval/admin_brand_approval_detail_page.dart` | `approveBrand` (brandKey 자동 발급) / `rejectBrand` |
+| 브랜드 승인/반려 | `admin/approval/admin_brand_approval_detail_page.dart` | `approveBrand` (**`issueBrandKey` CF 로 brandKey 발급 성공 후에만** status 승인; 사업자·담당자 정보는 `brands/{id}/private/profile` 에서 읽음) / `rejectBrand` |
 | 매장 승인/반려 | `admin/approval/admin_store_approval_detail_page.dart` | `approveStore` / `rejectStore` |
 | 마스터 메뉴 승인/반려 (브랜드별) | `admin/approval/admin_master_menu_approval_detail_page.dart` | `approveMasterMenuItem` / `rejectMasterMenuItem` |
 | 메뉴 오버라이드 승인/반려 | `admin/approval/admin_menu_override_approval_detail_page.dart` | `approveOverride` / `rejectOverride` |
 | 브랜드 매장 한정 메뉴 승인/반려 | `admin/approval/admin_brand_store_item_approval_detail_page.dart` | `approveStoreOnlyMenu` / `rejectStoreOnlyMenu` |
 | 브랜드/매장 관리 | `admin/brand_store_management/**` | 모든 brand/store CRUD (Rules 전권) |
 | 메뉴 카테고리 마스터 데이터 | `admin/menu_categories/**` | `mainCategories`, 글로벌 `subCategories`, 글로벌 `optionGroups` |
+| 매장 관리 (목록·삭제) | `admin/store_management/admin_store_list_page.dart` → `admin_store_delete_page.dart` (더보기 → `매장 관리`) | `watchAllStoresForAdmin` + `deleteStore` CF (`dryRun` 영향 범위 → 실행; 진행 중 주문이 있으면 차단; `storeDeletionHistory` 이력) |
 | 더보기 | `admin/more/admin_more_page.dart` | — |
 
 **핵심 진입점**: `AdminScaffold` — 2탭 (승인 큐 / 더보기). 회원 정지·매출 종합·공지/배너·쿠폰 등 product_scope 의 다른 admin 기능은 **미구현**.

@@ -93,6 +93,7 @@ FAIL 항목은 반드시 아래 정보를 포함한다.
 - loading / error / empty 상태가 처리되어 있는가
 - 권한 거부, 데이터 없음, 네트워크 실패 등 예외 케이스가 고려되어 있는가
 - 후속 task로 분리된 항목이 현재 범위에 섞이지 않았는가
+- **(상시) 권한 판정에 쓰는 필드의 `create` · `update` 양쪽 경로를 교차 확인했는가** — `onlyChangedFields` 는 update 전용이라 create 를 보호하지 않는다 (같은 패턴으로 네 번 구멍이 났다). 판정 입력 필드마다 Rules 하네스에 **create 거부 케이스 1건 + 정상 payload 허용 회귀 1건**이 있는지 본다. 하나라도 빠지면 FAIL (`docs/processes/audit_trail.md` §4-7, payment_server_authority §6.7)
 
 ---
 

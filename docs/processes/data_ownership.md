@@ -129,12 +129,21 @@
 | read | `isSignedIn()` | (status=pending 도 read 가능, 클라이언트가 approved 필터링 — T7) |
 | create | `owner` + `ownerId == uid` + `status == 'pending'` | **`brandId` 가 있으면 존재하는 `status=='approved'` 브랜드여야 한다** (`get(brands/{id})`). `brandId` 는 Qoin 적립률 상속의 신뢰원이므로 오타·미존재·반려 브랜드 지정을 막는다. ⚠️ **가맹 관계 자체는 Rules 로 증명할 수 없다** — 승인 게이트가 통제한다 (`brand_authorization_hardening/spec.md` D5) |
 | update | `admin` OR `isStoreOwnerFieldUpdate(storeId)` OR `isStoreOwnerBrandUpdate()` | 화이트리스트: `name, imageUrl, location, phone, address, description, menuCategories, businessHours, isOpen, updatedAt, notice, tags` — **status / submittedBy / approvedBy 등 승인 메타는 admin 만** / **Qoin 보호 필드 집합(`qoinAccrualRate` / `qoinAccrualEnabled` / `qoinBulkHistoryId` / `qoinBulkStatus` / `qoinBulkAt`)은 모든 분기에서 차단** — `touchesQoinManaged()` (§2.11 / §2.11.1b) |
+| create | (위) | **승인 메타(`approvedAt` / `approvedBy` / `rejectedReason`) 설정 금지 — 부재 또는 null 만 허용** (payment_server_authority Rules-A). 결제 게이트 `canSellNow` 가 `approvedAt` 을 **권한 판정 입력**으로 쓰므로 create 도 쓰기 경로다 (`onlyChangedFields` 는 update 전용이라 create 를 보호하지 않는다 — §6.7 상시 규칙). 현재 앱 create payload 2개는 이 키를 보내지 않는다 (가드 테스트가 고정) |
 | create | (위) | **Qoin 보호 필드 집합 포함 create 차단** (`!hasQoinManagedOnCreate()` — 필드 목록은 Rules 의 `qoinManagedFields()` **1곳**에서 선언된다) |
-| delete | `admin OR storeOwner(storeId)` | ⚠️ 점주 삭제가 **열려 있다.** 같은 ID 로 재생성하면 `qoinAccrualRate` 개별 설정이 사라진다 (§2.11 의 알려진 경로). 재생성은 `status: 'pending'` 강제 — ⚠️ **그러나 "재승인 전까지 주문·적립 불가" 는 서버가 보증하지 않는다**: `verifyTossPayment` 는 `stores` 를 읽지 않고 적립 트리거도 `status` 를 보지 않는다. **UI 에서만 막힌다** (`qoin_accrual_rate_hierarchy/spec.md` §21.5). 삭제 자체는 **이력에 남지 않고** `qoinRateHistory` 서브컬렉션이 고아가 된다 |
+| delete | `admin` | **점주 하드 삭제는 닫혔다** (payment_server_authority Rules-C). 정상 경로는 **`deleteStore` CF (admin)** — 이력(`storeDeletionHistory`) + 하위 문서 재귀 삭제 + Storage 정리, 진행 중 주문(`paid`/`accepted`/`making`/`ready`)이 있으면 차단. 이로써 "삭제·재생성으로 적립 중단 상태를 지우기" 가 양쪽에서 막힌다 (G1: 재생성 매장은 `approvedAt` 이 없어 결제 거절) |
 | Cloud Function 전담 | **`averageScore` / `reviewCount`** (`onReviewWritten`) · **`qoinAccrualRate`** (`setQoinAccrualRate` / `applyBrandQoinRate` / `migrateQoinZeroRates`) · **`qoinAccrualEnabled`** (`setQoinAccrualEnabled` / `migrateQoinZeroRates`) · **`qoinBulk*` 포인터** (`applyBrandQoinRate` **단독**) | — |
 
-**핵심 불일치** ([`entity_lifecycle.md §3.3`](./entity_lifecycle.md) 참조):
-- Repository 가 핵심 필드 수정 시 status='pending' 회귀를 의도하지만 Rules 화이트리스트에 `status` 없음 → 차단 가능성. 확인 필요.
+**핵심 불일치**: ~~Repository 의 status='pending' 회귀가 Rules 에서 차단될 가능성~~ → **해소 확인** ([`entity_lifecycle.md §3.3`](./entity_lifecycle.md)): 화이트리스트에 `status`(`'pending'` 으로만) · `submittedBy/At` · `approvedBy/At`(null 클리어만) · `rejectedReason` 이 이미 들어 있다.
+
+**결제 게이트가 읽는 필드의 쓰기 경로 매트릭스** (payment_server_authority §6.6 — `status` / `approvedAt` / `approvedBy` / `rejectedReason`):
+
+| 필드 | 점주 create | 점주 update | admin | CF | Console |
+|---|---|---|---|---|---|
+| `status` | `'pending'` 만 | `'pending'` 만 | 전권 | 전권 | 전권(Rules 우회) |
+| `approvedAt` / `approvedBy` / `rejectedReason`(create) | **부재/null 만 (Rules-A)** | `approvedAt`·`approvedBy` null 클리어만 | 전권 | 전권 | 전권(Rules 우회) |
+
+Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추는 사고는 `paymentGateRejections` 가 탐지한다.
 
 **브랜드 본사(brand) 의 가맹점 update**: `isStoreOwnerBrandUpdate` — `isBrandHolder(store.brandId)` 가 storeOwner 와 동일한 운영 필드 화이트리스트를 update 가능 (U-3 결정).
 
@@ -159,13 +168,21 @@
 
 | 작업 | 허용 | 필드 제약 |
 |---|---|---|
-| read | `isSignedIn()` | — |
-| create | `admin` OR (`isBrand()` + `submittedBy == uid` + `status == 'pending'` + `brandKey == ''`) | — |
-| update | `admin` OR `isBrandSelfUpdate(brandId)` | 화이트리스트: `name, imageUrl, description, phone, address, businessHours, updatedAt, tags, logoUrl` — **status / submittedBy / approvedBy / brandKey 는 admin 만** |
+| read | `isSignedIn()` | 부모에 남는 `name/logoUrl/description/companyName/status/qoin*` 는 비밀이 아니다. **brandKey·사업자·담당자 PII 는 §2.7a 로 이동했다** |
+| create | `admin` OR (`isBrand()` + `submittedBy == uid` + `status == 'pending'` + `brandKey == ''` + **PII 5개 키 없음** + **`approvedAt`/`approvedBy` 부재 또는 null**) | PII 를 부모에 쓰는 구 앱 create 는 거부 (Rules-B), 승인 메타 자가 설정 금지 (Rules-A) |
+| update | `admin` OR `isBrandSelfUpdate(brandId)` | 화이트리스트: `name, logoUrl, description, phone, address, businessHours, updatedAt, tags, companyName` + 재제출 메타(`status→pending`, `submittedBy`, `submittedAt`, `rejectedReason`) — **PII 5개는 제거(§2.7a)**, **status 승격 / approvedBy / approvedAt / brandKey / createdAt 은 본인 변경 불가** |
 | delete | `admin` | — |
-| Cloud Function 전담 | 없음 | — |
+| Cloud Function 전담 | **`brandKey` 발급** (`issueBrandKey`, §2.7a) | — |
 
-**brandKey** 는 admin 의 approveBrand 시점에 자동 발급 (`BR-` + 8자 alphabet). 한번 발급되면 변경 불가 (V1 불변성 — `BrandRepositoryImpl` 의 `coreChanged` 분기에서 `brandKey` 를 entity 에서 빼지 않으므로 보존됨).
+**brandKey** 는 admin 승인 시 **`issueBrandKey` CF** 가 발급한다 (`BR-` + 8자 alphabet). 클라이언트는 쓰지 못한다. 한 번 발급되면 같은 브랜드에 대해 멱등(같은 키 반환).
+
+#### 2.7a `brands/{brandId}/private/profile` · `brandKeys/{key}` · `brands/{brandId}/keyHistory/{id}` (payment_server_authority B1)
+
+| 대상 | read | write | 비고 |
+|---|---|---|---|
+| `private/profile` (`brandKey` + `businessRegistrationNumber` `representativeName` `contactName` `contactPhone` `headOfficeAddress`) | `admin` OR `brandHolder(brandId)` OR 그 브랜드의 제출자(`submittedBy == uid`, 신규 등록 직후 claim 전) | 브랜드 본인(보유자/제출자)이 **PII 5개만** (create: 키 집합이 PII 5개 이내, update: `onlyChangedFields`). **`brandKey` 는 CF 전담** — create·update 양쪽 거부, admin 도 직접 쓰지 않는다. delete 불가 | 고객·점주·타 브랜드는 읽을 수 없다 (R8·R9). 부모 read 는 열려 있으므로 고객의 서브컬렉션(`menuItems` 등) read 는 영향 없다 |
+| `brandKeys/{BR-XXXXXXXX}` (`brandId`, `issuedAt`, `issuedBy`) | **없음** | **없음** (CF/Admin SDK 전담) | **문서 ID = 키 → 유일성이 구조로 보장된다** (R11). `lookupBrandByKey` 가 단건 get 으로 조회 |
+| `brands/{id}/keyHistory/{autoId}` | `admin` | **없음** (CF 전담) | brandKey 발급 이력 (`changedBy` = admin uid) |
 
 **Rules vs Repository drift** ([`entity_lifecycle.md §4.3`](./entity_lifecycle.md) 참조): brand 본인이 핵심 필드 변경 시 Repository 가 status='pending' 으로 회귀시키지만 Rules 화이트리스트에 `status` 없음 → 차단 가능성. 확인 필요.
 
@@ -327,6 +344,15 @@
 
 > 구 코드의 `skipped_rate_zero` 는 삭제됐다 (0 은 더 이상 적립률 값이 아니다 — 사용자 결정 Q1).
 
+### 2.13 결제 게이트 · 삭제 이력 컬렉션 (payment_server_authority)
+
+| 컬렉션 | read | write | 내용 |
+|---|---|---|---|
+| `paymentGateRejections/{autoId}` | `admin` | **없음** (CF 전담) | `uid, storeId, reason(STORE_NOT_SELLABLE\|STORE_NOT_FOUND\|MENU_SOLD_OUT\|MENU_EXCLUDED\|MENU_NOT_FOUND\|READ_FAILED), detail{rawStatus,hasApprovedAt,violatedMenuItemIds,violatedMenuNames}, amount, createdAt`. **오탐 탐지 장치** — 거절이 악용 차단인지 데이터가 틀어져 정상 손님을 막은 것인지는 건수·분포로만 구분된다 |
+| `storeDeletionHistory/{storeId_createdAtMillis}` | `admin` | **없음** (CF 전담) | `storeId, storeName, ownerId, brandId, status, deletedBy, deletedAt, reason, snapshot(삭제 직전 매장 문서), imageUrls, affected, phase(started\|docDeleted\|subDeleted\|storageDeleted\|done)` |
+| `migrationHistory/{autoId}` | (규칙 없음 = 클라이언트 접근 불가) | Admin SDK | 일괄 처리 1건 + 영향 범위(대상 수) |
+| `brandKeyLookupLimits/{uid}` | (규칙 없음) | Admin SDK | `lookupBrandByKey` rate limit 창 카운터 |
+
 ### 2.12 fallback
 
 `match /{document=**} { allow read, write: if false; }` — 명시되지 않은 모든 경로는 거부.
@@ -350,6 +376,11 @@
 | `setQoinAccrualRate` | admin (단건 설정) | `{scope, targetId, rate\|clear, reason?}` | `stores`/`brands`/`config` 의 적립률 1필드 + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) 이력을 클라이언트가 쓰면 **위조·누락** 가능 3) admin role **서버 재검증** + 범위 검증 |
 | `applyBrandQoinRate` | admin (브랜드 일괄) | `{brandId, rate\|clear, mode: preserve\|overwrite, reason?, resumeHistoryId?}` | 브랜드 값 1 write + 이력 선기록(한 트랜잭션) → (overwrite) 산하 매장 개별 설정 청크 삭제 + 매장별 이력 → 이력 마감 | 1) 500 batch 한도·권한 재검증·이력 위조 2) **A 가 쓴 문서로 B 소유 문서를 갱신** (§3 규칙) 3) 재개(`partial`) 멱등 처리 |
 | `setQoinAccrualEnabled` | admin (적립 사용 토글) | `{scope: store\|brand, targetId, enabled: boolean, reason?}` | `stores`/`brands` 의 `qoinAccrualEnabled` 1필드(또는 삭제) + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) **적립이 발생하는지 자체를 결정**하는 정책 값이므로 적립률과 동급 3) 이력 위조·누락 차단. `scope: 'global'` 은 거부 (전역은 `config/qoin.enabled`) |
+| `lookupBrandByKey` | 로그인 사용자 | `{brandKey}` | 쓰기: rate limit 카운터(`brandKeyLookupLimits/{uid}`) 만. 반환 `{brandId,name,logoUrl}` | 1) `brandKey` 가 비공개(§2.7a)라 클라이언트 쿼리가 불가능 2) 미존재/미승인을 **같은 응답**으로 (열거 오라클 방지) 3) uid 당 분당 10회 |
+| `issueBrandKey` | admin | `{brandId}` | `brandKeys/{key}` create + `private/profile.brandKey` + `keyHistory` 1건 (**한 트랜잭션**). 멱등 | 쿼리 기반 유일성은 경쟁 조건에서 깨진다 → 문서 ID 유일성. 이력 위조·누락 차단 |
+| `deleteStore` | admin | `{storeId, reason, dryRun}` | `storeDeletionHistory/{storeId_createdAtMillis}` (재진입점, `phase`) → 매장 문서 삭제 → 하위 문서 재귀 삭제 → Storage 이미지 → `done`. **진행 중 주문이 있으면 차단**. `dryRun` 은 쓰기 0 | 이력 없는 하드 삭제 제거. 재실행 멱등 (이력 1건) |
+| `verifyTossPayment` 게이트 (G1·G2) | — | — | 거절 시 `paymentGateRejections/{autoId}` 1건 (Toss confirm 전, 돈 이동 없음) | 아래 §2.13 |
+| `migrateStoreApprovalMeta` · `migrateBrandPrivateProfile` ⏳**임시** | admin (1회성) | `{dryRun}` · `{stage, dryRun}` | `stores.status/approvedAt` 백필(이상치는 멈추고 보고) · `brands` PII/brandKey → `private/profile` 복사(stage copy) / 부모 제거(stage cleanup). `migrationHistory` 1건 | payment_server_authority M1·M2. **배포 ⑪ 정리 커밋에서 삭제** |
 | `migrateQoinZeroRates` ⏳**임시** | admin (1회성) | `{dryRun: boolean}` | `qoinAccrualRate == 0` 인 `stores`/`brands` 를 `{rate 삭제, qoinAccrualEnabled: false}` + 이력 1건(`source: 'migration'`, `migratedFromRate: 0`) 으로 이전. 멱등 | Q1 결정 이전용. **마이그레이션 0건 확인 후 과도기 호환 분기와 함께 삭제한다** (`qoin_accrual_rate_hierarchy/spec.md` §20.4.5) |
 | `claimSubmittedBrand` | brand 신청자 (브랜드 마스터 정보 등록 직후) | `{ brandId }` | `brands/{brandId}.submittedBy == uid` 검증 후 `users/{uid}.brandId` 설정 + `users/{uid}/roleHistory` 1건 (**같은 트랜잭션**). 멱등 | 1) `brandId` 는 **권한 값**이다 — 클라이언트가 쓰면 임의 브랜드의 보유자가 된다 2) Rules 로는 검증 불가: 신규 등록이 brand create 와 같은 **batch** 라 `get()` 이 brand 문서를 보지 못한다 3) 권한 변경 이력을 값과 같은 트랜잭션에 둔다 |
 | `auditBrandLinks` ⏳**임시** | admin (1회성) | `{}` | **쓰기 0.** `users(role=='brand')` / `brands` / `stores.brandId` 를 스캔해 `ok` · `ok_onboarding` · `dangling` · `mismatch` · `duplicate` · `orphan_brand` · `store_dangling_brand` · `store_unapproved_brand` 로 분류해 **보고만** 한다 | 개정 전 Rules 로 잘못 연결된 계정이 운영에 있을 수 있고 설계자는 운영 Firestore 를 읽을 수 없다. 자동 교정하지 않는다(의도를 추측할 수 없으면 손대지 않는다). **정리 커밋에서 삭제** (`brand_authorization_hardening/spec.md` §4 · §8-A2) |
@@ -401,12 +432,12 @@ flowchart TD
 | `owner → brand` UI 미구현 (rules 는 허용) | UI 누락 | 점주가 추후 본사 전환 못함 |
 | `stores/{storeId}/menuItems` Rules 는 owner 도 write 허용, Repository 는 brand 매장은 brand only | Rules 가 느슨 | 점주가 SDK 직접 호출로 우회 가능성? |
 | `stores/{storeId}/menuOverrides` Rules 는 owner 도 핵심 필드 write 허용 | Rules 가 느슨 | 점주가 마스터 가격을 임의로 set 가능성? |
-| `brands` read 가 `isSignedIn()` 전면 공개 → **모든 브랜드의 `brandKey` 와 사업자번호·대표자명·연락처가 로그인 사용자 전체에 노출**. 가맹 신청의 "열쇠" 가 열쇠로 기능하지 않는다 | **미해결 — backlog** | 매장 등록 시 가맹 관계 증명이 Rules 로 불가능하다. `brand_authorization_hardening/spec.md` §8-B4 |
-| `verifyTossPayment` 가 `stores` 를 읽지 않아 `pending`(미승인) 매장도 직접 호출로 결제·적립이 성립 | **미해결 — 사용자 결정 대기 (Q-S1)** | `stores.delete` → 재생성 수용(Q3)의 근거가 UI 보증뿐이 된다. §2.5 참조 |
+| ~~`brands` read 가 `isSignedIn()` 전면 공개 → brandKey·PII 노출~~ | **해소 (코드 완료, 배포 ⑧⑨ 후 확정)** payment_server_authority B1 — §2.7a | R9 는 M2 stage cleanup(부모 PII 제거)까지 가야 이행 |
+| ~~`verifyTossPayment` 가 `stores` 를 읽지 않아 `pending` 매장도 결제·적립이 성립~~ | **해소 (코드 완료, 배포 ⑥ 후 확정)** payment_server_authority G1 — `canSellNow` + Rules-A | §2.5 |
 | ~~`reviews` Rules 만 있고 UI 없음 / `stores.averageScore`, `reviewCount` 갱신 경로 없음~~ | **해소 (2026-10-22)** `store_reviews` task — Rules 전면 교체 + `onReviewWritten` CF 집계 | — |
 | `users/{uid}/favoriteStores`, `/favoriteMenuItems` admin read 권한 명시 안 됨 | 정책 모호 | admin 운영 시 favorites 통계 못 봄 |
 | ~~Qoin 적립률 / `config/qoin` / `qoinRateHistory` / `qoinTransactions` 가 이 문서에 없음~~ | **해소 (2026-10-22)** `qoin_accrual_rate_hierarchy` tester F6 → §2.11 / §3 추가 | — |
-| `stores.delete` 가 점주에게 열려 있다 (삭제 이력 없음 / 서브컬렉션 고아 / 같은 ID 재생성으로 개별 설정 초기화) | **미해결 — backlog** | 소프트 삭제 또는 admin 전용 + 삭제 이력 필요. §2.5 / §2.11.1 참조 |
+| ~~`stores.delete` 가 점주에게 열려 있다~~ | **해소 (코드 완료, 배포 ⑧ 후 확정)** payment_server_authority D1 — Rules-C + `deleteStore` CF | 소프트 삭제(`status:'deleted'`)는 N4 로 분리. §2.5 |
 | `stores`/`brands` 의 `qoinAccrualRate` Console 직접 편집 감시 없음 | 수용 (2차 N6) | 콘솔로 바꾸면 이력이 빈다. 전역(`config/qoin`)만 감시 중 |
 
 각 항목은 별도 spec.md 또는 추적 task 로 해결해야 한다.

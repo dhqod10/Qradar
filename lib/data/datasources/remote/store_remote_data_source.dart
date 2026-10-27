@@ -97,11 +97,6 @@ class StoreRemoteDataSource {
     await _stores.doc(storeId).update(fields);
   }
 
-  /// 매장 삭제.
-  Future<void> delete(String storeId) async {
-    await _stores.doc(storeId).delete();
-  }
-
   /// 특정 brandId 에 속하는 매장 실시간 스트림 (brand 전용).
   ///
   /// V6: brand 가맹점 화면은 approved 매장만 노출. pending/rejected 는 admin 승인 큐로.

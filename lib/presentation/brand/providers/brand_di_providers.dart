@@ -1,4 +1,5 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/data/datasources/remote/authority_callables_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/brand_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/master_menu_item_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/storage_data_source.dart';
@@ -16,6 +17,12 @@ import 'package:qradar/presentation/customer/auth/providers/user_profile_provide
 
 final brandRemoteDataSourceProvider = Provider<BrandRemoteDataSource>((ref) {
   return BrandRemoteDataSource();
+});
+
+/// 서버 권위 callable 3종(lookupBrandByKey / issueBrandKey / deleteStore) 어댑터.
+final authorityCallablesRemoteDataSourceProvider =
+    Provider<AuthorityCallablesRemoteDataSource>((ref) {
+  return AuthorityCallablesRemoteDataSource();
 });
 
 final brandStoreRemoteDataSourceProvider = Provider<StoreRemoteDataSource>((ref) {
@@ -38,6 +45,7 @@ final brandRepositoryProvider = Provider<BrandRepository>((ref) {
   return BrandRepositoryImpl(
     ref.watch(brandRemoteDataSourceProvider),
     ref.watch(brandStoreRemoteDataSourceProvider),
+    ref.watch(authorityCallablesRemoteDataSourceProvider),
     currentUidGetter: () => authUser?.uid ?? '',
   );
 });

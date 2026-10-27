@@ -11,7 +11,6 @@ import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/admin/widgets/store_scope_badge.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
-import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/customer/home/widgets/grade_badge.dart';
 import 'package:qradar/presentation/owner/my_store/store_core_form_page.dart';
 import 'package:qradar/presentation/owner/my_store/store_operation_form_page.dart';
@@ -314,7 +313,7 @@ class _PersonalStoreDetailView extends StatelessWidget {
               const SizedBox(height: 8),
               _OptionGroupManagementButton(store: store),
               const SizedBox(height: 32),
-              _DangerZone(store: store),
+              _ClosingGuide(store: store),
             ]),
           ),
         ),
@@ -388,7 +387,7 @@ class _BrandStoreDetailView extends ConsumerWidget {
                 _BrandMenuManagementButton(store: store),
               ],
               const SizedBox(height: 32),
-              _DangerZone(store: store),
+              _ClosingGuide(store: store),
             ]),
           ),
         ),
@@ -936,81 +935,55 @@ class _StoreActionButtons extends StatelessWidget {
   }
 }
 
-// ── 위험 구역 (매장 삭제) ─────────────────────────────────────────────────
+// ── 폐업·정리 안내 (매장 삭제 버튼을 대체) ───────────────────────────────
 
-class _DangerZone extends ConsumerWidget {
+/// 점주용 `_ClosingGuide` 문구. 개인 매장 + `approved` 만 폐업 문구, 그 외(pending/rejected, 브랜드 가맹 전체)는
+/// 정리 문구다 (design §6.2).
+///
+/// **임시 휴업을 안내하지 않는다** — `temporaryClosed` 는 주문을 막지 못하므로 안내하면 거짓이다 (spec §6.8).
+String closingGuideMessage(StoreEntity store) {
+  final isBrandStore = store.brandId != null && store.brandId!.isNotEmpty;
+  if (!isBrandStore && store.status == EntityApprovalStatus.approved) {
+    return '매장 운영을 그만두려면 관리자에게 문의해 주세요.';
+  }
+  return '매장을 삭제하거나 잘못 등록한 매장을 정리하려면 관리자에게 문의해 주세요.';
+}
+
+/// 삭제 버튼이 있던 자리의 안내 한 줄. 버튼·링크 없음(앱에 문의 채널이 없다), 카드·위험색 없음.
+class _ClosingGuide extends StatelessWidget {
   final StoreEntity store;
-  const _DangerZone({required this.store});
+  const _ClosingGuide({required this.store});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Center(
-      child: TextButton.icon(
-        onPressed: () => _confirmDelete(context, ref),
-        icon: const Icon(
-          Icons.delete_outline_rounded,
-          size: 18,
-          color: AppColors.error,
-        ),
-        label: const Text(
-          '매장 삭제',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: AppColors.error,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          '정말 삭제할까요?',
-          style: TextStyle(color: AppColors.textHeading, fontSize: 17),
-        ),
-        content: const Text(
-          '매장 정보와 연결된 이미지가 함께 삭제돼요. 되돌릴 수 없습니다.',
-          style: TextStyle(color: AppColors.textBody, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('취소',
-                style: TextStyle(color: AppColors.textMuted)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(
+              Icons.info_outline_rounded,
+              size: 14,
+              color: AppColors.textMuted,
             ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('삭제'),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              closingGuideMessage(store),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: AppColors.textMuted,
+                height: 1.5,
+              ),
+            ),
           ),
         ],
       ),
     );
-    if (!context.mounted || confirmed != true) return;
-
-    try {
-      // imageUrls 전체 + 기존 imageUrl 삭제
-      final storage = ref.read(storageDataSourceProvider);
-      for (final url in store.imageUrls) {
-        await storage.deleteByUrl(url);
-      }
-      if (store.imageUrl.isNotEmpty &&
-          !store.imageUrls.contains(store.imageUrl)) {
-        await storage.deleteByUrl(store.imageUrl);
-      }
-      await ref.read(deleteStoreUseCaseProvider).call(store.id);
-    } catch (_) {
-      if (!context.mounted) return;
-      await showErrorDialog(context, '삭제에 실패했어요. 다시 시도해주세요');
-    }
   }
 }
 

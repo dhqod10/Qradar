@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kpostal/kpostal.dart';
 import 'package:qradar/core/constants/menu_categories.dart';
+import 'package:qradar/core/errors/brand_key_lookup_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/domain/entities/brand_key_lookup.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
@@ -13,6 +15,26 @@ import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 
 /// brandKey 형식 검증 정규식 (클라이언트 side — V4).
 final _brandKeyRegExp = RegExp(r'^BR-[A-Z2-9]{8}$');
+
+/// brandKey 조회 실패 3갈래의 필드 아래 인라인 문구 (design §5.4).
+///
+/// 서버 응답 문자열은 쓰지 않는다 — 문구는 이 상수뿐이다. **[BrandKeyLookupFailure.failed] 는 "키가 틀렸다" 로 읽히면
+/// 안 된다** (미매칭과 다른 문구). 미매칭 문구는 서버가 미존재/미승인을 구분하지 않는 대신 "승인 대기일 수 있다" 를 정적으로 알린다.
+const String brandKeyNotFoundMessage =
+    '브랜드를 찾을 수 없어요. 키를 다시 확인해 주세요. 키가 맞다면 브랜드가 승인 대기 중일 수 있어요';
+const String brandKeyLookupFailedMessage = '확인하지 못했어요. 잠시 후 다시 시도해 주세요';
+const String brandKeyRateLimitedMessage = '조회를 너무 많이 시도했어요. 잠시 후 다시 시도해 주세요';
+
+String brandKeyLookupErrorText(BrandKeyLookupFailure kind) {
+  switch (kind) {
+    case BrandKeyLookupFailure.notFound:
+      return brandKeyNotFoundMessage;
+    case BrandKeyLookupFailure.rateLimited:
+      return brandKeyRateLimitedMessage;
+    case BrandKeyLookupFailure.failed:
+      return brandKeyLookupFailedMessage;
+  }
+}
 
 /// 매장 핵심 필드 폼 — 등록 / 수정 / 재제출.
 ///
@@ -286,17 +308,22 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
       // brandKey 서버 매칭 (V4)
       String? resolvedBrandId;
       if (_isBrandFranchise) {
-        final matched = await ref
-            .read(ownerLookupBrandByKeyUseCaseProvider)
-            .call(_brandKeyCtrl.text.trim());
-        if (!mounted) return;
-        if (matched == null) {
-          setState(() => _submitting = false);
+        final BrandKeyLookup matched;
+        try {
+          matched = await ref
+              .read(ownerLookupBrandByKeyUseCaseProvider)
+              .call(_brandKeyCtrl.text.trim());
+        } on BrandKeyLookupException catch (e) {
+          // 필드 아래 인라인 에러 — 다이얼로그가 아니라 오류가 난 곳에서 고칠 수 있게 (제출 버튼 재탭이 복구).
           if (!mounted) return;
-          await showErrorDialog(context, '정상 브랜드 키가 아닙니다. 다시 확인해주세요');
+          setState(() {
+            _submitting = false;
+            _brandKeyError = brandKeyLookupErrorText(e.kind);
+          });
           return;
         }
-        resolvedBrandId = matched.id;
+        if (!mounted) return;
+        resolvedBrandId = matched.brandId;
       }
 
       final e = widget.existing;

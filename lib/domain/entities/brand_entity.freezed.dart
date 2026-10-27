@@ -14,15 +14,10 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$BrandEntity {
 
- String get id; String get name; String get logoUrl; String? get description;// 사업자 정보 (Step 3 신규)
+ String get id; String get name; String get logoUrl; String? get description;// 사업자 정보 중 회사명만 부모 문서에 남는다. 사업자번호·담당자·대표자·본사 주소와 brandKey 는
+// `brands/{id}/private/profile` ([BrandPrivateProfileEntity]) 로 이동했다 (payment_server_authority B1).
  String get companyName;// 회사명 (필수)
- String get businessRegistrationNumber;// 사업자등록번호 000-00-00000 (필수)
- String get contactName;// 담당자 이름 (필수)
- String get contactPhone;// 담당자 연락처 (필수)
- String? get headOfficeAddress;// 본사 주소 (선택)
- String? get representativeName;// 대표자 이름 (선택)
-/// 브랜드 키 (V1). admin 승인 시점에 자동 발급. pending/rejected 상태에서는 빈 문자열.
- String get brandKey; EntityApprovalStatus get status; String? get submittedBy; DateTime? get submittedAt; String? get approvedBy; DateTime? get approvedAt; String? get rejectedReason; DateTime? get createdAt; DateTime? get updatedAt;/// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속. 0 은 적립률이 아니다.
+ EntityApprovalStatus get status; String? get submittedBy; DateTime? get submittedAt; String? get approvedBy; DateTime? get approvedAt; String? get rejectedReason; DateTime? get createdAt; DateTime? get updatedAt;/// Qoin 적립률 브랜드 설정 (`qoinAccrualRate`). 부재 = 전역 상속. 0 은 적립률이 아니다.
 /// **읽기 전용** — 쓰기는 CF 전담.
  QoinRateSetting get qoinAccrualRate;/// 적립 스위치 (`qoinAccrualEnabled`). 부재/true = 사용, false = 이 브랜드 산하 전체 사용 안 함. **읽기 전용.**
  QoinSwitchSetting get qoinAccrualEnabled;/// 일괄 적용 포인터 (`qoinBulkHistoryId` / `qoinBulkStatus` / `qoinBulkAt`). 허브의 중단 판정 근거. **읽기 전용.**
@@ -37,16 +32,16 @@ $BrandEntityCopyWith<BrandEntity> get copyWith => _$BrandEntityCopyWithImpl<Bran
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.businessRegistrationNumber, businessRegistrationNumber) || other.businessRegistrationNumber == businessRegistrationNumber)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.headOfficeAddress, headOfficeAddress) || other.headOfficeAddress == headOfficeAddress)&&(identical(other.representativeName, representativeName) || other.representativeName == representativeName)&&(identical(other.brandKey, brandKey) || other.brandKey == brandKey)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate)&&(identical(other.qoinAccrualEnabled, qoinAccrualEnabled) || other.qoinAccrualEnabled == qoinAccrualEnabled)&&(identical(other.qoinBulkHistoryId, qoinBulkHistoryId) || other.qoinBulkHistoryId == qoinBulkHistoryId)&&(identical(other.qoinBulkStatus, qoinBulkStatus) || other.qoinBulkStatus == qoinBulkStatus)&&(identical(other.qoinBulkAt, qoinBulkAt) || other.qoinBulkAt == qoinBulkAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate)&&(identical(other.qoinAccrualEnabled, qoinAccrualEnabled) || other.qoinAccrualEnabled == qoinAccrualEnabled)&&(identical(other.qoinBulkHistoryId, qoinBulkHistoryId) || other.qoinBulkHistoryId == qoinBulkHistoryId)&&(identical(other.qoinBulkStatus, qoinBulkStatus) || other.qoinBulkStatus == qoinBulkStatus)&&(identical(other.qoinBulkAt, qoinBulkAt) || other.qoinBulkAt == qoinBulkAt));
 }
 
 
 @override
-int get hashCode => Object.hashAll([runtimeType,id,name,logoUrl,description,companyName,businessRegistrationNumber,contactName,contactPhone,headOfficeAddress,representativeName,brandKey,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate,qoinAccrualEnabled,qoinBulkHistoryId,qoinBulkStatus,qoinBulkAt]);
+int get hashCode => Object.hash(runtimeType,id,name,logoUrl,description,companyName,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate,qoinAccrualEnabled,qoinBulkHistoryId,qoinBulkStatus,qoinBulkAt);
 
 @override
 String toString() {
-  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, businessRegistrationNumber: $businessRegistrationNumber, contactName: $contactName, contactPhone: $contactPhone, headOfficeAddress: $headOfficeAddress, representativeName: $representativeName, brandKey: $brandKey, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate, qoinAccrualEnabled: $qoinAccrualEnabled, qoinBulkHistoryId: $qoinBulkHistoryId, qoinBulkStatus: $qoinBulkStatus, qoinBulkAt: $qoinBulkAt)';
+  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate, qoinAccrualEnabled: $qoinAccrualEnabled, qoinBulkHistoryId: $qoinBulkHistoryId, qoinBulkStatus: $qoinBulkStatus, qoinBulkAt: $qoinBulkAt)';
 }
 
 
@@ -57,7 +52,7 @@ abstract mixin class $BrandEntityCopyWith<$Res>  {
   factory $BrandEntityCopyWith(BrandEntity value, $Res Function(BrandEntity) _then) = _$BrandEntityCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String logoUrl, String? description, String companyName, String businessRegistrationNumber, String contactName, String contactPhone, String? headOfficeAddress, String? representativeName, String brandKey, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate, QoinSwitchSetting qoinAccrualEnabled, String? qoinBulkHistoryId, QoinBulkStatus? qoinBulkStatus, DateTime? qoinBulkAt
+ String id, String name, String logoUrl, String? description, String companyName, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate, QoinSwitchSetting qoinAccrualEnabled, String? qoinBulkHistoryId, QoinBulkStatus? qoinBulkStatus, DateTime? qoinBulkAt
 });
 
 
@@ -74,19 +69,13 @@ class _$BrandEntityCopyWithImpl<$Res>
 
 /// Create a copy of BrandEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? businessRegistrationNumber = null,Object? contactName = null,Object? contactPhone = null,Object? headOfficeAddress = freezed,Object? representativeName = freezed,Object? brandKey = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,Object? qoinAccrualEnabled = null,Object? qoinBulkHistoryId = freezed,Object? qoinBulkStatus = freezed,Object? qoinBulkAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,Object? qoinAccrualEnabled = null,Object? qoinBulkHistoryId = freezed,Object? qoinBulkStatus = freezed,Object? qoinBulkAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,logoUrl: null == logoUrl ? _self.logoUrl : logoUrl // ignore: cast_nullable_to_non_nullable
 as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String?,companyName: null == companyName ? _self.companyName : companyName // ignore: cast_nullable_to_non_nullable
-as String,businessRegistrationNumber: null == businessRegistrationNumber ? _self.businessRegistrationNumber : businessRegistrationNumber // ignore: cast_nullable_to_non_nullable
-as String,contactName: null == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
-as String,contactPhone: null == contactPhone ? _self.contactPhone : contactPhone // ignore: cast_nullable_to_non_nullable
-as String,headOfficeAddress: freezed == headOfficeAddress ? _self.headOfficeAddress : headOfficeAddress // ignore: cast_nullable_to_non_nullable
-as String?,representativeName: freezed == representativeName ? _self.representativeName : representativeName // ignore: cast_nullable_to_non_nullable
-as String?,brandKey: null == brandKey ? _self.brandKey : brandKey // ignore: cast_nullable_to_non_nullable
 as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as EntityApprovalStatus,submittedBy: freezed == submittedBy ? _self.submittedBy : submittedBy // ignore: cast_nullable_to_non_nullable
 as String?,submittedAt: freezed == submittedAt ? _self.submittedAt : submittedAt // ignore: cast_nullable_to_non_nullable
@@ -185,10 +174,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BrandEntity() when $default != null:
-return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
+return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
   return orElse();
 
 }
@@ -206,10 +195,10 @@ return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.compan
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)  $default,) {final _that = this;
 switch (_that) {
 case _BrandEntity():
-return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
+return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -226,10 +215,10 @@ return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.compan
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  String businessRegistrationNumber,  String contactName,  String contactPhone,  String? headOfficeAddress,  String? representativeName,  String brandKey,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String logoUrl,  String? description,  String companyName,  EntityApprovalStatus status,  String? submittedBy,  DateTime? submittedAt,  String? approvedBy,  DateTime? approvedAt,  String? rejectedReason,  DateTime? createdAt,  DateTime? updatedAt,  QoinRateSetting qoinAccrualRate,  QoinSwitchSetting qoinAccrualEnabled,  String? qoinBulkHistoryId,  QoinBulkStatus? qoinBulkStatus,  DateTime? qoinBulkAt)?  $default,) {final _that = this;
 switch (_that) {
 case _BrandEntity() when $default != null:
-return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.businessRegistrationNumber,_that.contactName,_that.contactPhone,_that.headOfficeAddress,_that.representativeName,_that.brandKey,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
+return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.companyName,_that.status,_that.submittedBy,_that.submittedAt,_that.approvedBy,_that.approvedAt,_that.rejectedReason,_that.createdAt,_that.updatedAt,_that.qoinAccrualRate,_that.qoinAccrualEnabled,_that.qoinBulkHistoryId,_that.qoinBulkStatus,_that.qoinBulkAt);case _:
   return null;
 
 }
@@ -241,28 +230,17 @@ return $default(_that.id,_that.name,_that.logoUrl,_that.description,_that.compan
 
 
 class _BrandEntity implements BrandEntity {
-  const _BrandEntity({required this.id, required this.name, this.logoUrl = '', this.description, this.companyName = '', this.businessRegistrationNumber = '', this.contactName = '', this.contactPhone = '', this.headOfficeAddress, this.representativeName, this.brandKey = '', this.status = EntityApprovalStatus.pending, this.submittedBy, this.submittedAt, this.approvedBy, this.approvedAt, this.rejectedReason, this.createdAt, this.updatedAt, this.qoinAccrualRate = QoinRateSetting.absent, this.qoinAccrualEnabled = QoinSwitchSetting.enabled, this.qoinBulkHistoryId, this.qoinBulkStatus, this.qoinBulkAt});
+  const _BrandEntity({required this.id, required this.name, this.logoUrl = '', this.description, this.companyName = '', this.status = EntityApprovalStatus.pending, this.submittedBy, this.submittedAt, this.approvedBy, this.approvedAt, this.rejectedReason, this.createdAt, this.updatedAt, this.qoinAccrualRate = QoinRateSetting.absent, this.qoinAccrualEnabled = QoinSwitchSetting.enabled, this.qoinBulkHistoryId, this.qoinBulkStatus, this.qoinBulkAt});
   
 
 @override final  String id;
 @override final  String name;
 @override@JsonKey() final  String logoUrl;
 @override final  String? description;
-// 사업자 정보 (Step 3 신규)
+// 사업자 정보 중 회사명만 부모 문서에 남는다. 사업자번호·담당자·대표자·본사 주소와 brandKey 는
+// `brands/{id}/private/profile` ([BrandPrivateProfileEntity]) 로 이동했다 (payment_server_authority B1).
 @override@JsonKey() final  String companyName;
 // 회사명 (필수)
-@override@JsonKey() final  String businessRegistrationNumber;
-// 사업자등록번호 000-00-00000 (필수)
-@override@JsonKey() final  String contactName;
-// 담당자 이름 (필수)
-@override@JsonKey() final  String contactPhone;
-// 담당자 연락처 (필수)
-@override final  String? headOfficeAddress;
-// 본사 주소 (선택)
-@override final  String? representativeName;
-// 대표자 이름 (선택)
-/// 브랜드 키 (V1). admin 승인 시점에 자동 발급. pending/rejected 상태에서는 빈 문자열.
-@override@JsonKey() final  String brandKey;
 @override@JsonKey() final  EntityApprovalStatus status;
 @override final  String? submittedBy;
 @override final  DateTime? submittedAt;
@@ -291,16 +269,16 @@ _$BrandEntityCopyWith<_BrandEntity> get copyWith => __$BrandEntityCopyWithImpl<_
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.businessRegistrationNumber, businessRegistrationNumber) || other.businessRegistrationNumber == businessRegistrationNumber)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.headOfficeAddress, headOfficeAddress) || other.headOfficeAddress == headOfficeAddress)&&(identical(other.representativeName, representativeName) || other.representativeName == representativeName)&&(identical(other.brandKey, brandKey) || other.brandKey == brandKey)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate)&&(identical(other.qoinAccrualEnabled, qoinAccrualEnabled) || other.qoinAccrualEnabled == qoinAccrualEnabled)&&(identical(other.qoinBulkHistoryId, qoinBulkHistoryId) || other.qoinBulkHistoryId == qoinBulkHistoryId)&&(identical(other.qoinBulkStatus, qoinBulkStatus) || other.qoinBulkStatus == qoinBulkStatus)&&(identical(other.qoinBulkAt, qoinBulkAt) || other.qoinBulkAt == qoinBulkAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BrandEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl)&&(identical(other.description, description) || other.description == description)&&(identical(other.companyName, companyName) || other.companyName == companyName)&&(identical(other.status, status) || other.status == status)&&(identical(other.submittedBy, submittedBy) || other.submittedBy == submittedBy)&&(identical(other.submittedAt, submittedAt) || other.submittedAt == submittedAt)&&(identical(other.approvedBy, approvedBy) || other.approvedBy == approvedBy)&&(identical(other.approvedAt, approvedAt) || other.approvedAt == approvedAt)&&(identical(other.rejectedReason, rejectedReason) || other.rejectedReason == rejectedReason)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.qoinAccrualRate, qoinAccrualRate) || other.qoinAccrualRate == qoinAccrualRate)&&(identical(other.qoinAccrualEnabled, qoinAccrualEnabled) || other.qoinAccrualEnabled == qoinAccrualEnabled)&&(identical(other.qoinBulkHistoryId, qoinBulkHistoryId) || other.qoinBulkHistoryId == qoinBulkHistoryId)&&(identical(other.qoinBulkStatus, qoinBulkStatus) || other.qoinBulkStatus == qoinBulkStatus)&&(identical(other.qoinBulkAt, qoinBulkAt) || other.qoinBulkAt == qoinBulkAt));
 }
 
 
 @override
-int get hashCode => Object.hashAll([runtimeType,id,name,logoUrl,description,companyName,businessRegistrationNumber,contactName,contactPhone,headOfficeAddress,representativeName,brandKey,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate,qoinAccrualEnabled,qoinBulkHistoryId,qoinBulkStatus,qoinBulkAt]);
+int get hashCode => Object.hash(runtimeType,id,name,logoUrl,description,companyName,status,submittedBy,submittedAt,approvedBy,approvedAt,rejectedReason,createdAt,updatedAt,qoinAccrualRate,qoinAccrualEnabled,qoinBulkHistoryId,qoinBulkStatus,qoinBulkAt);
 
 @override
 String toString() {
-  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, businessRegistrationNumber: $businessRegistrationNumber, contactName: $contactName, contactPhone: $contactPhone, headOfficeAddress: $headOfficeAddress, representativeName: $representativeName, brandKey: $brandKey, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate, qoinAccrualEnabled: $qoinAccrualEnabled, qoinBulkHistoryId: $qoinBulkHistoryId, qoinBulkStatus: $qoinBulkStatus, qoinBulkAt: $qoinBulkAt)';
+  return 'BrandEntity(id: $id, name: $name, logoUrl: $logoUrl, description: $description, companyName: $companyName, status: $status, submittedBy: $submittedBy, submittedAt: $submittedAt, approvedBy: $approvedBy, approvedAt: $approvedAt, rejectedReason: $rejectedReason, createdAt: $createdAt, updatedAt: $updatedAt, qoinAccrualRate: $qoinAccrualRate, qoinAccrualEnabled: $qoinAccrualEnabled, qoinBulkHistoryId: $qoinBulkHistoryId, qoinBulkStatus: $qoinBulkStatus, qoinBulkAt: $qoinBulkAt)';
 }
 
 
@@ -311,7 +289,7 @@ abstract mixin class _$BrandEntityCopyWith<$Res> implements $BrandEntityCopyWith
   factory _$BrandEntityCopyWith(_BrandEntity value, $Res Function(_BrandEntity) _then) = __$BrandEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String logoUrl, String? description, String companyName, String businessRegistrationNumber, String contactName, String contactPhone, String? headOfficeAddress, String? representativeName, String brandKey, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate, QoinSwitchSetting qoinAccrualEnabled, String? qoinBulkHistoryId, QoinBulkStatus? qoinBulkStatus, DateTime? qoinBulkAt
+ String id, String name, String logoUrl, String? description, String companyName, EntityApprovalStatus status, String? submittedBy, DateTime? submittedAt, String? approvedBy, DateTime? approvedAt, String? rejectedReason, DateTime? createdAt, DateTime? updatedAt, QoinRateSetting qoinAccrualRate, QoinSwitchSetting qoinAccrualEnabled, String? qoinBulkHistoryId, QoinBulkStatus? qoinBulkStatus, DateTime? qoinBulkAt
 });
 
 
@@ -328,19 +306,13 @@ class __$BrandEntityCopyWithImpl<$Res>
 
 /// Create a copy of BrandEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? businessRegistrationNumber = null,Object? contactName = null,Object? contactPhone = null,Object? headOfficeAddress = freezed,Object? representativeName = freezed,Object? brandKey = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,Object? qoinAccrualEnabled = null,Object? qoinBulkHistoryId = freezed,Object? qoinBulkStatus = freezed,Object? qoinBulkAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? logoUrl = null,Object? description = freezed,Object? companyName = null,Object? status = null,Object? submittedBy = freezed,Object? submittedAt = freezed,Object? approvedBy = freezed,Object? approvedAt = freezed,Object? rejectedReason = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? qoinAccrualRate = null,Object? qoinAccrualEnabled = null,Object? qoinBulkHistoryId = freezed,Object? qoinBulkStatus = freezed,Object? qoinBulkAt = freezed,}) {
   return _then(_BrandEntity(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,logoUrl: null == logoUrl ? _self.logoUrl : logoUrl // ignore: cast_nullable_to_non_nullable
 as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String?,companyName: null == companyName ? _self.companyName : companyName // ignore: cast_nullable_to_non_nullable
-as String,businessRegistrationNumber: null == businessRegistrationNumber ? _self.businessRegistrationNumber : businessRegistrationNumber // ignore: cast_nullable_to_non_nullable
-as String,contactName: null == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
-as String,contactPhone: null == contactPhone ? _self.contactPhone : contactPhone // ignore: cast_nullable_to_non_nullable
-as String,headOfficeAddress: freezed == headOfficeAddress ? _self.headOfficeAddress : headOfficeAddress // ignore: cast_nullable_to_non_nullable
-as String?,representativeName: freezed == representativeName ? _self.representativeName : representativeName // ignore: cast_nullable_to_non_nullable
-as String?,brandKey: null == brandKey ? _self.brandKey : brandKey // ignore: cast_nullable_to_non_nullable
 as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as EntityApprovalStatus,submittedBy: freezed == submittedBy ? _self.submittedBy : submittedBy // ignore: cast_nullable_to_non_nullable
 as String?,submittedAt: freezed == submittedAt ? _self.submittedAt : submittedAt // ignore: cast_nullable_to_non_nullable

@@ -10,6 +10,14 @@ class FirestorePaths {
   /// collectionGroup query 에서도 동일 키 사용.
   static const String brandMenuItems = 'menuItems';
 
+  /// 브랜드 비공개 서브컬렉션 `brands/{brandId}/private/profile` (brandKey + 사업자 PII).
+  /// 읽기는 admin / 해당 브랜드 보유자만. **brandKey 는 CF 전담 쓰기** — 클라이언트가 쓰면 Rules 가 거부한다.
+  static const String brandPrivate = 'private';
+  static const String brandPrivateProfileDoc = 'profile';
+
+  /// brandKey 인덱스 `brandKeys/{BR-XXXXXXXX}` — 클라이언트 접근 없음(CF 전담). 시드 전용 상수.
+  static const String brandKeys = 'brandKeys';
+
   /// Firebase Storage 브랜드 이미지 경로 prefix.
   static const String brandImagesStoragePrefix = 'brand_images';
 

@@ -4,6 +4,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/presentation/admin/menu_categories/admin_main_category_list_page.dart';
 import 'package:qradar/presentation/admin/qoin/admin_qoin_settings_page.dart';
+import 'package:qradar/presentation/admin/store_management/admin_store_list_page.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/common/providers/qoin_config_providers.dart';
 
@@ -56,6 +57,17 @@ class AdminMorePage extends ConsumerWidget {
               context,
               MaterialPageRoute<void>(
                 builder: (_) => const AdminQoinSettingsPage(),
+              ),
+            ),
+          ),
+          _Tile(
+            icon: Icons.storefront_rounded,
+            title: '매장 관리',
+            subtitle: '매장 삭제 (되돌릴 수 없음)',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminStoreListPage(),
               ),
             ),
           ),

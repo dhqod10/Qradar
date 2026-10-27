@@ -1,4 +1,6 @@
 // DEV_ONLY_SEED — order_flow_phase1, phase2 추가. 사용자 요청 시 lib/dev/seed/ 폴더 통째로 삭제.
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/dev/seed/phase1_seed_data.dart';
@@ -119,6 +121,14 @@ Future<SeedResult> runPhase1Seed({
   final brandRef =
       db.collection(FirestorePaths.brands).doc(Phase1SeedData.brandId);
   batch.set(brandRef, Phase1SeedData.brandDoc(), SetOptions(merge: true));
+  // 사업자 PII 는 부모가 아니라 private/profile 에 둔다.
+  batch.set(
+    brandRef
+        .collection(FirestorePaths.brandPrivate)
+        .doc(FirestorePaths.brandPrivateProfileDoc),
+    Phase1SeedData.brandPrivateProfileDoc(),
+    SetOptions(merge: true),
+  );
 
   // brand master menu items
   final brandMenuItems = Phase1SeedData.brandMasterMenuItems();
@@ -140,6 +150,28 @@ Future<SeedResult> runPhase1Seed({
       brandStoreRef, Phase1SeedData.brandStoreDoc(), SetOptions(merge: true));
 
   await batch.commit();
+
+  // brandKey 는 `private/profile.brandKey` + `brandKeys/{key}` — 둘 다 서버(Admin SDK) 전담 쓰기라 클라이언트 Rules 가
+  // 거부한다. 메인 batch 를 깨뜨리지 않도록 **별도 단계**로 시도하고, 거부되면 로그만 남긴다
+  // (에뮬레이터/Rules 우회 환경에서만 성공한다. 실서버 시드는 issueBrandKey 로 발급한다).
+  try {
+    final keyBatch = db.batch();
+    keyBatch.set(
+      brandRef
+          .collection(FirestorePaths.brandPrivate)
+          .doc(FirestorePaths.brandPrivateProfileDoc),
+      <String, dynamic>{'brandKey': Phase1SeedData.brandKey},
+      SetOptions(merge: true),
+    );
+    keyBatch.set(
+      db.collection(FirestorePaths.brandKeys).doc(Phase1SeedData.brandKey),
+      Phase1SeedData.brandKeyDoc(),
+      SetOptions(merge: true),
+    );
+    await keyBatch.commit();
+  } catch (e) {
+    developer.log('시드 brandKey 쓰기 건너뜀 (서버 전담 필드)', error: e);
+  }
 
   return SeedResult(
     subCategoryCount: Phase1SeedData.subCategories.length,

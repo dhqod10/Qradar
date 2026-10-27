@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
@@ -9,6 +8,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/presentation/brand/brand_info/brand_info_form_page.dart';
+import 'package:qradar/presentation/brand/brand_info/widgets/brand_key_row.dart';
 import 'package:qradar/presentation/brand/providers/brand_info_providers.dart';
 import 'package:qradar/presentation/common/widgets/approval_status_badge.dart';
 
@@ -172,101 +172,10 @@ class _BrandCard extends StatelessWidget {
             const SizedBox(height: 16),
             const Divider(color: AppColors.border, height: 1),
             const SizedBox(height: 16),
-            _BrandKeyRow(brand: brand),
+            BrandKeyRow(brand: brand),
           ],
         ],
       ),
-    );
-  }
-}
-
-class _BrandKeyRow extends StatelessWidget {
-  final BrandEntity brand;
-  const _BrandKeyRow({required this.brand});
-
-  @override
-  Widget build(BuildContext context) {
-    final isApprovedWithKey = brand.status == EntityApprovalStatus.approved &&
-        brand.brandKey.isNotEmpty;
-
-    if (isApprovedWithKey) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '브랜드 키',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      brand.brandKey,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textHeading,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(
-                  Icons.copy_rounded,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
-                tooltip: '복사',
-                onPressed: () async {
-                  await Clipboard.setData(
-                    ClipboardData(text: brand.brandKey),
-                  );
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('복사됐어요'),
-                      backgroundColor: AppColors.primary,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              '이 키를 점주에게 공유하면 가맹점 등록 시 사용할 수 있어요',
-              style: TextStyle(
-                fontSize: 11,
-                color: AppColors.textMuted,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    // pending 또는 brandKey 비어있음
-    return const Row(
-      children: [
-        Icon(Icons.lock_clock_rounded, size: 16, color: AppColors.textMuted),
-        SizedBox(width: 8),
-        Text(
-          '관리자 승인 후 브랜드 키가 발급됩니다',
-          style: TextStyle(fontSize: 13, color: AppColors.textMuted),
-        ),
-      ],
     );
   }
 }

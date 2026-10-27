@@ -5,7 +5,6 @@ import 'package:qradar/data/repositories/store_repository_impl.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/repositories/store_repository.dart';
 import 'package:qradar/domain/usecases/approve_store_use_case.dart';
-import 'package:qradar/domain/usecases/delete_store_use_case.dart';
 import 'package:qradar/domain/usecases/get_store_by_id_use_case.dart';
 import 'package:qradar/domain/usecases/lookup_brand_by_key_use_case.dart';
 import 'package:qradar/domain/usecases/reject_store_use_case.dart';
@@ -67,10 +66,6 @@ final updateStoreCoreFieldsUseCaseProvider =
 final updateStoreOperationFieldsUseCaseProvider =
     Provider<UpdateStoreOperationFieldsUseCase>((ref) {
   return UpdateStoreOperationFieldsUseCase(ref.watch(storeRepositoryProvider));
-});
-
-final deleteStoreUseCaseProvider = Provider<DeleteStoreUseCase>((ref) {
-  return DeleteStoreUseCase(ref.watch(storeRepositoryProvider));
 });
 
 final watchMyStoreUseCaseProvider = Provider<WatchMyStoreUseCase>((ref) {

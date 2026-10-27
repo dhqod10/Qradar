@@ -131,25 +131,22 @@ stateDiagram-v2
 | (없음) → pending | owner | ✅ Rules `stores.create` | `isOwner()` + `ownerId == uid` + `status == 'pending'` | 전체 doc create. `submittedBy=uid`, `submittedAt=now`, `brandId` (brandKey 매칭 시) | `stores.create` |
 | pending → approved | admin | ✅ Rules `stores.update` (admin 전권) | `_assertAdmin()` (StoreRepository) | `status='approved'`, `approvedBy=adminUid`, `approvedAt`, `rejectedReason=null`, `updatedAt` | admin 분기 |
 | pending → rejected | admin | 동일 | 동일 | `status='rejected'`, `approvedBy=adminUid`, `rejectedReason`, `updatedAt` | admin 분기 |
-| rejected → pending (재제출) | owner | ✅ Rules `isStoreOwnerFieldUpdate` | `isStoreOwner(storeId)` + 핵심 필드(name, menuCategories, address 등) 수정 | `status='pending'`, `submittedBy=uid` 갱신, `approvedBy/approvedAt/rejectedReason` 클리어 (`updatedAt`) | owner update — 단, Rules `onlyChangedFields` 에 `status` 미포함이므로 **현재 형태로는 차단됨** ⚠️ **확인 필요** |
-| approved → pending (점주 핵심 수정) | owner | 동일 | 동일 | `status='pending'`, `submittedBy/submittedAt` 갱신 | 동일 ⚠️ **같은 이슈** |
+| rejected → pending (재제출) | owner | ✅ Rules `isStoreOwnerFieldUpdate` | `isStoreOwner(storeId)` + 핵심 필드(name, menuCategories, address 등) 수정 | `status='pending'`, `submittedBy=uid` 갱신, `approvedBy/approvedAt/rejectedReason` 클리어 (`updatedAt`) | owner update — 화이트리스트에 승인 메타 포함 (§3.3). `approvedAt` 클리어 → 결제 게이트가 다시 거절 |
+| approved → pending (점주 핵심 수정) | owner | 동일 | 동일 | `status='pending'`, `submittedBy/submittedAt` 갱신 (**`approvedAt` 보존**) | 동일. **`approvedAt` 이 남으므로 결제는 계속 성립** (`canSellNow`) |
 | approved → approved (운영 필드만) | owner | ✅ Rules `isStoreOwnerFieldUpdate` | `isStoreOwner(storeId)` + name/imageUrl/phone/address 등 운영 필드만 변경 | 해당 필드 + `updatedAt` | Rules 통과 |
 | approved → approved (브랜드 운영 필드) | brand (가맹점주가 아닌 본사) | ✅ Rules `isStoreOwnerBrandUpdate` | `isBrandHolder(store.brandId)` + 운영 필드만 변경 | 동일 | Rules 통과 |
-| 모든 status → 삭제 | owner / admin | ✅ Rules `stores.delete` | `isAdmin() || isStoreOwner(storeId)` | doc delete | delete |
+| 모든 status → 삭제 | **admin 전담** | ✅ `deleteStore` CF (Rules `stores.delete` = `isAdmin()`) | 진행 중 주문(`paid`/`accepted`/`making`/`ready`) 없음. **점주 삭제는 닫혔다** | `storeDeletionHistory` 이력 → doc delete → 하위 문서 재귀 삭제 → Storage 정리 (`phase` 재진입, 멱등) | delete (Admin SDK) |
 
-### 3.3 불일치 (재설계 후보)
+### 3.3 Rules 와 Repository 의 정합 (확정 — payment_server_authority 가 낡은 "확인 필요" 를 사실로 교체)
 
-**핵심 문제**: `StoreRepositoryImpl.updateStoreCoreFields` 는 status 를 pending 으로 회귀시킴 (`isResubmit` 로직). 하지만 Security Rules `isStoreOwnerFieldUpdate` 의 `onlyChangedFields` 화이트리스트는 **`status`, `submittedBy`, `submittedAt`, `approvedBy`, `approvedAt`, `rejectedReason` 을 포함하지 않음**.
+`StoreRepositoryImpl.updateStoreCoreFields` 는 핵심 필드 수정 시 `status` 를 `pending` 으로 회귀시킨다 (`isResubmit` 이면 `approvedBy/approvedAt` 클리어). **Rules 는 이미 3번 선택지(화이트리스트에 승인 메타 추가)를 채택했다**:
 
-- 코드: status='pending', approvedBy=null, ... 으로 update 시도
-- Rules: 화이트리스트에 없는 필드 변경 → 차단
+- `isStoreOwnerFieldUpdate` / `isStoreOwnerBrandUpdate` 화이트리스트에 `status`, `submittedBy`, `submittedAt`, `approvedBy`, `approvedAt`, `rejectedReason`, `businessRegistrationNumber` 가 **들어 있다.**
+- `status` 는 **`'pending'` 으로만** 설정 가능 (자기 승격 차단). `approvedBy` / `approvedAt` 는 **null 클리어만** 가능 (값 설정 불가).
+- 따라서 점주 핵심 필드 수정(승인 → pending 회귀)과 재제출(rejected → pending)은 **차단되지 않는다.**
+- **create 경로**는 `status == 'pending'` 만 보던 구멍이 있었다 (`approvedAt` 임의 설정 가능) → **Rules-A 가 `approvedAt`/`approvedBy`/`rejectedReason` 의 자가 설정을 create 에서도 금지**한다. 결제 게이트가 `approvedAt` 을 판정 입력으로 쓰기 때문이다.
 
-**확인 필요**: 실제 운영에서 점주 핵심 필드 수정이 어떻게 통과하는지 (또는 통과하지 못해 silently fail 인지). 가능성:
-1. 실제로 차단되어 점주는 핵심 필드 수정 불가
-2. admin 만 핵심 필드 수정 가능 (의도된 정책이지만 UI 와 불일치)
-3. Rules 화이트리스트에 승인 메타 필드를 추가해야 함
-
-이는 spec.md 누락이 만들었던 클래스의 버그 패턴 — 코드와 Rules 가 따로 진화함.
+**승인 이력의 의미**: `approvedAt != null && status == pending` = "한 번 승인된 적이 있고 지금 수정 대기". 결제 판정 `canSellNow` 는 이 사실을 쓴다: `status == approved || (status == pending && approvedAt != null)` — 영업 중 매장이 정보를 고치는 동안 결제가 막히지 않는다. (고객 매장 **목록 노출**은 별개로 `status == approved` 만 보인다 — "수정 대기 매장이 목록에서 사라지는" 기존 제품 결함은 backlog N2.)
 
 ### 3.4 코드 진입점
 

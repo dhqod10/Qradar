@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/core/errors/brand_claim_exception.dart';
 import 'package:qradar/data/models/brand_model.dart';
+import 'package:qradar/data/models/brand_private_profile_model.dart';
 import 'package:qradar/data/models/store_model.dart';
 
 /// Firestore `brands/{brandId}` 원격 데이터소스.
@@ -89,31 +90,31 @@ class BrandRemoteDataSource {
         );
   }
 
-  // ─── sub-phase 6 보강 (V1, V4) ──────────────────────────────────────────
+  // ─── payment_server_authority B1 — 비공개 프로필 ──────────────────────────
 
-  /// brandKey 로 승인된 brand 단건 조회 (V4).
-  ///
-  /// `where('brandKey','==',key).where('status','==','approved').limit(1)` query.
-  /// 미매칭 시 null 반환.
-  Future<BrandModel?> findByBrandKey(String key) async {
-    final snap = await _col
-        .where('brandKey', isEqualTo: key)
-        .where('status', isEqualTo: 'approved')
-        .limit(1)
-        .get();
-    if (snap.docs.isEmpty) return null;
-    return BrandModel.fromFirestore(snap.docs.first);
+  DocumentReference<Map<String, dynamic>> _privateProfile(String brandId) =>
+      _col
+          .doc(brandId)
+          .collection(FirestorePaths.brandPrivate)
+          .doc(FirestorePaths.brandPrivateProfileDoc);
+
+  /// `brands/{id}/private/profile` 실시간 스트림. 문서가 없으면 null.
+  /// **읽기 실패(권한·네트워크)는 스트림 에러로 전파한다** — 빈 값으로 폴백하면 "미발급" 과 구별되지 않는다.
+  Stream<BrandPrivateProfileModel?> streamPrivateProfile(String brandId) {
+    return _privateProfile(brandId).snapshots().map(
+      BrandPrivateProfileModel.fromFirestore,
+    );
   }
 
-  /// brandKey 중복 여부 확인 (V1 unique 검증용).
-  ///
-  /// `where('brandKey','==',key).limit(1)` — status 무관하게 동일 key 존재 시 true.
-  Future<bool> isBrandKeyTaken(String key) async {
-    final snap = await _col
-        .where('brandKey', isEqualTo: key)
-        .limit(1)
-        .get();
-    return snap.docs.isNotEmpty;
+  /// 단발성 조회. 실패는 예외.
+  Future<BrandPrivateProfileModel?> fetchPrivateProfile(String brandId) async {
+    final doc = await _privateProfile(brandId).get();
+    return BrandPrivateProfileModel.fromFirestore(doc);
+  }
+
+  /// PII 5개 merge-set. [data] 는 [BrandPrivateProfileModel.toFirestore] 의 결과여야 한다 (brandKey 금지).
+  Future<void> setPrivateProfile(String brandId, Map<String, dynamic> data) {
+    return _privateProfile(brandId).set(data, SetOptions(merge: true));
   }
 
   // ─── brand_authorization_hardening (D1) ─────────────────────────────────

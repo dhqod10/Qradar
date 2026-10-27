@@ -67,6 +67,10 @@ qoinTransactions/{id}
 | 브랜드 권한 연결 | `users/{uid}/roleHistory/{id}` | `claimSubmittedBrand` 가 `brandId` 설정을 값과 같은 트랜잭션에 기록 (`changedBy` = 본인 uid) |
 | 주문 로그 | `users/{uid}/orderLogs/{id}` | 주문 생성 시 batch 로 함께 기록 |
 | Qoin 거래 원장 | `users/{uid}/qoinTransactions/{id}` | Qoin 1차. 당시 값 박제 |
+| brandKey 발급 이력 | `brands/{id}/keyHistory/{autoId}` | `issueBrandKey` CF 가 키 생성·`brandKeys` 유일성·`private/profile.brandKey` 와 **같은 트랜잭션**에 기록 (`changedBy` = admin uid). brandKey 는 가맹 신청의 권한 근거라 **권한 값** (payment_server_authority) |
+| 매장 삭제 이력 | `storeDeletionHistory/{storeId_createdAtMillis}` | `deleteStore` CF 가 **삭제 전에 가장 먼저** 기록 (삭제 직전 스냅샷 + `deletedBy` + `reason` + 실행 시점 `affected` + `phase`). 중간 실패 시 재진입점이기도 하다 |
+| 결제 게이트 거절 기록 | `paymentGateRejections/{autoId}` | 거래 이력이 아니라 **거절 이력** — 오탐(정상 손님이 막힘) 탐지용. CF 전담 write, 건수·분포를 영구 보존 (Cloud Logging 의존 금지, §4-6) |
+| 일괄 처리(마이그레이션) 기록 | `migrationHistory/{autoId}` | M1·M2 가 실행 시 1건 + 영향 범위(대상 수) |
 | Cloud Function 실행 | Google Cloud Logging | **30일 등 보존 기간 제한.** 영구 기록으로 믿으면 안 된다 |
 
 ### ⬜ 남겨야 하는데 없는 것
@@ -105,6 +109,10 @@ architect 는 spec 작성 시, 리뷰어는 검토 시 아래를 확인한다.
 
 6. **CF 로그에 의존하고 있지 않은가?**
    → Cloud Logging 은 보존 기간이 있다. 영구 보존이 필요하면 Firestore 에 쓴다.
+
+7. **권한 판정에 쓰는 필드의 쓰기 경로를 `create` 와 `update` 양쪽으로 교차 확인했는가?** (상시 항목 — payment_server_authority §6.7)
+   → `onlyChangedFields` 화이트리스트는 **update 전용 장치**이고 create 에는 아무 보호도 주지 않는다. "update 가 막혀 있다" 를 "그 필드가 보호된다" 로 읽는 것이 이 패턴의 공통 원인이다 (같은 패턴으로 네 번 구멍이 났다: `users.qoinBalance` create, `qoinAccrualRate` create, `isBrandHolder` 빈 문자열, `stores.approvedAt` create). 판정 입력 필드마다 **Rules 하네스에 create 거부 케이스를 1건씩** 둔다.
+   → 그리고 **정상 payload 가 여전히 허용되는 회귀 케이스**를 함께 둔다 (막다가 정상 등록까지 막으면 안 된다).
 
 ### 남기는 형식 (권장)
 

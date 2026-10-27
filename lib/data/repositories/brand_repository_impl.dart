@@ -1,32 +1,37 @@
 import 'dart:developer' as developer;
-import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
-import 'package:qradar/core/errors/brand_key_collision_exception.dart';
+import 'package:qradar/core/errors/brand_private_profile_save_exception.dart';
+import 'package:qradar/data/datasources/remote/authority_callables_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/brand_remote_data_source.dart';
 import 'package:qradar/data/datasources/remote/store_remote_data_source.dart';
 import 'package:qradar/data/models/brand_model.dart';
+import 'package:qradar/data/models/brand_private_profile_model.dart';
 import 'package:qradar/domain/entities/brand_entity.dart';
+import 'package:qradar/domain/entities/brand_key_lookup.dart';
+import 'package:qradar/domain/entities/brand_private_profile_entity.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/repositories/brand_repository.dart';
 
 /// [BrandRepository] 구현체.
 ///
-/// - `upsertBrand`: status=pending, submittedBy/At 자동 세팅.
+/// - `upsertBrand`: status=pending, submittedBy/At 자동 세팅. PII 는 `private/profile` 로 분리 저장.
 /// - `approveBrand` / `rejectBrand`: admin uid 전달받아 메타 갱신.
 /// - ownership 검증: UI 단 본인 brandId 만 노출 + 방어선.
 class BrandRepositoryImpl implements BrandRepository {
   final BrandRemoteDataSource _dataSource;
   final StoreRemoteDataSource _storeDataSource;
+  final AuthorityCallablesRemoteDataSource _callables;
   final String Function() _currentUidGetter;
   final String Function() _newBrandId;
 
   /// [newBrandIdGenerator] 는 테스트용 이음새 — 기본은 Firestore 자동 ID.
   BrandRepositoryImpl(
     this._dataSource,
-    this._storeDataSource, {
+    this._storeDataSource,
+    this._callables, {
     required String Function() currentUidGetter,
     String Function()? newBrandIdGenerator,
   }) : _currentUidGetter = currentUidGetter,
@@ -61,7 +66,37 @@ class BrandRepositoryImpl implements BrandRepository {
   }
 
   @override
-  Future<String> upsertBrand(BrandEntity brand) async {
+  Stream<BrandPrivateProfileEntity?> watchPrivateProfile(String brandId) {
+    return _dataSource
+        .streamPrivateProfile(brandId)
+        .map((m) => m?.toEntity());
+  }
+
+  @override
+  Future<BrandPrivateProfileEntity?> fetchPrivateProfile(
+    String brandId,
+  ) async {
+    final model = await _dataSource.fetchPrivateProfile(brandId);
+    return model?.toEntity();
+  }
+
+  /// PII 5개만 `private/profile` 에 merge-set 한다 (brandKey 는 모델이 쓰지 않는다).
+  Future<void> _writePrivate(
+    String brandId,
+    BrandPrivateProfileEntity? profile,
+  ) async {
+    if (profile == null) return;
+    await _dataSource.setPrivateProfile(
+      brandId,
+      BrandPrivateProfileModel.fromEntity(profile).toFirestore(),
+    );
+  }
+
+  @override
+  Future<String> upsertBrand(
+    BrandEntity brand, {
+    BrandPrivateProfileEntity? privateProfile,
+  }) async {
     final uid = _currentUidGetter();
     final now = DateTime.now();
 
@@ -71,11 +106,10 @@ class BrandRepositoryImpl implements BrandRepository {
     final isNew = brand.id.isEmpty;
 
     if (isNew) {
-      // 신규 등록: 항상 status=pending 강제, brandKey='' (V1 — 승인 시점 발급)
+      // 신규 등록: 항상 status=pending 강제 (brandKey 는 승인 시 서버가 발급 — V1).
       final updated = brand.copyWith(
         id: brandId,
         status: EntityApprovalStatus.pending,
-        brandKey: '',
         submittedBy: uid,
         submittedAt: now,
         updatedAt: now,
@@ -83,8 +117,7 @@ class BrandRepositoryImpl implements BrandRepository {
       final model = BrandModel.fromEntity(updated);
 
       // brand_authorization_hardening D1: `users/{uid}.brandId` 는 권한 값이라 클라이언트가 쓰지 않는다.
-      // (구 방식은 브랜드 문서 + users.brandId 를 한 batch 로 썼다 — Rules 가 더 이상 허용하지 않는다.)
-      // 1) 브랜드 문서 1건만 쓴다. 2) 서버(claimSubmittedBrand)가 submittedBy == uid 를 검증하고 연결한다.
+      // 1) 브랜드 문서 1건 2) 서버(claimSubmittedBrand)가 submittedBy == uid 를 검증하고 연결 3) private/profile.
       await _dataSource.set(brandId, model.toFirestore());
       try {
         await _dataSource.claimSubmittedBrand(brandId);
@@ -93,11 +126,19 @@ class BrandRepositoryImpl implements BrandRepository {
         // 연결은 BrandScaffold 의 게이트(BrandIdMissingView)가 `brands where submittedBy == uid` 조회로 복구한다.
         developer.log('claimSubmittedBrand 실패 — 게이트가 복구한다', error: e);
       }
+      // claim 이 실패해도 private 쓰기는 진행한다 (Rules 가 submitter 를 허용).
+      // 이 쓰기가 실패하면 부모는 이미 있으므로 brandId 를 실어 던진다 — 폼이 같은 id 로 재시도해 중복 등록을 막는다.
+      try {
+        await _writePrivate(brandId, privateProfile);
+      } catch (_) {
+        throw BrandPrivateProfileSaveException(brandId);
+      }
       return brandId;
     }
 
     // 기존 수정: 결정 J — 변경 필드 분석 (안 a, logoUrl 운영 필드 1개)
-    // 기존 문서를 가져와 name/description 변경 여부 확인
+    // 기존 문서를 가져와 name/description 변경 여부 확인.
+    // PII(private/profile) 변경은 이 판정에 들어가지 않는다 — PII 만 바뀌면 status 는 회귀하지 않는다.
     final existing = await _dataSource.fetchById(brandId);
     final existingEntity = existing?.toEntity();
 
@@ -107,7 +148,6 @@ class BrandRepositoryImpl implements BrandRepository {
 
     if (coreChanged) {
       // 핵심 필드 변경 → status=pending 회귀 + submittedBy/At 갱신 + approvedBy/At 보존
-      // brandKey 는 보존 (V1 불변성)
       final updated = brand.copyWith(
         id: brandId,
         status: EntityApprovalStatus.pending,
@@ -125,46 +165,28 @@ class BrandRepositoryImpl implements BrandRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
     }
+    await _writePrivate(brandId, privateProfile);
 
     return brandId;
   }
 
   @override
   Future<void> approveBrand(String brandId, String adminUid) async {
-    // V1: brandKey 자동 생성 + unique 검증 + 1-2회 재시도
-    final brandKey = await _generateUniqueBrandKey();
+    // 서버가 키를 발급(멱등)한 **뒤에만** 상태를 승인으로 바꾼다. 발급이 던지면 여기서 끝난다 — 문서 불변.
+    // brandKey 필드는 쓰지 않는다 (private/profile 은 CF 전담).
+    await _callables.issueBrandKey(brandId);
     return _dataSource.update(brandId, <String, dynamic>{
       'status': EntityApprovalStatus.approved.asString,
       'approvedBy': adminUid,
       'approvedAt': FieldValue.serverTimestamp(),
-      'brandKey': brandKey,
       'rejectedReason': null,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  /// V1: `BR-` prefix + 32 char alphabet × 8자리 random key 생성.
-  ///
-  /// alphabet: A-Z + 2-9 (0/O/I/1 제외) = 32 chars.
-  /// 충돌 시 최대 2회 재시도. 3회 모두 충돌 시 [BrandKeyCollisionException] throw.
-  Future<String> _generateUniqueBrandKey() async {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final rng = Random.secure();
-
-    for (var attempt = 0; attempt < 3; attempt++) {
-      final chars = List.generate(8, (_) => alphabet[rng.nextInt(alphabet.length)]);
-      final key = 'BR-${chars.join()}';
-      final taken = await _dataSource.isBrandKeyTaken(key);
-      if (!taken) return key;
-    }
-    throw BrandKeyCollisionException();
-  }
-
   @override
-  Future<BrandEntity?> findByBrandKey(String brandKey) async {
-    final model = await _dataSource.findByBrandKey(brandKey);
-    return model?.toEntity();
-  }
+  Future<BrandKeyLookup> lookupBrandByKey(String brandKey) =>
+      _callables.lookupBrandByKey(brandKey);
 
   @override
   Future<void> rejectBrand(

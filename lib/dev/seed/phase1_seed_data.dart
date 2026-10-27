@@ -13,23 +13,39 @@ class Phase1SeedData {
   static const String brandId = 'phase3_seed_brand_001';
   static const String brandStoreId = 'phase3_brand_store_001';
 
+  /// 시드 브랜드의 brandKey. `brandKeys/{brandKey}` 인덱스 문서의 ID 이기도 하다.
+  static const String brandKey = 'BR-SEED0001';
+
   // ── brand doc (`brands/{brandId}`) ───────────────────────────────────────
-  /// sub-phase 6: brandKey 필드 추가. 시드 매장(`brandStoreId`) 등록 매핑 확인용.
+  /// 부모 문서 — **brandKey·사업자 PII 는 넣지 않는다** (`private/profile` 로 이동, payment_server_authority B1).
   static Map<String, dynamic> brandDoc() => <String, dynamic>{
         'name': 'Q브루어리',
         'logoUrl': '',
         'description': 'Qradar 시드 브랜드. 고품질 스페셜티 커피 전문 체인.',
         'status': 'approved',
-        'brandKey': 'BR-SEED0001',
         'submittedBy': 'seed',
         'companyName': '(주)Qradar 시드 브랜드',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+  // ── brand private profile (`brands/{brandId}/private/profile`) ───────────
+  /// 사업자 PII 5개. brandKey 는 포함하지 않는다 — 클라이언트 쓰기가 Rules 로 거부되므로 [brandKeyDoc] 와 함께
+  /// 별도 단계에서(best-effort) 쓴다.
+  static Map<String, dynamic> brandPrivateProfileDoc() => <String, dynamic>{
         'businessRegistrationNumber': '123-45-67890',
         'contactName': '홍길동',
         'contactPhone': '010-1234-5678',
         'headOfficeAddress': '서울시 강남구 테헤란로 1',
         'representativeName': '김대표',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+  // ── brandKeys/{BR-SEED0001} 인덱스 ───────────────────────────────────────
+  /// `{brandId, issuedAt, issuedBy}` — 문서 ID 가 brandKey 라 유일성이 구조로 보장된다.
+  static Map<String, dynamic> brandKeyDoc() => <String, dynamic>{
+        'brandId': brandId,
+        'issuedAt': FieldValue.serverTimestamp(),
+        'issuedBy': 'seed',
       };
 
   // ── brand master menu items (`brands/{brandId}/menuItems`) ───────────────

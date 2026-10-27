@@ -28,8 +28,7 @@ abstract class StoreRepository {
     required UserLocation location,
   });
 
-  /// 매장 삭제 (연관 이미지 삭제는 호출부 책임).
-  Future<void> deleteStore(String storeId);
+  // 매장 삭제는 클라이언트에서 하지 않는다 — admin 전용 서버 `deleteStore` (StoreDeletionRepository).
 
   /// 특정 ownerId 의 매장을 실시간 감시. MVP 기준 owner 당 매장은 최대 1개이므로 단일 엔티티 반환.
   Stream<StoreEntity?> watchByOwner(String ownerId);

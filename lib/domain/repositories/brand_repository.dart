@@ -1,4 +1,6 @@
 import 'package:qradar/domain/entities/brand_entity.dart';
+import 'package:qradar/domain/entities/brand_key_lookup.dart';
+import 'package:qradar/domain/entities/brand_private_profile_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 
 /// 브랜드 Repository 인터페이스.
@@ -19,11 +21,27 @@ abstract class BrandRepository {
   ///
   /// - 신규 등록: 항상 status=pending 강제.
   /// - 기존 수정: name/description 변경 시 status=pending 회귀, logoUrl 만 변경 시 status 보존.
+  /// - [privateProfile] (사업자 PII 5개) 는 부모 문서 쓰기와 **분리**해 `private/profile` 에 merge-set 한다.
+  ///   PII 만 바뀌어도 status 는 회귀하지 않는다. **brandKey 는 어떤 경우에도 쓰지 않는다** (CF 전담).
+  ///   null 이면 private 쓰기를 건너뛴다.
   ///
   /// 반환값: 저장된 brandId.
-  Future<String> upsertBrand(BrandEntity brand);
+  Future<String> upsertBrand(
+    BrandEntity brand, {
+    BrandPrivateProfileEntity? privateProfile,
+  });
+
+  /// 브랜드 비공개 프로필(brandKey + PII) 실시간 감시. 문서가 없으면 null.
+  /// **읽기 실패는 스트림 에러다** — 빈 프로필/미발급으로 폴백하지 않는다.
+  Stream<BrandPrivateProfileEntity?> watchPrivateProfile(String brandId);
+
+  /// 비공개 프로필 단발성 조회. 문서가 없으면 null, **읽기 실패는 예외**.
+  Future<BrandPrivateProfileEntity?> fetchPrivateProfile(String brandId);
 
   /// 브랜드 승인. admin 전용.
+  ///
+  /// 서버 `issueBrandKey` 가 **성공한 뒤에만** 상태를 승인으로 바꾼다 (키 없는 승인 금지).
+  /// 발급 실패는 `BrandKeyIssueException` — 이 경우 브랜드 문서는 변하지 않는다.
   Future<void> approveBrand(String brandId, String adminUid);
 
   /// 브랜드 반려. admin 전용.
@@ -39,10 +57,11 @@ abstract class BrandRepository {
 
   // ─── 신규 (sub-phase 6) ───────────────────────────────────────────────
 
-  /// brandKey 로 brand 조회. status='approved' 인 brand 만 매칭 (V4).
+  /// brandKey 로 승인된 브랜드를 서버(`lookupBrandByKey`)에서 조회한다 (V4).
   ///
-  /// 미매칭 시 null. 점주 매장 등록 시 brandKey 검증 진입점.
-  Future<BrandEntity?> findByBrandKey(String brandKey);
+  /// 미존재·미승인은 구분되지 않는다. 실패는 `BrandKeyLookupException`
+  /// (notFound / rateLimited / failed) — 조회 실패를 "없는 키" 로 읽지 않는다.
+  Future<BrandKeyLookup> lookupBrandByKey(String brandKey);
 
   // ─── brand_authorization_hardening (D1) ────────────────────────────────
 

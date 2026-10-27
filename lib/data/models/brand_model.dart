@@ -6,18 +6,15 @@ import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/qoin_rate_change_entity.dart';
 
 /// Firestore `brands/{brandId}` 문서 매퍼.
+///
+/// 부모 문서는 brandKey·사업자 PII 를 읽지도 쓰지도 않는다 (`brands/{id}/private/profile` —
+/// [BrandPrivateProfileModel]). 부모에 남은 옛 필드는 무시된다.
 class BrandModel {
   final String id;
   final String name;
   final String logoUrl;
   final String? description;
   final String companyName;
-  final String businessRegistrationNumber;
-  final String contactName;
-  final String contactPhone;
-  final String? headOfficeAddress;
-  final String? representativeName;
-  final String brandKey;
   final String status;
   final String? submittedBy;
   final DateTime? submittedAt;
@@ -44,12 +41,6 @@ class BrandModel {
     this.logoUrl = '',
     this.description,
     this.companyName = '',
-    this.businessRegistrationNumber = '',
-    this.contactName = '',
-    this.contactPhone = '',
-    this.headOfficeAddress,
-    this.representativeName,
-    this.brandKey = '',
     this.status = 'pending',
     this.submittedBy,
     this.submittedAt,
@@ -75,13 +66,6 @@ class BrandModel {
       logoUrl: (data['logoUrl'] as String?) ?? '',
       description: data['description'] as String?,
       companyName: (data['companyName'] as String?) ?? '',
-      businessRegistrationNumber:
-          (data['businessRegistrationNumber'] as String?) ?? '',
-      contactName: (data['contactName'] as String?) ?? '',
-      contactPhone: (data['contactPhone'] as String?) ?? '',
-      headOfficeAddress: data['headOfficeAddress'] as String?,
-      representativeName: data['representativeName'] as String?,
-      brandKey: (data['brandKey'] as String?) ?? '',
       status: (data['status'] as String?) ?? 'pending',
       submittedBy: data['submittedBy'] as String?,
       submittedAt: _toDate(data['submittedAt']),
@@ -113,12 +97,6 @@ class BrandModel {
       logoUrl: entity.logoUrl,
       description: entity.description,
       companyName: entity.companyName,
-      businessRegistrationNumber: entity.businessRegistrationNumber,
-      contactName: entity.contactName,
-      contactPhone: entity.contactPhone,
-      headOfficeAddress: entity.headOfficeAddress,
-      representativeName: entity.representativeName,
-      brandKey: entity.brandKey,
       status: entity.status.asString,
       submittedBy: entity.submittedBy,
       submittedAt: entity.submittedAt,
@@ -142,12 +120,6 @@ class BrandModel {
       logoUrl: logoUrl,
       description: description,
       companyName: companyName,
-      businessRegistrationNumber: businessRegistrationNumber,
-      contactName: contactName,
-      contactPhone: contactPhone,
-      headOfficeAddress: headOfficeAddress,
-      representativeName: representativeName,
-      brandKey: brandKey,
       status: EntityApprovalStatus.fromString(status),
       submittedBy: submittedBy,
       submittedAt: submittedAt,
@@ -169,12 +141,6 @@ class BrandModel {
         'logoUrl': logoUrl,
         if (description != null) 'description': description,
         'companyName': companyName,
-        'businessRegistrationNumber': businessRegistrationNumber,
-        'contactName': contactName,
-        'contactPhone': contactPhone,
-        if (headOfficeAddress != null) 'headOfficeAddress': headOfficeAddress,
-        if (representativeName != null) 'representativeName': representativeName,
-        'brandKey': brandKey,
         'status': status,
         if (submittedBy != null) 'submittedBy': submittedBy,
         if (submittedAt != null)
