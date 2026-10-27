@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/qoin_policy.dart';
 import 'package:qradar/presentation/admin/menu_categories/admin_main_category_list_page.dart';
+import 'package:qradar/presentation/admin/more/admin_migration_page.dart'; // TEMP_MIGRATION_CARD (배포 ⑪ 에서 삭제)
 import 'package:qradar/presentation/admin/qoin/admin_qoin_settings_page.dart';
 import 'package:qradar/presentation/admin/store_management/admin_store_list_page.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
@@ -68,6 +69,18 @@ class AdminMorePage extends ConsumerWidget {
               context,
               MaterialPageRoute<void>(
                 builder: (_) => const AdminStoreListPage(),
+              ),
+            ),
+          ),
+          // TEMP_MIGRATION_CARD — 배포 ⑪ 정리 커밋에서 이 타일과 import 를 삭제한다.
+          _Tile(
+            icon: Icons.build_circle_outlined,
+            title: '배포 마이그레이션 (임시)',
+            subtitle: 'payment_server_authority ③⑤⑨',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminMigrationPage(),
               ),
             ),
           ),

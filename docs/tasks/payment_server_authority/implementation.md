@@ -246,3 +246,48 @@ cd /Users/Byeonguk/Developer/OrderApp && echo "PAYMENT_GATE_MODE=shadow" > funct
 
 - 커밋: C1 `6c1c831` · C2 `dcfe1fc` · C3 `e06b7b5` · C4 `7bdda20`
 - 배포 차단 조건 C1+C2+C3 충족. 단 §9-1 (④ 에 올릴 Rules 파일이 C4 를 포함해야 함) 은 C4 를 같은 배포에 넣을 때의 순서 조건이다.
+
+## 11. 임시 admin 마이그레이션 카드 (배포 ③⑤⑨ 호출 경로)
+
+배경: 런북 ③ 이 "admin 계정으로 앱에서 `migrateStoreApprovalMeta {dryRun:true}` 호출" 을 전제하지만 앱에 호출 경로가 없었다(`lib/` 참조 0건). 선례(`qoin_accrual_rate_hierarchy` 의 임시 admin 허브 카드)를 따라 만들었다. CF 는 고치지 않았다. 서비스 계정·`gcloud` 불필요, Admin SDK 라 Rules 배포 순서와 독립.
+
+### 11.1 사용자가 손으로 가는 경로
+admin 계정 로그인 -> 하단 탭 **더보기** -> **배포 마이그레이션 (임시)** 타일(`payment_server_authority ③⑤⑨`) -> 카드 2개:
+1. **③ 매장 승인 메타 정상화 (임시)** — `migrateStoreApprovalMeta`
+2. **⑤⑨ 브랜드 private profile 이동 (임시)** — `migrateBrandPrivateProfile`, 칩으로 `copy (⑤)` / `cleanup (⑨)` 선택
+
+### 11.2 동작
+- 처음에는 `시험 실행 (dryRun)` 버튼만 있다. `실행 (dryRun:false)`(빨간 채움 버튼)은 **이 화면에서 시험 실행 결과를 받은 직후에만** 활성화된다. 눌러도 확인 다이얼로그(`취소`/`실행`)를 거친다.
+- 서버가 멈출 조건(invalid·anomalies 가 비어있지 않음, 또는 그 분류가 응답에 없음)이면 실행 비활성.
+- 실행이 끝나거나 실패하면 시험 실행 결과를 버린다 -> 다시 시험 실행을 해야 다음 실행이 눌러진다(런북 "재 dry-run 이 전부 0" 확인). 브랜드 카드는 stage 를 바꿔도 버린다.
+- 결과 맨 위 배너가 모드를 말한다: `시험 실행 결과 — 아무것도 바꾸지 않았어요`(파랑) / `실행 완료 — 데이터를 바꿨어요 (N건 기록)`(빨강) / 서버가 `dryRun` 을 안 알려주면 경고.
+- 목록(ⓓ·ⓔ·invalid·anomalies)은 **잘라내지 않는다** — 최대 높이 320 안에서 스크롤. 매장은 `이름 + ID`(+ ⓓ 는 백필 후 `status`·`approvedAt` 유무).
+
+### 11.3 리포트 분류 <-> 화면 행 대응표
+| 응답 필드 | 화면 행 (항상 그려짐) | 비고 |
+|---|---|---|
+| `setStatusApproved` | `setStatusApproved` N건 | 건수만 (런북 "기억과 맞는다") |
+| `backfillApprovedAt` | `backfillApprovedAt` N건 | 건수만 |
+| `invalid` | `invalid (무효 status)` | ID + status 목록, 0 이 아니면 빨강 |
+| ⓒ `anomalies` | `ⓒ anomalies (이상치)` | ID 목록, 0 이 아니면 빨강 |
+| ⓔ `ambiguousRejected` | `ⓔ ambiguousRejected ...` | 이름+ID 목록. 배포를 막지 않는다는 안내 |
+| ⓔ `ambiguousSelfRegress` | `ⓔ ambiguousSelfRegress ...` | 이름+ID 목록 |
+| ⓓ `willBeRejected` | `ⓓ willBeRejected (거절 예정)` | 이름+ID+status+approvedAt 전건 |
+| `total` / `dryRun` / `written` | 헤더 줄 / 모드 배너 | |
+| 브랜드 `toCopy` / `toClean` | stage 에 맞는 한 행 | |
+| 브랜드 `invalid` | `invalid (무효)` | brandId + reason |
+
+- **0 과 "분류가 응답에 없음"의 구분**: 파서는 없는 필드를 0 으로 채우지 않는다(null). 0 은 `0건`, null 은 빨간 `응답에 없음`. 항목 형식이 깨지면 건너뛰지 않고 응답 전체를 형식 오류로 처리한다.
+- **실패 6종**(`MigrationCallFailure`): 권한 없음(`permission-denied`/`unauthenticated`) / 시간 초과(`deadline-exceeded`, "서버에서 계속 실행 중일 수 있다 — 결과를 모른다") / 네트워크(`unavailable`) / 서버 중단(`failed-precondition`, `details` 의 anomalies·invalid 목록을 같이 보여줌) / 응답 형식 오류 / 그 밖. 실패일 때 건수 행은 그리지 않는다. 서버 message·`e.toString()` 은 화면에 쓰지 않는다(코드값만).
+
+### 11.4 파일
+신규: `lib/domain/entities/migration_report.dart`, `lib/domain/entities/migration_call_exception.dart`, `lib/domain/repositories/migration_repository.dart`, `lib/domain/usecases/run_migration_use_cases.dart`, `lib/data/datasources/remote/migration_remote_data_source.dart`, `lib/data/repositories/migration_repository_impl.dart`, `lib/presentation/admin/widgets/admin_migration_cards.dart`, `lib/presentation/admin/more/admin_migration_page.dart`, `test/presentation/migration_cards_test.dart`.
+수정: `lib/presentation/admin/more/admin_more_page.dart` (타일 1개 + import 1줄). 모든 신규 파일 상단에 `TEMP_MIGRATION_CARD` 주석(⑪ 삭제 대상).
+
+### 11.5 ⑪ 정리 커밋에서 추가로 삭제할 것
+위 신규 파일 9개 전부 + `admin_more_page.dart` 의 `TEMP_MIGRATION_CARD` 표시가 붙은 import 1줄과 타일 1개(`grep -rn TEMP_MIGRATION_CARD lib test` 로 전부 찾는다). §2 ⑪ 행의 CF 삭제와 함께.
+
+### 11.6 런북 판단 요청 (런북은 고치지 않았다)
+- 런북 ③ 의 "앱(또는 임시 callable)에서" 를 "앱 **더보기 -> 배포 마이그레이션 (임시) -> ③ 카드**" 로 구체화하고, ⑤ 는 같은 화면의 `copy` 칩, ⑨ 는 `cleanup` 칩으로 가리키면 좋다.
+- ⑪ 정리 절차에 위 11.5 를 포함해야 한다.
+- 이 카드는 **앱 빌드(⑦)가 아니라 현재 빌드를 기기에 설치**해서 쓴다: ③ 시점에는 ⑦ 앱 빌드가 아직이므로, 이 커밋을 포함한 빌드를 admin 기기에 먼저 설치해야 한다(게이트·Rules-B/C 는 CF/Rules 쪽이라 앱 빌드와 무관하게 구버전 앱 호환을 해치지 않는다 — 이 변경은 신규 화면 추가뿐).
