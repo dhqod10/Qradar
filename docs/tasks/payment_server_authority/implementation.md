@@ -150,7 +150,7 @@ Rules-A/B/C 는 각각 `firestore.rules` 의 서로 다른 블록만 만진다 (
 | 커밋 | 해시 | 내용 | 배포 차단 |
 |---|---|---|---|
 | **C1** Rules-A 보강 + 하네스 | `6c1c831` | `firestore.rules` 전이 제약 `leavingRejectedClearsApproval()` — **`isStoreOwnerFieldUpdate` / `isStoreOwnerBrandUpdate` 내부**(admin 분기 제외) + stores create 에 `rejectedAt` 금지 1줄. 하네스 `PSA-A9/A9b/A9c`(F-03 3건) + `PSA-A10`(rejectedAt create) + `PSA-F02a~g`(F-02 7건) | 예 |
-| **C2** `PAYMENT_GATE_MODE` | `dcfe1fc` | `resolveGateMode`(paymentGate.ts), `verifyTossPayment` 모드 분기, `recordGateRejection` 의 `shadow` 플래그, `.env.example`, 테스트 21건 | 예 |
+| **C2** `PAYMENT_GATE_MODE` | `dcfe1fc` | `resolveGateMode`(paymentGate.ts), `verifyTossPayment` 모드 분기, `recordGateRejection` 의 `shadow` 플래그, `.env.example`, 테스트 22건 | 예 |
 | **C3** M1 리포트 | `e06b7b5` | `planStoreMigration` 에 `willBeRejected`(ⓓ) · `ambiguousRejected` · `ambiguousSelfRegress`(ⓔ), `migrationHistory` 에 건수, 테스트 5건 | 예 |
 | **C4** `rejectedAt` 분리 + F-04 | `7bdda20` | `rejectFields` 가 `rejectedAt` 을 씀 · `StoreModel`/`StoreEntity`(+ `store_entity.freezed.dart` 재생성) 필드 추가 · 재제출이 `rejectedAt:null` 도 클리어 · Rules 화이트리스트 `rejectedAt`(null 클리어만) · `entity_approval_status.dart` 주석 · 배너 백틱 3곳 · 테스트 | 아니오 |
 
