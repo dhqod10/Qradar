@@ -531,16 +531,17 @@ for (const [role, db] of actors) {
 }
 
 // Q3 ⓐ / F4: 점주 delete → 같은 ID 재생성 (수용된 경로 #13) — 현재 동작을 명시적으로 고정한다
-await run('F4a 점주가 개별 적립률·스위치가 있는 자기 매장 delete (수용)', 'allow', () =>
+// [payment_server_authority Rules-C] 점주 delete 가 닫혔다 — 아래 "수용된 경로 #13"의 앞 단계(점주 삭제)는 이제 deny.
+// 재생성 이후 단계(F4b/F4c)는 "삭제가 어떤 경로(Admin SDK/Console)로든 일어난 뒤" 의 create 제약을 계속 고정한다.
+await run('F4a 점주가 개별 적립률·스위치가 있는 자기 매장 delete (Rules-C 로 거부)', 'deny', () =>
   deleteDoc(doc(asOwner, 'stores', S_F4A)));
-await run('F4b 같은 ID 로 status:pending 재생성 (수용 — 재승인 필요)', 'allow', () =>
+await env.withSecurityRulesDisabled(async (ctx) => deleteDoc(doc(ctx.firestore(), "stores", S_F4A)));
+await run('F4b 같은 ID 로 status:pending 재생성 (수용 — 재승인 필요, approvedAt 없음 → 결제 게이트가 거절)', 'allow', () =>
   setDoc(doc(asOwner, 'stores', S_F4A), { ownerId: OWNER, name: 'F4re', status: 'pending' }));
-await run('F4c-pre 점주가 매장 delete (ⓒ 준비)', 'allow', () =>
-  deleteDoc(doc(asOwner, 'stores', S_F4B)));
+await env.withSecurityRulesDisabled(async (ctx) => deleteDoc(doc(ctx.firestore(), "stores", S_F4B))); // (ⓒ 준비 — Admin SDK 삭제)
 await run('F4c 같은 ID 로 qoinAccrualRate 포함 재생성', 'deny', () =>
   setDoc(doc(asOwner, 'stores', S_F4B), { ownerId: OWNER, name: 'F4re', status: 'pending', qoinAccrualRate: 0.1 }));
-await run('F4c-pre2 점주가 매장 delete (ⓒ 스위치 준비)', 'allow', () =>
-  deleteDoc(doc(asOwner, 'stores', S_F4C)));
+await env.withSecurityRulesDisabled(async (ctx) => deleteDoc(doc(ctx.firestore(), "stores", S_F4C))); // (ⓒ 스위치 준비 — Admin SDK 삭제)
 await run('F4c2 같은 ID 로 qoinAccrualEnabled 포함 재생성', 'deny', () =>
   setDoc(doc(asOwner, 'stores', S_F4C), { ownerId: OWNER, name: 'F4re', status: 'pending', qoinAccrualEnabled: false }));
 await run('F4c3 같은 ID 로 두 필드 모두 포함 재생성', 'deny', () =>
@@ -1006,6 +1007,36 @@ await run('PSA-B9 고객 brands/{id}/menuItems read (회귀)', 'allow', () => ge
 await run('PSA-B9b 고객 brands/{id}/subCategories read (회귀)', 'allow', () => getDocs(collection(asCustomer, 'brands', B_A, 'subCategories')));
 await run('PSA-B9c 고객 brands/{id}/optionGroups read (회귀)', 'allow', () => getDocs(collection(asCustomer, 'brands', B_A, 'optionGroups')));
 await run('PSA-B9d 점주 brands/{id}/menuItems read (회귀)', 'allow', () => getDocs(collection(asOwner, 'brands', B_A, 'menuItems')));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// payment_server_authority — Rules-C (spec §11, §18.5 D1)
+// stores.delete 축소(admin 만) + paymentGateRejections / storeDeletionHistory
+// ═══════════════════════════════════════════════════════════════════════════
+await run('PSA-C1 점주가 자기 매장 delete', 'deny', async () => {
+  await seed((db) => setDoc(doc(db, 'stores', 'psa_c1'), { ownerId: OWNER, name: 'x', status: 'approved' }));
+  return deleteDoc(doc(asOwner, 'stores', 'psa_c1'));
+});
+await run('PSA-C1b 점주가 pending 매장 delete', 'deny', () => deleteDoc(doc(asOwner, 'stores', S_P)));
+await run('PSA-C1c 브랜드 보유자가 가맹점 delete', 'deny', () => deleteDoc(doc(asBrand, 'stores', S_BR)));
+await run('PSA-C2 admin 이 매장 delete', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'stores', 'psa_c2'), { ownerId: OWNER, name: 'x', status: 'approved' }));
+  return deleteDoc(doc(asAdmin, 'stores', 'psa_c2'));
+});
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  await setDoc(doc(db, 'paymentGateRejections', 'r1'), { uid: CUSTOMER, storeId: S_A, reason: 'MENU_SOLD_OUT' });
+  await setDoc(doc(db, 'storeDeletionHistory', 'h1'), { storeId: S_A, phase: 'done' });
+});
+for (const col of ['paymentGateRejections', 'storeDeletionHistory']) {
+  const id = col === 'paymentGateRejections' ? 'r1' : 'h1';
+  await run(`PSA-C3 ${col} admin read`, 'allow', () => getDoc(doc(asAdmin, col, id)));
+  await run(`PSA-C3b ${col} 점주 read`, 'deny', () => getDoc(doc(asOwner, col, id)));
+  await run(`PSA-C3c ${col} 고객 read`, 'deny', () => getDoc(doc(asCustomer, col, id)));
+  await run(`PSA-C4 ${col} admin create`, 'deny', () => setDoc(doc(asAdmin, col, 'forge'), { a: 1 }));
+  await run(`PSA-C4b ${col} admin update`, 'deny', () => updateDoc(doc(asAdmin, col, id), { a: 1 }));
+  await run(`PSA-C4c ${col} admin delete`, 'deny', () => deleteDoc(doc(asAdmin, col, id)));
+  await run(`PSA-C4d ${col} 고객 create (자기 uid 로 위조)`, 'deny', () => setDoc(doc(asCustomer, col, 'forge2'), { uid: CUSTOMER }));
+}
 
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;

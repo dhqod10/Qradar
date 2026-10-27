@@ -326,8 +326,10 @@ service cloud.firestore {
                     && request.resource.data.get('approvedBy', null) == null
                     && request.resource.data.get('rejectedReason', null) == null;
 
-      // delete: 점주 본인 또는 admin
-      allow delete: if isAdmin() || isStoreOwner(storeId);
+      // delete: admin 만. [payment_server_authority Rules-C] 점주 하드 삭제 제거 — "삭제·재생성으로 적립 재개" 경로 차단,
+      // 진행 중 주문의 취소·환불(cancelTossPayment/processRefund 가 stores 를 읽는다)을 묶지 않는다.
+      // 정상 경로는 admin 전담 deleteStore CF (이력 + 하위 문서 + Storage 정리, Admin SDK 라 이 규칙과 무관).
+      allow delete: if isAdmin();
 
       // update: admin 전권, 점주 운영 필드, brand 운영 필드 (status/ownerId/brandId 제외)
       // Qoin 관리 필드 변경은 모든 분기(admin 전권 포함)에서 거부 — CF 전담.
@@ -562,6 +564,20 @@ service cloud.firestore {
         allow create, update, delete:
           if isAdmin() || isBrandHolder(brandId);
       }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // paymentGateRejections/{id} — 결제 게이트 거절 기록 (오탐 탐지용). CF 전담 write, admin read.
+    // storeDeletionHistory/{id}  — 매장 삭제 이력 (deleteStore CF 전담 write, 재진입점), admin read.
+    // [payment_server_authority Rules-C] 클라이언트가 쓰면 위조·누락된다 — admin 도 직접 쓰지 않는다.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /paymentGateRejections/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /storeDeletionHistory/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
