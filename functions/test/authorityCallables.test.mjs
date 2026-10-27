@@ -291,6 +291,68 @@ test('M1: 이상치 감사 — approvedAt 만 있고 approvedBy 없는 비승인
   assert.deepEqual(plan.invalid, [{ id: 'weird', status: 'Approved' }]);
 });
 
+test('M1 ⓓ willBeRejected: 백필을 가정한 뒤에도 canSellNow 가 false 인 매장만, 백필 후 값으로', () => {
+  const plan = planStoreMigration([
+    ['legacy', { name: 'L' }],                                   // status 부재 → approved + approvedAt 백필 → 통과
+    ['appr_no_at', { name: 'A', status: 'approved' }],          // approvedAt 백필 → 통과
+    ['appr_ok', { name: 'O', status: 'approved', approvedAt: 1 }],
+    ['pend_edit', { name: 'E', status: 'pending', approvedAt: 1, approvedBy: 'a' }],   // R2: 통과
+    ['pend_new', { name: 'N', status: 'pending' }],              // 신규 미승인 → 막힘
+    ['rej', { name: 'R', status: 'rejected', approvedAt: 1, approvedBy: 'a' }],        // 반려 → 막힘
+    ['weird', { name: 'W', status: 'Approved' }],                // 미지값 → 막힘 (invalid 에도 있다)
+    ['noname', { status: 'pending' }],
+  ]);
+  assert.deepEqual(
+    plan.willBeRejected.map((x) => x.id).sort(),
+    ['noname', 'pend_new', 'rej', 'weird']
+  );
+  const byId = Object.fromEntries(plan.willBeRejected.map((x) => [x.id, x]));
+  assert.deepEqual(byId.pend_new, { id: 'pend_new', name: 'N', status: 'pending', hasApprovedAt: false });
+  assert.deepEqual(byId.rej, { id: 'rej', name: 'R', status: 'rejected', hasApprovedAt: true });
+  assert.equal(byId.weird.status, 'Approved');
+  assert.equal(byId.noname.name, null);
+});
+
+test('M1 ⓓ: 이미 백필이 필요한 approved/부재 문서는 "백필 후" 기준이므로 willBeRejected 에 들어가지 않는다', () => {
+  const plan = planStoreMigration([['a', { status: 'approved' }], ['b', {}]]);
+  assert.deepEqual(plan.backfillApprovedAt.sort(), ['a', 'b']);
+  assert.deepEqual(plan.willBeRejected, []);
+});
+
+test('M1 ⓔ 모호 건: rejected && approvedAt 전건 + pending && rejectedReason && approvedAt (ⓒ 가 못 잡는 approvedBy 있는 건 포함)', () => {
+  const plan = planStoreMigration([
+    ['rej_at', { name: 'R1', status: 'rejected', approvedAt: 1, approvedBy: 'admin' }],   // approvedBy 있음 → ⓒ 는 못 잡는다
+    ['rej_noat', { status: 'rejected', approvedBy: 'admin' }],                            // approvedAt 없음 → 모호 아님
+    ['regress', { name: 'S', status: 'pending', rejectedReason: '사유', approvedAt: 1, approvedBy: 'admin' }],
+    ['pend_edit', { status: 'pending', approvedAt: 1, approvedBy: 'admin' }],             // 정상 수정 대기 → 해당 없음
+    ['pend_rej_noat', { status: 'pending', rejectedReason: '사유' }],                    // approvedAt 없음 → 해당 없음
+    ['appr', { status: 'approved', approvedAt: 1, rejectedReason: '옛 사유' }],           // approved → 해당 없음
+  ]);
+  assert.deepEqual(plan.ambiguousRejected, [{ id: 'rej_at', name: 'R1' }]);
+  assert.deepEqual(plan.ambiguousSelfRegress, [{ id: 'regress', name: 'S' }]);
+  assert.deepEqual(plan.anomalies, [], 'approvedBy 가 있으면 기존 ⓒ 감사는 이 둘을 못 잡는다 — 그래서 ⓔ 가 필요하다');
+});
+
+test('M1 ⓓⓔ 는 목록일 뿐 자동 수정 대상이 아니다 — setStatusApproved/backfillApprovedAt 에 들어가지 않는다', () => {
+  const plan = planStoreMigration([
+    ['rej_at', { status: 'rejected', approvedAt: 1, approvedBy: 'a' }],
+    ['regress', { status: 'pending', rejectedReason: 'x', approvedAt: 1, approvedBy: 'a' }],
+    ['pend_new', { status: 'pending' }],
+  ]);
+  assert.deepEqual(plan.setStatusApproved, []);
+  assert.deepEqual(plan.backfillApprovedAt, []);
+});
+
+test('M1 소스: ⓓⓔ 는 실행을 막지 않는다 (failed-precondition 은 anomalies/invalid 에서만) · 판정 함수는 canSellNow 재사용', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/migrateStoreApprovalMeta.ts', import.meta.url), 'utf8');
+  const cond = src.match(/if \(plan\.anomalies\.length > 0[^)]*\)/)?.[0] ?? '';
+  assert.ok(cond.includes('anomalies') && cond.includes('invalid'));
+  assert.ok(!cond.includes('willBeRejected') && !cond.includes('ambiguous'));
+  assert.ok(src.includes('canSellNow('), 'willBeRejected 는 canSellNow 를 재사용한다 (판정 함수 중복 금지)');
+  assert.ok(!/rawStatus\s*===\s*"approved"/.test(src));
+});
+
 test('M2 copy: 부모 brandKey+PII → private, 형식 불일치·키 중복은 무효 목록, private 기존 값은 덮지 않는다', () => {
   const brands = [
     ['b1', { brandKey: 'BR-AAAAAAAA', contactName: '홍', contactPhone: '010', name: 'A' }],
