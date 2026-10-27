@@ -5,25 +5,30 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/cart_entity.dart';
 import 'package:qradar/domain/entities/cart_item_entity.dart';
+import 'package:qradar/domain/entities/checkout_validation.dart';
 import 'package:qradar/domain/entities/order_item_entity.dart';
+import 'package:qradar/domain/entities/payment_failure.dart';
 import 'package:qradar/domain/entities/payment_method.dart';
+import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
+import 'package:qradar/presentation/customer/checkout/widgets/checkout_blocked_sheet.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
-import 'package:qradar/presentation/customer/checkout/payment_result_page.dart';
+import 'package:qradar/presentation/customer/checkout/payment_result_page.dart'
+    show PaymentResultPage, PaymentResultVariant, resolveFailureMenuNames;
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_summary_card.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/payment_method_tile.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 import 'package:qradar/presentation/customer/order/widgets/price_summary.dart';
 
 OrderItemEntity _toOrderItem(CartItemEntity c) => OrderItemEntity(
-      menuItemId: c.menuItemId,
-      menuItemName: c.menuItemName,
-      imageUrl: c.imageUrl,
-      quantity: c.quantity,
-      selectedOptions: c.selectedOptions,
-      unitPriceWithOptions: c.unitPriceWithOptions,
-      lineTotal: c.lineTotal,
-    );
+  menuItemId: c.menuItemId,
+  menuItemName: c.menuItemName,
+  imageUrl: c.imageUrl,
+  quantity: c.quantity,
+  selectedOptions: c.selectedOptions,
+  unitPriceWithOptions: c.unitPriceWithOptions,
+  lineTotal: c.lineTotal,
+);
 
 class CheckoutPage extends ConsumerStatefulWidget {
   const CheckoutPage({super.key});
@@ -39,8 +44,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   bool _processing = false;
 
   bool get _allAgreed => _tosAgreed && _privacyAgreed;
-  bool get _canPay =>
-      _selectedMethod != null && _allAgreed && !_processing;
+  bool get _canPay => _selectedMethod != null && _allAgreed && !_processing;
 
   Future<void> _handlePay(CartEntity cart) async {
     final method = _selectedMethod;
@@ -51,17 +55,35 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
 
     setState(() => _processing = true);
 
+    // 새 결제 시도 시작 → 직전 거절이 지목한 메뉴 기록을 지운다 (design D6).
+    ref.read(paymentRejectedMenuIdsProvider.notifier).clear();
+
     const uuid = Uuid();
     final idempotencyKey = uuid.v4();
     final amount = cart.subtotal;
     final items = cart.items;
     final orderName = items.isNotEmpty
         ? (items.length > 1
-            ? '${items.first.menuItemName} 외 ${items.length - 1}건'
-            : items.first.menuItemName)
+              ? '${items.first.menuItemName} 외 ${items.length - 1}건'
+              : items.first.menuItemName)
         : '주문';
 
     try {
+      // 선검증 (권위 아님 — design D1). 위반을 직접 읽어서 확인했을 때만 막는다.
+      // 읽기 실패/타임아웃(3초)은 UseCase 가 "위반 없음"으로 돌려주므로 결제는 그대로 진행된다 (spec §8.2).
+      final validation = await ref
+          .read(validateCheckoutUseCaseProvider)
+          .call(
+            storeId: cart.storeId,
+            menuItemIds: items.map((i) => i.menuItemId),
+          );
+      if (!mounted) return;
+      if (validation.hasViolations) {
+        setState(() => _processing = false);
+        await _showBlocked(cart, validation);
+        return;
+      }
+
       final launchResult = await ref
           .read(launchPaymentUseCaseProvider)
           .call(
@@ -92,8 +114,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           MaterialPageRoute(
             builder: (_) => PaymentResultPage(
               variant: PaymentResultVariant.fail,
-              errorCode: launchResult.errorCode,
-              errorMessage: launchResult.errorMessage,
+              failure: PaymentFailure.launch(errorCode: launchResult.errorCode),
             ),
           ),
         );
@@ -136,23 +157,57 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           MaterialPageRoute(
             builder: (_) => PaymentResultPage(
               variant: PaymentResultVariant.fail,
-              errorMessage: e.toString(),
+              failure: PaymentFailure.from(e),
             ),
           ),
         );
       }
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => PaymentResultPage(
             variant: PaymentResultVariant.fail,
-            errorMessage: e.toString(),
+            // 이 catch 는 결제창(launch) 단계 예외뿐이다 — Toss confirm 은 서버(verify)에서만 일어나므로
+            // 돈이 움직이지 않았다. 서버 호출 예외는 위 안쪽 catch 가 PaymentFailure.from 으로 처리한다.
+            failure: PaymentFailure.launch(),
           ),
         ),
       );
     } finally {
       if (mounted) setState(() => _processing = false);
+    }
+  }
+
+  Future<void> _showBlocked(
+    CartEntity cart,
+    CheckoutValidation validation,
+  ) async {
+    final violated = validation.violatedMenuItemIds;
+    final names = resolveFailureMenuNames(cart, violated);
+    final choice = await showCheckoutBlockedSheet(
+      context,
+      names: names,
+      storeBlocked: validation.store != null,
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case CheckoutBlockedChoice.removeMenus:
+        // 체크아웃에 머문다. 합계가 바뀌었으므로 자동 결제하지 않는다 (design §4.4).
+        final remove = ref.read(removeCartItemUseCaseProvider);
+        for (final line in cart.items) {
+          if (violated.contains(line.menuItemId)) {
+            await remove.call(line.cartItemId);
+          }
+        }
+      case CheckoutBlockedChoice.backToCart:
+        // 카트가 같은 위반을 표시한 상태로 보이게 한다.
+        ref
+            .read(cartValidationProvider.notifier)
+            .applyKnown(cart.storeId, validation);
+        Navigator.of(context).pop();
+      case null:
+        break;
     }
   }
 
@@ -217,8 +272,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                           _SectionHeader(title: '결제 수단'),
                           const SizedBox(height: 12),
                           Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Column(
                               children: [
                                 PaymentMethodTile(
@@ -226,15 +280,18 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                                   selected:
                                       _selectedMethod == PaymentMethod.card,
                                   onTap: () => setState(
-                                      () => _selectedMethod = PaymentMethod.card),
+                                    () => _selectedMethod = PaymentMethod.card,
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
                                 PaymentMethodTile(
                                   method: PaymentMethod.kakaoPay,
                                   selected:
                                       _selectedMethod == PaymentMethod.kakaoPay,
-                                  onTap: () => setState(() =>
-                                      _selectedMethod = PaymentMethod.kakaoPay),
+                                  onTap: () => setState(
+                                    () => _selectedMethod =
+                                        PaymentMethod.kakaoPay,
+                                  ),
                                 ),
                               ],
                             ),
@@ -250,15 +307,13 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                               _tosAgreed = v;
                               _privacyAgreed = v;
                             }),
-                            onTosChanged: (v) =>
-                                setState(() => _tosAgreed = v),
+                            onTosChanged: (v) => setState(() => _tosAgreed = v),
                             onPrivacyChanged: (v) =>
                                 setState(() => _privacyAgreed = v),
                           ),
                           const SizedBox(height: 24),
                           Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: PriceSummary(
                               subtotal: cart.subtotal,
                               total: cart.subtotal,
@@ -272,17 +327,14 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                   Container(
                     decoration: const BoxDecoration(
                       color: AppColors.surfaceElevated,
-                      border: Border(
-                          top: BorderSide(color: AppColors.border)),
+                      border: Border(top: BorderSide(color: AppColors.border)),
                     ),
-                    padding: EdgeInsets.fromLTRB(
-                        20, 12, 20, 12 + bottomInset),
+                    padding: EdgeInsets.fromLTRB(20, 12, 20, 12 + bottomInset),
                     child: SizedBox(
                       height: 54,
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed:
-                            _canPay ? () => _handlePay(cart) : null,
+                        onPressed: _canPay ? () => _handlePay(cart) : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _canPay
                               ? AppColors.primary
@@ -373,8 +425,12 @@ class _TermsSection extends StatelessWidget {
             bold: true,
           ),
           const Divider(
-              color: AppColors.border, height: 1, thickness: 1,
-              indent: 16, endIndent: 16),
+            color: AppColors.border,
+            height: 1,
+            thickness: 1,
+            indent: 16,
+            endIndent: 16,
+          ),
           _TermsRow(
             label: '(필수) 전자결제 이용 약관',
             agreed: tosAgreed,
@@ -440,15 +496,19 @@ class _EmptyCart extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.shopping_bag_outlined,
-              size: 48, color: AppColors.textMuted),
+          const Icon(
+            Icons.shopping_bag_outlined,
+            size: 48,
+            color: AppColors.textMuted,
+          ),
           const SizedBox(height: 12),
           const Text(
             '카트가 비어있어요',
             style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textHeading),
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textHeading,
+            ),
           ),
           const SizedBox(height: 20),
           ElevatedButton(
@@ -458,10 +518,13 @@ class _EmptyCart extends StatelessWidget {
               foregroundColor: AppColors.onPrimary,
               elevation: 0,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('카트로 돌아가기',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text(
+              '카트로 돌아가기',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),

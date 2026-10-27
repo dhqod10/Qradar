@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:qradar/core/errors/verify_payment_failure.dart';
 
 /// Firebase Cloud Functions 호출 어댑터.
 ///
@@ -12,8 +13,8 @@ class CloudFunctionsRemoteDataSource {
   final FirebaseFunctions _functions;
 
   CloudFunctionsRemoteDataSource({FirebaseFunctions? functions})
-      : _functions = functions ??
-            FirebaseFunctions.instanceFor(region: 'asia-northeast3');
+    : _functions =
+          functions ?? FirebaseFunctions.instanceFor(region: 'asia-northeast3');
 
   Future<Map<String, dynamic>> verifyTossPayment({
     required String paymentKey,
@@ -39,7 +40,9 @@ class CloudFunctionsRemoteDataSource {
       }
       throw Exception('결제 검증 응답 형식이 올바르지 않습니다.');
     } on FirebaseFunctionsException catch (e) {
-      throw _convertFunctionsException(e);
+      // 게이트 거절 토큰 `[REASON:ids]` 가 message 끝에 실려 온다 (payment_server_authority spec §15.1).
+      // `_convertFunctionsException` 은 일부 코드에서 message 를 버리므로 verify 경로만 code+message 를 보존한다.
+      throw VerifyPaymentFailure(code: e.code, message: e.message ?? '');
     }
   }
 
@@ -66,10 +69,7 @@ class CloudFunctionsRemoteDataSource {
   }) async {
     try {
       final callable = _functions.httpsCallable('processRefund');
-      await callable.call<Object?>({
-        'orderId': orderId,
-        'reason': reason,
-      });
+      await callable.call<Object?>({'orderId': orderId, 'reason': reason});
     } on FirebaseFunctionsException catch (e) {
       throw _convertFunctionsException(e);
     }

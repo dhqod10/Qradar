@@ -1,0 +1,130 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:qradar/core/utils/checkout_menu_gate.dart';
+import 'package:qradar/core/utils/store_menu_visibility.dart';
+import 'package:qradar/core/utils/store_sellability.dart';
+import 'package:qradar/data/models/menu_override_model.dart';
+import 'package:qradar/domain/entities/entity_approval_status.dart';
+import 'package:qradar/domain/entities/menu_item_entity.dart';
+import 'package:qradar/domain/entities/menu_override_entity.dart';
+
+/// payment_server_authority 교차 골든 (spec §7.1 · §18.2).
+///
+/// 세 fixture 를 **TS 쪽 테스트(`functions/test/paymentAuthority.test.mjs`)도 같은 파일로** 읽는다.
+/// 한쪽만 바뀌면 골든이 깨져 대조가 강제된다 (기존 `qoin_cart_contract.json` 패턴).
+Map<String, dynamic> _load(String name) =>
+    jsonDecode(File('test_fixtures/$name').readAsStringSync())
+        as Map<String, dynamic>;
+
+MenuItemEntity _master(Map<String, dynamic> m) => MenuItemEntity(
+  id: 'm1',
+  storeId: '',
+  name: '아메리카노',
+  mainCategoryCode: 'coffee',
+  basePrice: (m['basePrice'] as num).toInt(),
+  soldOut: m['soldOut'] as bool? ?? false,
+  status: EntityApprovalStatus.approved,
+);
+
+MenuItemEntity _storeMenu(Map<String, dynamic> m) => MenuItemEntity(
+  id: 'm1',
+  storeId: 's1',
+  name: '점포 메뉴',
+  mainCategoryCode: 'coffee',
+  basePrice: 3000,
+  soldOut: m['soldOut'] as bool? ?? false,
+  visible: m['visible'] as bool? ?? true,
+);
+
+/// 실제 모델 경로와 같은 기본값을 쓴다: status 부재 = 'pending' (MenuOverrideModel 기본),
+/// 알 수 없는 문자열 = EntityApprovalStatus.fromString 폴백 (toEntity 가 호출한다).
+MenuOverrideEntity? _override(Map<String, dynamic>? o) {
+  if (o == null) return null;
+  return MenuOverrideModel(
+    masterMenuItemId: 'm1',
+    storeId: 's1',
+    brandId: 'b1',
+    priceOverride: (o['priceOverride'] as num?)?.toInt(),
+    excluded: o['excluded'] as bool? ?? false,
+    soldOut: o['soldOut'] as bool? ?? false,
+    disabledOptionGroupIds: List<String>.from(
+      o['disabledOptionGroupIds'] as List? ?? const [],
+    ),
+    disabledOptionItemIds: List<String>.from(
+      o['disabledOptionItemIds'] as List? ?? const [],
+    ),
+    status: o['status'] as String? ?? 'pending',
+  ).toEntity();
+}
+
+void main() {
+  group('menu_visibility_contract.json — applyOverrideForCustomer', () {
+    final cases = (_load('menu_visibility_contract.json')['cases'] as List)
+        .cast<Map<String, dynamic>>();
+    assert(cases.isNotEmpty);
+    for (final c in cases) {
+      test(c['name'] as String, () {
+        final r = applyOverrideForCustomer(
+          master: _master(c['master'] as Map<String, dynamic>),
+          override: _override(c['override'] as Map<String, dynamic>?),
+        );
+        final expected = c['expect'] as Map<String, dynamic>?;
+        if (expected == null) {
+          expect(r, isNull);
+          return;
+        }
+        expect(r, isNotNull);
+        expect(r!.basePrice, expected['basePrice']);
+        expect(r.soldOut, expected['soldOut']);
+        expect(r.disabledOptionGroupIds, expected['disabledOptionGroupIds']);
+        expect(r.disabledOptionItemIds, expected['disabledOptionItemIds']);
+      });
+    }
+  });
+
+  group('store_sellability_contract.json — canSellNow', () {
+    final cases = (_load('store_sellability_contract.json')['cases'] as List)
+        .cast<Map<String, dynamic>>();
+    assert(cases.isNotEmpty);
+    for (final c in cases) {
+      test(c['name'] as String, () {
+        expect(
+          canSellNow(
+            rawStatus: c['rawStatus'] as String?,
+            hasApprovedAt: c['hasApprovedAt'] as bool,
+          ),
+          c['expect'] as bool,
+        );
+      });
+    }
+  });
+
+  group('checkout_menu_gate_contract.json — classifyCheckoutMenu', () {
+    final cases = (_load('checkout_menu_gate_contract.json')['cases'] as List)
+        .cast<Map<String, dynamic>>();
+    assert(cases.isNotEmpty);
+    const verdicts = {
+      'OK': CheckoutMenuVerdict.ok,
+      'MENU_SOLD_OUT': CheckoutMenuVerdict.soldOut,
+      'MENU_EXCLUDED': CheckoutMenuVerdict.excluded,
+      'MENU_NOT_FOUND': CheckoutMenuVerdict.notFound,
+    };
+    for (final c in cases) {
+      test(c['name'] as String, () {
+        final storeMenu = c['storeMenu'] as Map<String, dynamic>?;
+        final master = c['master'] as Map<String, dynamic>?;
+        expect(
+          classifyCheckoutMenu(
+            hasBrand: c['hasBrand'] as bool,
+            storeMenu: storeMenu == null ? null : _storeMenu(storeMenu),
+            master: master == null ? null : _master(master),
+            override: _override(c['override'] as Map<String, dynamic>?),
+          ),
+          verdicts[c['expect']],
+        );
+      });
+    }
+  });
+}

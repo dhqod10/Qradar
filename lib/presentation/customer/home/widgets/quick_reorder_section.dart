@@ -8,6 +8,7 @@ import 'package:qradar/domain/entities/cart_item_entity.dart';
 import 'package:qradar/domain/entities/quick_reorder_candidate_entity.dart';
 import 'package:qradar/presentation/customer/cart/cart_page.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
+import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
 import 'package:qradar/presentation/customer/cart/widgets/replace_cart_dialog.dart';
 import 'package:qradar/presentation/customer/home/providers/recommendation_providers.dart';
 import 'package:qradar/presentation/customer/home/widgets/section_title.dart';
@@ -68,8 +69,7 @@ class _ContentColumn extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             separatorBuilder: (_, _) => const SizedBox(width: 12),
             itemCount: candidates.length,
-            itemBuilder: (_, i) =>
-                QuickReorderCard(candidate: candidates[i]),
+            itemBuilder: (_, i) => QuickReorderCard(candidate: candidates[i]),
           ),
         ),
         const SizedBox(height: 24),
@@ -129,8 +129,7 @@ class _QuickReorderCardState extends ConsumerState<QuickReorderCard> {
   @override
   Widget build(BuildContext context) {
     final c = widget.candidate;
-    final relative =
-        RelativeTimeFormatter.formatKo(DateTime.now(), c.paidAt);
+    final relative = RelativeTimeFormatter.formatKo(DateTime.now(), c.paidAt);
 
     return GestureDetector(
       onTap: _busy ? null : _onTap,
@@ -221,11 +220,53 @@ class _QuickReorderCardState extends ConsumerState<QuickReorderCard> {
           return;
         }
       }
-      // 카트 비우고 OrderLog items 그대로 채워 넣기.
+      // 선검증 — 카트 비우기보다 **앞**에 둔다 (전부 위반이면 기존 카트를 날리지 않도록, design §4.5).
+      // 확인 실패/타임아웃은 UseCase 가 "위반 없음"으로 돌려주므로 기존 동작대로 진행한다 (서버 게이트에 맡긴다).
+      final sourceItems = widget.candidate.sourceLog.items;
+      final validation = await ref
+          .read(validateCheckoutUseCaseProvider)
+          .call(
+            storeId: widget.candidate.storeId,
+            menuItemIds: sourceItems.map((i) => i.menuItemId),
+          );
+      if (!mounted) return;
+      final violated = validation.violatedMenuItemIds;
+      if (validation.store != null) {
+        await _showNotice(
+          title: '지금은 이 매장에서 주문할 수 없어요',
+          message: '잠시 후 다시 시도해 주세요.',
+        );
+        return;
+      }
+      var itemsToAdd = sourceItems;
+      if (violated.isNotEmpty) {
+        // 이름은 과거 주문 스냅샷 (고객이 시켰던 이름이므로 알아본다). 메뉴 종류당 1번.
+        final names = <String>[];
+        final seen = <String>{};
+        for (final i in sourceItems) {
+          if (violated.contains(i.menuItemId) && seen.add(i.menuItemId)) {
+            names.add(i.menuItemName);
+          }
+        }
+        itemsToAdd = sourceItems
+            .where((i) => !violated.contains(i.menuItemId))
+            .toList(growable: false);
+        if (itemsToAdd.isEmpty) {
+          await _showNotice(
+            title: '지금은 주문할 수 있는 메뉴가 없어요',
+            message: '${_bulletLines(names)}\n\n모두 품절이거나 판매가 중단됐어요.',
+          );
+          return;
+        }
+        final proceed = await _confirmPartial(names);
+        if (!mounted) return;
+        if (!proceed) return;
+      }
+      // 카트 비우고 OrderLog items 채워 넣기 (위반 메뉴는 제외).
       await ref.read(clearCartUseCaseProvider).call();
       final addUseCase = ref.read(addToCartUseCaseProvider);
       const uuid = Uuid();
-      for (final item in widget.candidate.sourceLog.items) {
+      for (final item in itemsToAdd) {
         final unitPriceWithOptions = _unitPriceFromLineTotal(
           lineTotal: item.lineTotal,
           quantity: item.quantity,
@@ -245,9 +286,7 @@ class _QuickReorderCardState extends ConsumerState<QuickReorderCard> {
         );
       }
       if (!mounted) return;
-      navigator.push(
-        MaterialPageRoute<void>(builder: (_) => const CartPage()),
-      );
+      navigator.push(MaterialPageRoute<void>(builder: (_) => const CartPage()));
     } catch (_) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -259,6 +298,109 @@ class _QuickReorderCardState extends ConsumerState<QuickReorderCard> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  static String _bulletLines(List<String> names) =>
+      names.map((n) => '• $n').join('\n');
+
+  /// `cart_page.dart` 의 `_confirmClear` 와 같은 스타일 (surfaceElevated · 반경 16).
+  Future<void> _showNotice({required String title, required String message}) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textHeading,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            message,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textBody,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              '확인',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 일부 메뉴만 위반일 때 — 이름을 전부 열거하고 나머지만 담을지 묻는다 (design §4.5).
+  Future<bool> _confirmPartial(List<String> names) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+        title: const Text(
+          '일부 메뉴는 지금 담을 수 없어요',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textHeading,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            '${_bulletLines(names)}\n\n나머지 메뉴만 담을까요?',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textBody,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              '취소',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              '나머지 담기',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   static int _unitPriceFromLineTotal({
@@ -284,11 +426,7 @@ class _RestartPill extends StatelessWidget {
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.refresh_rounded,
-            size: 14,
-            color: AppColors.primary,
-          ),
+          Icon(Icons.refresh_rounded, size: 14, color: AppColors.primary),
           SizedBox(width: 4),
           Text(
             '다시 주문',
