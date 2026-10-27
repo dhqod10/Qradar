@@ -23,8 +23,8 @@
 | 커밋 | 내용 | 독립 적용 |
 |---|---|---|
 | `11c90c7` **Rules-A** | `firestore.rules`(stores/brands create 승인 메타 금지) + `test_rules/rules.test.mjs`(PSA-A 12건) | **단독 적용 가능** — 배포 ④. 구 앱 create payload 는 해당 키를 보내지 않는다 |
-| **Rules-B** | `private/profile` · `brandKeys` · `keyHistory` · 부모 PII whitelist 제거 · brand self-create PII 금지 + PSA-B 케이스 | 앱(⑦) 직후 — 배포 ⑧ |
-| **Rules-C** | `stores.delete` admin 전용 · `paymentGateRejections` · `storeDeletionHistory` + PSA-C 케이스 + F4 기존 케이스 갱신 | 앱(⑦) 직후 — 배포 ⑧ (B 와 함께 또는 연속) |
+| `94db822` **Rules-B** | `private/profile` · `brandKeys` · `keyHistory` · 부모 PII whitelist 제거 · brand self-create PII 금지 + PSA-B 케이스 | 앱(⑦) 직후 — 배포 ⑧ |
+| `4158572` **Rules-C** | `stores.delete` admin 전용 · `paymentGateRejections` · `storeDeletionHistory` + PSA-C 케이스 + F4 기존 케이스 갱신 | 앱(⑦) 직후 — 배포 ⑧ (B 와 함께 또는 연속) |
 | functions + fixtures | `functions/src/*`, `functions/test/*`, `test_fixtures/*` 3종 | 배포 ②/⑥ |
 | Dart 고객 결제 측 | checkout/cart/quick_reorder + 판정 함수 + PaymentFailure | 앱 ⑦ |
 | Dart 브랜드·점주·admin 측 | brandKey/PII/삭제 | 앱 ⑦ |
