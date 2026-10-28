@@ -1,5 +1,46 @@
 # Implementation — 브랜드 사업자 정보 필드 추가 (Step 3)
 
+---
+
+## ⚠️ 구조 변경 정합화 (2026-10-28)
+
+> 아래 "구현 완료 항목"은 **최초 구현 시점(Step 3)** 기준이다. 이후 **payment_server_authority B1**
+> (커밋 `3feb96d`) 작업이 PII 보호를 위해 사업자 정보 필드 배치를 아래와 같이 재구조화했으므로,
+> **현재 운영 코드는 이 정합화 블록을 단일 진실원으로 따른다.**
+
+### 필드 배치 (현행)
+
+| 필드 | 최초(Step 3) | 현행 |
+|------|--------------|------|
+| `companyName` (회사명, 필수) | `BrandEntity` | **`BrandEntity` (유지)** |
+| `businessRegistrationNumber` | `BrandEntity` | **`BrandPrivateProfileEntity`** (`brands/{id}/private/profile`) |
+| `contactName` | `BrandEntity` | **`BrandPrivateProfileEntity`** |
+| `contactPhone` | `BrandEntity` | **`BrandPrivateProfileEntity`** |
+| `headOfficeAddress` (선택) | `BrandEntity` | **`BrandPrivateProfileEntity`** |
+| `representativeName` (선택) | `BrandEntity` | **`BrandPrivateProfileEntity`** |
+
+PII 5개는 부모 `brands/{id}` 문서가 아니라 `brands/{id}/private/profile` 서브컬렉션으로 분리 저장된다.
+`brandKey` 는 이 경로에서 클라이언트가 쓰지 않는다 (Cloud Function 전담).
+
+### 현행 데이터 흐름 (검증 완료 2026-10-28)
+
+1. `BrandInfoFormPage._submit` → `BrandEntity(companyName:...)` + `BrandPrivateProfileEntity(PII 5)` 2건 생성
+   - `lib/presentation/brand/brand_info/brand_info_form_page.dart:403~` (`신청하기`)
+2. `UpsertBrandUseCase.call(brand, privateProfile:)`
+   - `lib/domain/usecases/upsert_brand_use_case.dart:15`
+3. `BrandRepositoryImpl.upsertBrand` → PII 는 `BrandPrivateProfileModel.toFirestore()` 결과를 `private/profile` 에 **merge-set**
+   - `lib/data/repositories/brand_repository_impl.dart:83~`, 저장 실패 시 `BrandPrivateProfileSaveException`
+   - PII 만 변경 시 brand `status` 는 회귀하지 않는다 (`brand_repository_impl.dart:141`)
+4. admin 승인 상세: `brandPrivateProfileProvider(brand.id)` 로 PII 를 **별도 조회**해 사업자 정보 카드 노출
+   - `lib/presentation/admin/approval/admin_brand_approval_detail_page.dart:209, 266`
+
+### 검증
+
+- `flutter analyze` (관련 4개 파일): **No issues found**
+- 검증 상세: 같은 디렉토리 `test_report.md` 참조. PII 분리 자체의 보안 검증은 payment_server_authority B1 에서 완료·배포됨.
+
+# Implementation — 브랜드 사업자 정보 필드 추가 (Step 3)
+
 ## 구현 완료 항목
 
 ### 1. Domain — `BrandEntity` 필드 추가
