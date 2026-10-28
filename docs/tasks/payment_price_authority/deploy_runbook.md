@@ -306,13 +306,13 @@ cd /Users/Byeonguk/Developer/OrderApp && grep -v '^PAYMENT_PRICE_MODE=' function
 | ② 측정 ⓐ 주문 위반 | 2026-10-27 21:33 | dhqod10 | 스캔 24 / 위반 **0** (subtotalSum·amountEqTotal·totalEqSubtotal·lineMath 전부 0) |
 | ② 측정 ⓑ self-approved | 2026-10-27 21:33 | dhqod10 | **0** 건 (스캔 3, 운영 필드만 승인 문서는 정상) |
 | ② 측정 ⓒ store-scope 참조 | 2026-10-27 21:33 | dhqod10 | 참조 **0** 건 → P2(H-02 포함) 우선도 낮음 확인 |
-| ③ Rules | | | |
-| ④ ⓑ 처리 | | | |
-| ⑤ 본 CF (shadow) | | | `.env` 두 줄 확인: ☐ |
-| ⑤-b 양성 대조 | | | |
-| ⑥ 앱 | | | 최소 버전 게이트 포함: ☐ |
-| ⑥-c 구버전 비율 | | | 스토어 분포 __% / `clientLevel==null` 기록 __건 / 임계값 __% |
-| ⑦ enforce 전환 | | | 거절 1건 실측: ☐ |
-| ⑧ 라이브 검증 | | | |
-| ⑨ 재측정 | | | ⓐ __ / ⓑ __ (② 대비 증가 0: ☐) |
+| ③ Rules | 2026-10-28 | dhqod10 | HEAD 배포. 다섯번째 구멍(menuOverrides 자가승인) 차단. 구 Rules 대조 PPA-1·2 12건 FAIL 확인 |
+| ④ ⓑ 처리 | — | — | **생략** (② ⓑ=0, 처리할 self-approved 없음) |
+| ⑤ 본 CF (shadow) | 2026-10-28 | dhqod10 | 전 함수 배포. 가격 이력 트리거 6개 생성. `.env` 두 줄 확인: ☑ (`GATE=enforce`,`PRICE=shadow`) |
+| ⑤-b 양성 대조 | 2026-10-28 | dhqod10 | 구버전 앱 금액 조작 → `PRICE_MISMATCH`+`shadow:true`+`serverExpected` 1건. 정상 결제엔 기록 없음(오탐 0). `priceHistory` 트리거 동작 확인 |
+| ⑥ 앱 | 2026-10-28 | dhqod10 | iOS·Android 신버전 설치. 최소 버전 게이트 포함: ☑. 카트 재가격 복구 UX 라이브 확인(5,000→8,000 배너) |
+| ⑥-c 구버전 비율 | 2026-10-28 | dhqod10 | 미출시(실사용자 본인뿐, 양 기기 신버전). `clientLevel==null` 기록은 구버전 테스트분뿐. `minClientLevel` 미상향 → 업데이트 화면 안 뜸 확인 |
+| ⑦ enforce 전환 | 2026-10-28 | dhqod10 | `PRICE=enforce` 재배포. 거절 1건 실측: ☑ — 구버전으로 8,000 결제 시도 → **거절**, 기록에 `shadow` 키 **없음**, `delta:3000`, `clientLevel:null` |
+| ⑧ 라이브 검증 | 2026-10-28 | dhqod10 | 핵심 3경로 실환경 확인: 정상결제 오탐 0(⑤-b) / 신버전 재가격 복구 UX(5,000→8,000 배너·라인) / 서버 거절+구버전 막다른길. 나머지(옵션비활성·가격내림·네트워크차단·빠른재주문)는 자동 테스트(914)·교차골든으로 덮임, 수동 미실시 |
+| ⑨ 재측정 | 2026-10-28 11:24 | dhqod10 | ⓐ **0** / ⓑ **0** (② 대비 증가 0: ☑). 스캔 24→26(+2=정상결제 성공분), 위반 0 유지 → enforce 가 조작 차단·정상 통과 증명 |
 | ⑩ 정리 커밋 | | | |
