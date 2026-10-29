@@ -844,11 +844,14 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
 ### ✅ [검증됨 — 문제 없음] 5. 품절 토글이 옵션 비활성을 덮어쓸 가능성 → 아님
 인라인 품절 토글(`owner_store_menu_list_page.dart _toggleSoldOut`)은 두 경로 모두 `item.copyWith(soldOut:)` / `override.copyWith(soldOut:)` 로 **현재 항목에서 복사** → disabled*(옵션 비활성) 보존. 리포지토리(`menu_override_repository_impl.dart:169-194`)가 soldOut+disabled* 3필드를 함께 쓰지만 호출부가 **빈 배열이 아닌 현재값**을 넘기므로 덮어쓰기 없음. (이론상 좁은 stale-read 레이스만 존재 — 토글이 옵션을 날리는 버그 아님.)
 
-### ⬜ [미검증] 6. 브랜드 정보 수정이 타임스탬프 왕복에 의존 — `firestore.rules:568-571`
-직렬화 건드리면 조용히 깨질 수 있음.
+### ⚠️ [검증됨 — 잠재 취약, 중간] 6. 브랜드 핵심필드 수정이 타임스탬프 왕복에 의존 — `firestore.rules`(isBrandSelfUpdate) + `brand_repository_impl.dart`
+브랜드 핵심필드 수정 경로가 `_dataSource.set(brandId, model.toFirestore())` 로 **전체 문서**를 보냄(createdAt/approvedAt 포함, copyWith 로 approvedBy/At 보존). Rules `isBrandSelfUpdate` 는 `diff().affectedKeys().hasAny(['brandKey','approvedBy','approvedAt','createdAt'])` 로 이 4개 변경을 금지. → **createdAt/approvedAt 가 read→entity→write 왕복에서 바이트 동일해야만 update 통과.**
+- **현재 상태**: flutter test 통과 + 브랜드 수정이 동작한다면 현재 직렬화는 정확 왕복 중(깨진 상태 아님). 단 **brittle** — BrandModel 직렬화나 Timestamp 처리가 바뀌면 브랜드 정보 수정이 조용히 전면 거부될 수 있음.
+- **견고한 수정(권고)**: 핵심필드 분기를 full `set` 대신 **부분 `update()`** 로 — 화이트리스트 필드(name/logoUrl/description/phone/address/businessHours/tags/companyName/status:pending/submittedBy/submittedAt/updatedAt)만 보내고 createdAt/approvedAt/brandKey 는 payload 에서 제외. 왕복 의존 제거. data 레이어 소규모. (logoUrl-only 분기는 이미 부분 update 라 안전 — 같은 패턴.)
 
-### ⬜ [미검증] 7. firebase.json Android appId가 실제 등록 앱과 다름
-google-services.json이 빌드에 쓰여 당장 영향 없고 `flutterfire configure` 돌릴 때만 문제.
+### ⚠️ [검증됨 — 경미] 7. firebase.json Android appId ≠ 실제 등록 앱(google-services.json)
+firebase.json `...android:eaa7fba75a1895cc327102` vs google-services.json `...android:1b45f24b099287e8327102` (실측, 다름). 빌드는 google-services.json 을 쓰므로 **런타임 무영향**, `flutterfire configure` 재실행 시만 문제.
+- **조치**: firebase.json 의 android appId 를 google-services.json 값으로 정정(1줄). 단 **firebase.json 은 현재 웹 세션(landing hosting)이 적극 수정·커밋 중인 파일** → 충돌 방지 위해 **웹 세션과 조율해 정정**(앱 세션 단독 수정 안 함). 웹 세션에 통보함.
 
 ### ℹ️ 웹 세션 변경 (참고 — lib/·functions/ 무관)
 Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order-app-5957e), `firebase.json` hosting 블록 추가(diff +30/-0, firestore/storage/functions/flutter/emulators 무변경), `landing/` 신규(토스 랜딩+관리자 콘솔, 미배포).
