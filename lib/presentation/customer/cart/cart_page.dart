@@ -156,6 +156,19 @@ class _CartPageState extends ConsumerState<CartPage>
     }
     if (!mounted) return;
     if (result.validation.hasViolations) {
+      // 탭이 등록됐고 왜 진행되지 않았는지 알리는 순간 피드백 (연타 시 중복 노출 방지).
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              result.validation.store != null
+                  ? '지금은 이 매장에서 주문할 수 없어요. 잠시 후 다시 시도해 주세요.'
+                  : '지금 주문할 수 없는 메뉴가 있어요. 표시된 메뉴를 확인해 주세요.',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       _scrollToFirstViolation();
       return;
     }
