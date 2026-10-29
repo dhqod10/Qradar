@@ -849,9 +849,11 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
 - **현재 상태**: flutter test 통과 + 브랜드 수정이 동작한다면 현재 직렬화는 정확 왕복 중(깨진 상태 아님). 단 **brittle** — BrandModel 직렬화나 Timestamp 처리가 바뀌면 브랜드 정보 수정이 조용히 전면 거부될 수 있음.
 - **견고한 수정(권고)**: 핵심필드 분기를 full `set` 대신 **부분 `update()`** 로 — 화이트리스트 필드(name/logoUrl/description/phone/address/businessHours/tags/companyName/status:pending/submittedBy/submittedAt/updatedAt)만 보내고 createdAt/approvedAt/brandKey 는 payload 에서 제외. 왕복 의존 제거. data 레이어 소규모. (logoUrl-only 분기는 이미 부분 update 라 안전 — 같은 패턴.)
 
-### ⚠️ [검증됨 — 경미] 7. firebase.json Android appId ≠ 실제 등록 앱(google-services.json)
-firebase.json `...android:eaa7fba75a1895cc327102` vs google-services.json `...android:1b45f24b099287e8327102` (실측, 다름). 빌드는 google-services.json 을 쓰므로 **런타임 무영향**, `flutterfire configure` 재실행 시만 문제.
-- **조치**: firebase.json 의 android appId 를 google-services.json 값으로 정정(1줄). 단 **firebase.json 은 현재 웹 세션(landing hosting)이 적극 수정·커밋 중인 파일** → 충돌 방지 위해 **웹 세션과 조율해 정정**(앱 세션 단독 수정 안 함). 웹 세션에 통보함.
+### ⚠️ [검증됨 — 경미, 단순 1줄 아님] 7. Android 앱 등록 2개로 split
+실측: **firebase.json + firebase_options.dart = `...android:eaa7fba75a1895cc327102`**(Dart 런타임 경로) vs **google-services.json = `...android:1b45f24b099287e8327102`**(gradle/native/FCM 경로). 즉 Firebase 프로젝트에 Android 앱 등록이 2개로 갈려 있고, Dart(FirebaseOptions)와 네이티브(google-services)가 **서로 다른 앱을 가리킴**.
+- **현재 영향 없음**: 둘 다 같은 프로젝트(835847199015)라 Firestore/Auth/FCM 공유 → 앱 정상 동작(FCM 토큰 등록·결제 확인됨). split 이어도 작동.
+- **웹 세션 전제 정정**: "google-services.json=진실, firebase.json만 틀림" 은 불완전 — firebase.json 은 firebase_options.dart 와 일치함. 어느 앱이 정본인지 먼저 결정해야 함.
+- **올바른 조치**: firebase.json 1줄 정정은 오히려 firebase.json↔firebase_options.dart 불일치를 만듦. **정본 앱 결정 → `flutterfire configure` 로 3파일(firebase.json·firebase_options.dart·google-services.json) 일괄 재생성**이 맞음. 비긴급(앱 동작 중). 앱 세션이 1줄 수정 시도했다가 이 사실 확인 후 되돌림.
 
 ### ℹ️ 웹 세션 변경 (참고 — lib/·functions/ 무관)
 Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order-app-5957e), `firebase.json` hosting 블록 추가(diff +30/-0, firestore/storage/functions/flutter/emulators 무변경), `landing/` 신규(토스 랜딩+관리자 콘솔, 미배포).
