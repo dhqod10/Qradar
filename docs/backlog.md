@@ -778,3 +778,13 @@ stores/{storeId}
 
 ### ℹ️ 서버 결제 게이트(G-01~G-04) 검증 메모 — 라이브 트리거 불가
 라이브 클라이언트가 장바구니/결제 단계에서 메뉴·매장 상태를 **실시간 재검증**해 서버 게이트 도달 전에 막는다(정상 설계). 따라서 서버 게이트(SOLD_OUT/PRICE_MISMATCH/매장상태/OPTION_UNAVAILABLE)는 정상 클라이언트로는 트리거되지 않는다 — "구버전·조작·stale 클라이언트" 백스톱용. 라이브 검증은 **결제 진행 중(Toss 화면) 상태를 틀어야만** 가능(타이밍). 이번엔 코드 레벨(B)로 검증, 에뮬레이터 하네스는 PPA-P8 로 이관.
+
+## 알림 / FCM (2026-10-29 알림테스트 중 발견)
+
+### ⬜ FCM 토큰 재등록 갭 — onTokenRefresh 미구독 + 로그인 등록 silent 실패
+FCM 토큰 등록은 **로그인 성공 시(auth_provider)** 와 **알림 설정 페이지 토글 시(notification_settings_page:115)** `registerFcmTokenUseCase.call(uid)` 로만 일어난다. 그런데:
+1. `onTokenRefresh` 스트림이 데이터소스·리포지토리에 **노출만 돼 있고 어디서도 `.listen` 구독하지 않는다**(lib 전체 검색). 앱 실행 중 토큰이 로테이션되면 `users/{uid}.fcmToken` 이 갱신되지 않아 다음 로그인/설정방문 전까지 **푸시 유실**.
+2. `registerFcmTokenUseCase` 는 `getToken()==null` 이면 silent 하게 미등록(정상 설계지만, 로그인 직후 getToken 이 아직 준비 안 됐을 때 null 반환 → 토큰 미등록인데 재시도 트리거 없음). 2026-10-29 테스트에서 재설치 후 로그인했는데 토큰이 빈 채로 남아, **알림 설정 페이지를 열어서야** 정상 토큰(`APA91b…`)이 등록됨.
+- **영향:** 재설치/토큰 로테이션 사용자가 로그인만으로는 푸시를 못 받을 수 있다. onOrderStatusChanged 는 무효 토큰을 만나면 `fcmToken` 을 비우므로(정상), 이후 재등록 경로가 약하면 알림이 조용히 끊긴다.
+- **후보 조치:** ⓐ 앱 시작/로그인 후 `onTokenRefresh` 구독 → `updateFcmToken`. ⓑ 로그인 시 register 가 null 이면 짧게 재시도(또는 FirebaseMessaging 초기화 완료 후 1회 재호출). ⓒ 홈 진입 시 토큰 존재 보장 체크.
+- 관측: 2026-10-29 알림테스트. CF 로그 `[onOrderStatusChanged] Invalid FCM token — clearing`. 토큰 재등록 후 `accepted→making`·`making→ready` 푸시 정상 도착 확인.
