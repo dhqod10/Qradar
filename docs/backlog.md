@@ -849,3 +849,9 @@ google-services.json이 빌드에 쓰여 당장 영향 없고 `flutterfire confi
 
 ### ℹ️ 웹 세션 변경 (참고 — lib/·functions/ 무관)
 Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order-app-5957e), `firebase.json` hosting 블록 추가(diff +30/-0, firestore/storage/functions/flutter/emulators 무변경), `landing/` 신규(토스 랜딩+관리자 콘솔, 미배포).
+
+### ⬜ [분리] stores/menuItems 점주(owner) 분기 self-approve (brand_self_approve_guard D2)
+`firestore.rules:458-464` 의 `stores/{storeId}/menuItems` 점주(isStoreOwner) 분기에 필드/status 제약이 없어, 점주가 점포한정 메뉴를 등록(pending) 후 **직접 status='approved' 로 자가승인** 가능(admin 검토 우회). 점포한정 메뉴도 승인 대상(streamPending — stores/*/menuItems).
+- **왜 brand_self_approve_guard(D1)와 분리했나**: 점주에겐 **정당한 status:'approved' 쓰기**가 섞여 있고(menuOverrides 점주 운영 upsert 주석 참고, rules:472), **독립 매장(brandId 없음) vs 브랜드 가맹 매장**을 `get(stores).brandId` 로 구분해야 하는 다른 성격의 설계. 블런트 차단은 정당 독립매장 플로우를 깰 수 있음.
+- **착수 시**: get(stores).brandId 분기 + 점주가 승인권을 갖는 케이스 정의(독립매장 자동/점주 승인 vs 가맹매장 admin 승인). entity_lifecycle.md §5.4 참조.
+- D1(V1 brands/menuItems, V2 stores/menuOverrides 브랜드, V3 stores/menuItems 브랜드)에서 **브랜드 분기는 모두 닫힘** — 남은 건 이 점주 분기 1개.

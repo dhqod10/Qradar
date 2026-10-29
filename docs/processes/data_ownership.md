@@ -156,11 +156,14 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | read | `isSignedIn()` |
 | create, update, delete | `admin OR storeOwner(storeId) OR brandHolder(store.brandId)` |
 
+> **브랜드 분기 자가승인 차단 (brand_self_approve_guard)**: `menuItems` · `menuOverrides` 의 `brandHolder` 분기는 create 에 `noSelfApproveOnCreate()`(`status` 는 `pending` 만, `approvedBy`/`approvedAt` 부재·null), update 에 `noSelfApproveOnUpdate()`(`status` 변경 시 `pending` 만, `approvedBy`/`approvedAt` 변경 시 null 만 — status 미변경 운영 update·승인 메타 보존 재제출은 통과)를 `&&` 로 요구한다. delete 는 승인과 무관해 유지. 승인/반려는 `admin` 전담. **`stores/menuItems` 의 `storeOwner` 분기는 미적용(별도 task, D2)**.
+
 > **`menuOverrides` 만 다르다 (payment_price_authority Rules-1, 2026-10-27)**: 점주는 **승인 상태의 핵심 필드를 쓸 수 없다.** 서버가 `priceOverride` 를 "권위 있는 금액" 으로 쓰기 시작해, UI 의 약속이던 승인 요건을 Rules 로 집행한다.
 >
 > | 주체 | create | update |
 > |---|---|---|
-> | `admin` · `brandHolder` | 제한 없음 (제출·승인·반려 모두) | 제한 없음 |
+> | `admin` | 제한 없음 (제출·승인·반려 모두) | 제한 없음 |
+> | `brandHolder` | `noSelfApproveOnCreate()` — 제출(`pending`)만, 승인 메타 불가 | `noSelfApproveOnUpdate()` — `status` 를 approved/rejected 로 전이 불가, 승인 메타 non-null 쓰기 불가 |
 > | `storeOwner` | `status ∈ {pending, approved, rejected}` + `approvedBy`/`approvedAt` 부재 또는 null + (`status != approved` 또는 `priceOverride == null && excluded == false`) | **운영 필드만**: `soldOut` `disabledOptionGroupIds` `disabledOptionItemIds` `updatedBy` `updatedAt` |
 >
 > 앱의 점주 정상 쓰기 둘(품절 토글의 W2 upsert — `status:'approved'` + 승인 메타 null + 핵심 필드 없음 / 가맹점 등록 시 제외 시드 — `status:'pending'` + `excluded:true`)은 통과한다. **모르는 `status` 문자열을 앱은 `approved` 로 읽으므로** 허용 목록으로 막는다. `create` 와 `update` 는 별개의 경로라 각각 제한한다(`onlyChangedFields` 는 update 전용). 하네스 `PPA-1*`(create) · `PPA-2*`(update) · `PPA-3*`(정상 흐름 회귀).
@@ -171,7 +174,7 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
   - `MenuItemRepositoryImpl`: 개인 매장 메뉴는 owner only, 브랜드 매장 점포한정 메뉴는 brand only (Rules 보다 엄격)
   - `MenuOverrideRepositoryImpl`: 핵심 필드는 brand only, 운영 필드는 owner/brand 모두 가능
 
-⚠️ **방어 계층 일관성**: `menuOverrides` 는 위 Rules-1 로 갈렸다. 나머지(`menuItems` 등)는 Rules 가 owner/brand/admin 모두 통과시키고 Repository 가 case-by-case 로 제한한다 — Rules 단에서 더 엄격히 갈라야 하는지 확인 필요.
+⚠️ **방어 계층 일관성**: `menuOverrides` 는 위 Rules-1 로 갈렸고, `menuOverrides`·`menuItems` 의 **브랜드 분기 자가승인**은 brand_self_approve_guard 로 Rules 에서 닫혔다. 남은 지점: `stores/menuItems` 의 **점주 분기**는 Rules 가 여전히 owner 를 제한 없이 통과시키고(브랜드 매장 점포한정 메뉴 `status:'approved'` 자가승인 여지) Repository role 검증에만 의존한다 — 별도 task (backlog 등재, D2). `optionGroups`·`subCategories` 도 현행.
 
 ⚠️ **옵션 가격은 가격 승인 정책의 우회로다 (payment_price_authority §4-4 · Q8 ⓑ — 현행 유지 + 명시)**: `stores/{s}/optionGroups/{id}` 는 점주가 필드·타입 제약 없이 쓰고 `priceDelta` 변경이 **즉시** 효력을 갖는다. 브랜드 마스터 메뉴가 store-scope 옵션 그룹을 참조하면 가맹점이 승인 없이 그 메뉴의 옵션 가격을 바꿀 수 있고, 서버는 이제 그 문서 값을 "권위 있는 금액" 으로 쓴다(**서버가 우회를 공인한다**). 이 task 는 건수만 측정하고(감사 도구 ⓒ) 정책은 후속 P2 로 둔다. Rules 에 금액 필드 타입·범위 제약이 전무한 것은 P5.
 
@@ -206,7 +209,9 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | read | `isSignedIn()` |
 | create, update, delete | `admin OR brandHolder(brandId)` |
 
-**일관성 양호**: Rules 가 명확히 brand 본사 + admin 으로 제한. Repository (`MasterMenuItemRepositoryImpl`) 도 동일한 ownership 검증.
+> **`menuItems` 는 브랜드 분기에 자가승인 가드 (brand_self_approve_guard)**: create = `admin OR (brandHolder AND noSelfApproveOnCreate())`, update = `admin OR (brandHolder AND noSelfApproveOnUpdate())`, delete = `admin OR brandHolder`. 브랜드는 `status:'pending'` 제출·내용수정·재제출(승인 메타 보존)·운영 update 만 가능하고 `approved`/`rejected` 전이와 `approvedBy`/`approvedAt` non-null 쓰기는 거부된다. 승인/반려는 admin 전담. `subCategories`/`optionGroups` 는 승인 status 가 없어 현행.
+
+**일관성 양호**: Rules 가 brand 본사 + admin 으로 제한하고 승인 경계도 Rules 에서 집행한다. Repository (`MasterMenuItemRepositoryImpl`) 도 동일한 ownership 검증.
 
 ### 2.9 `mainCategories/{id}`, `subCategories/{id}` (글로벌), `optionGroups/{id}` (글로벌)
 

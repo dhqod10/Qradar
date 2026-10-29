@@ -66,6 +66,28 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
     }
 
+    // [brand_self_approve_guard] 브랜드 분기 자가승인 차단 — 자기완결(request.resource/resource 만 본다, get() 0).
+    // 승인 status·메타는 approval 컬렉션 공통 필드명(status/approvedBy/approvedAt). 사용처: brands/menuItems,
+    // stores/menuItems·menuOverrides 의 브랜드 분기. admin 분기는 전권이라 적용하지 않는다.
+    // create 경로 (resource 없음 → diff 불가, get() 기반): status 는 'pending' 만, 승인 메타는 부재 또는 null.
+    function noSelfApproveOnCreate() {
+      return request.resource.data.get('status', 'pending') == 'pending'
+          && request.resource.data.get('approvedBy', null) == null
+          && request.resource.data.get('approvedAt', null) == null;
+    }
+
+    // update 경로 (diff 기반): status 를 바꾸면 'pending' 만, approvedBy/approvedAt 를 바꾸면 null 만 허용.
+    // status 미변경(운영 update)은 현재가 approved 여도 통과하고, 승인 메타 보존(재제출)도 통과한다.
+    // ⚠️ leavingRejectedClearsApproval 는 쓰지 않는다 — 브랜드 마스터 메뉴 재제출은 승인 메타를 보존한다.
+    function noSelfApproveOnUpdate() {
+      return (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
+              || request.resource.data.get('status', '') == 'pending')
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedBy'])
+              || request.resource.data.get('approvedBy', null) == null)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedAt'])
+              || request.resource.data.get('approvedAt', null) == null);
+    }
+
     // Qoin 이 관리하는 stores / brands 필드 **집합** — 필드 목록은 여기 1곳뿐이다 (spec §20.5.4).
     //   qoinAccrualRate    적립률 숫자      (setQoinAccrualRate / applyBrandQoinRate / migrateQoinZeroRates)
     //   qoinAccrualEnabled 적립 스위치      (setQoinAccrualEnabled / migrateQoinZeroRates)
@@ -457,7 +479,16 @@ service cloud.firestore {
       // 점포 한정 메뉴. status='pending' 포함 read 허용 (클라이언트가 approved 필터링).
       match /menuItems/{menuItemId} {
         allow read: if isSignedIn();
-        allow create, update, delete:
+        // [brand_self_approve_guard V3] 브랜드 분기만 자가승인 차단. 점주(isStoreOwner) 분기는 별도 task (D2) 로 현행 유지.
+        allow create:
+          if isAdmin()
+          || isStoreOwner(storeId)
+          || (isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', '')) && noSelfApproveOnCreate());
+        allow update:
+          if isAdmin()
+          || isStoreOwner(storeId)
+          || (isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', '')) && noSelfApproveOnUpdate());
+        allow delete:
           if isAdmin()
           || isStoreOwner(storeId)
           || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
@@ -466,7 +497,7 @@ service cloud.firestore {
       // ── stores/{storeId}/menuOverrides/{masterMenuItemId} ─────────────────
       // [payment_price_authority §13-8] priceOverride 의 승인 요건은 UI 의 약속이었고 Rules 로 집행되지 않았다 — 가맹점주가
       // {status:'approved', priceOverride:1} 을 직접 쓸 수 있었다. 서버가 이 값을 "권위 있는 금액" 으로 쓰기 시작하므로 닫는다.
-      //  - admin / 브랜드 보유자: 제한 없음 (제출·승인 쓰기 유지 — approveOverride 는 status/approvedBy/approvedAt 을 쓴다)
+      //  - admin: 전권 (approveOverride 는 status/approvedBy/approvedAt 을 쓴다). 브랜드 보유자: 제출만 — 자가승인 차단 (아래 V2)
       //  - 점주: create 는 **효력 있는 핵심 필드를 만들 수 없다**, update 는 **운영 필드만** 바꿀 수 있다.
       //    (update 전용 장치 onlyChangedFields 는 create 를 보호하지 않는다 — 같은 패턴의 다섯 번째. 두 경로를 각각 제한한다.)
       // 점주의 정상 create 는 둘이다: W2 운영 필드 upsert(status:'approved', priceOverride:null, excluded:false, 승인 메타 null) 와
@@ -483,13 +514,14 @@ service cloud.firestore {
 
       match /menuOverrides/{masterMenuItemId} {
         allow read: if isSignedIn();
+        // [brand_self_approve_guard V2] 브랜드 분기는 제출(pending)만 — status 전이·승인 메타 쓰기 차단. approve/reject 는 admin.
         allow create:
           if isAdmin()
-          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''))
+          || (isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', '')) && noSelfApproveOnCreate())
           || (isStoreOwner(storeId) && ownerOverrideCreateOk());
         allow update:
           if isAdmin()
-          || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''))
+          || (isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', '')) && noSelfApproveOnUpdate())
           || (isStoreOwner(storeId)
               && onlyChangedFields(['soldOut', 'disabledOptionGroupIds', 'disabledOptionItemIds', 'updatedBy', 'updatedAt']));
         allow delete:
@@ -604,8 +636,10 @@ service cloud.firestore {
       // ── brands/{brandId}/menuItems/{id} ───────────────────────────────────
       match /menuItems/{menuItemId} {
         allow read: if isSignedIn();
-        allow create, update, delete:
-          if isAdmin() || isBrandHolder(brandId);
+        // [brand_self_approve_guard V1] 브랜드는 pending 제출만. 승인/반려(status·approvedBy/At)는 admin 전담. delete 는 승인과 무관.
+        allow create: if isAdmin() || (isBrandHolder(brandId) && noSelfApproveOnCreate());
+        allow update: if isAdmin() || (isBrandHolder(brandId) && noSelfApproveOnUpdate());
+        allow delete: if isAdmin() || isBrandHolder(brandId);
       }
 
       // ── brands/{brandId}/subCategories/{id} ───────────────────────────────

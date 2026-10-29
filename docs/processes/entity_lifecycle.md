@@ -239,8 +239,8 @@ stateDiagram-v2
 
 | 전이 | actor | 갱신 | Rules 분기 |
 |---|---|---|---|
-| (없음) → pending | brand | scope='brand', brandId=myBrandId, status='pending', submittedBy=uid | `brands/{brandId}/menuItems.create`: `isAdmin() || isBrandHolder(brandId)` |
-| pending → approved | admin | status, approvedBy, approvedAt, rejectedReason=null | 동일 — admin 통과 |
+| (없음) → pending | brand | scope='brand', brandId=myBrandId, status='pending', submittedBy=uid | `brands/{brandId}/menuItems.create`: `isAdmin() || (isBrandHolder(brandId) && noSelfApproveOnCreate())` — 브랜드는 `status='pending'` + 승인 메타 부재·null 만 (brand_self_approve_guard) |
+| pending → approved | admin | status, approvedBy, approvedAt, rejectedReason=null | 동일 — admin 통과. **브랜드는 Rules 에서 거부** (`noSelfApproveOnUpdate`) |
 | pending → rejected | admin | status='rejected', rejectedReason | 동일 |
 | approved → pending (핵심 수정) | brand | status='pending', submittedBy/At 갱신, **approvedBy/At 보존** (수정 대기 라벨 구분) | 동일 |
 | approved → approved (운영) | brand | `visible`, `tags`, `displayOrder`, `imageUrl`, `updatedAt` 만 (status 무관) | 동일 |
@@ -287,7 +287,7 @@ stateDiagram-v2
 | pending → rejected | admin | `rejectStoreOnlyMenu` | status, approvedBy, rejectedReason |
 | approved → pending (핵심 수정) | brand | `updateStoreOnlyMenuCore` (brandId!=null 분기) | status='pending' 회귀 |
 
-**Rules 분기**: `stores/{storeId}/menuItems` 는 admin / `isStoreOwner(storeId)` / `isBrandHolder(store.brandId)` 모두 허용. 즉 Rules 는 점주도 통과시키지만, Repository 가 role 검증으로 차단 — 점주는 브랜드 매장의 메뉴를 직접 생성할 수 없음. ⚠️ **방어 계층 일관성 부족** — Rules 단에서도 차단하는 게 안전.
+**Rules 분기**: `stores/{storeId}/menuItems` 는 admin / `isStoreOwner(storeId)` / `isBrandHolder(store.brandId)` 허용. **브랜드 분기는 brand_self_approve_guard 로 닫혔다** — create `noSelfApproveOnCreate()`, update `noSelfApproveOnUpdate()` (status 는 `pending` 만, 승인 메타 non-null 불가; 브랜드 자가승인 차단, delete 유지). ⚠️ **남은 지점**: **점주 분기**는 Rules 가 여전히 제한 없이 통과시키고 Repository role 검증으로만 차단한다 — 가맹점주가 브랜드 매장 점포한정 메뉴를 `status:'approved'` 로 직접 쓸 여지가 있다. 개인 매장 점주의 정당한 `approved` 쓰기와 공유되는 분기라 `stores.brandId` 기반 분리가 필요해 별도 task 로 분리했다 (D2).
 
 ### 5.5 MenuOverride (가맹점의 마스터 메뉴 오버라이드)
 
@@ -316,7 +316,7 @@ stateDiagram-v2
 - 핵심 필드 (priceOverride / excluded) — `status==approved` 일 때만 적용
 - 운영 필드 (soldOut / disabledOption*) — status 무관 즉시 적용
 
-**Rules (payment_price_authority Rules-1, 2026-10-27)**: `admin` · `brandHolder` 는 create/update/delete 전부 가능하다(제출·승인·반려). **점주(`storeOwner`)는 승인 상태의 핵심 필드를 쓸 수 없다** — create 는 `approvedBy`/`approvedAt` 부재·null + (`status != 'approved'` 또는 `priceOverride == null && excluded == false`) + `status ∈ {pending, approved, rejected}`, update 는 운영 필드(`soldOut` `disabledOptionGroupIds` `disabledOptionItemIds` `updatedBy` `updatedAt`)만. 위 표의 점주 전이 두 줄(운영 필드 신규 `status='approved'` / partial update)은 그대로 통과한다. 이전에는 점주가 `{status:'approved', priceOverride:1}` 을 직접 쓸 수 있어 "핵심 필드는 approved 일 때만 적용" 분기가 의미를 갖지 못했다. 상세: [`data_ownership.md §2.6`](./data_ownership.md).
+**Rules (payment_price_authority Rules-1, 2026-10-27)**: `admin` 은 create/update/delete 전부 가능하다(제출·승인·반려). **`brandHolder` 는 제출만** — create `noSelfApproveOnCreate()` · update `noSelfApproveOnUpdate()` (brand_self_approve_guard: `status` 를 approved/rejected 로 전이하거나 `approvedBy`/`approvedAt` 를 non-null 로 쓰면 거부, 자가승인 차단), delete 는 가능. **점주(`storeOwner`)는 승인 상태의 핵심 필드를 쓸 수 없다** — create 는 `approvedBy`/`approvedAt` 부재·null + (`status != 'approved'` 또는 `priceOverride == null && excluded == false`) + `status ∈ {pending, approved, rejected}`, update 는 운영 필드(`soldOut` `disabledOptionGroupIds` `disabledOptionItemIds` `updatedBy` `updatedAt`)만. 위 표의 점주 전이 두 줄(운영 필드 신규 `status='approved'` / partial update)은 그대로 통과한다. 이전에는 점주가 `{status:'approved', priceOverride:1}` 을 직접 쓸 수 있어 "핵심 필드는 approved 일 때만 적용" 분기가 의미를 갖지 못했다. 상세: [`data_ownership.md §2.6`](./data_ownership.md).
 
 > **order 의 `→ paid` 진입 조건에 서버 금액 일치가 추가된다** (§2.2, payment_price_authority): `PAYMENT_PRICE_MODE=enforce` 에서 `verifyTossPayment` 가 카트 금액을 문서에서 다시 계산해 불일치면 **주문 생성 전에** 거절한다. 새 status 는 없고 거절은 전이가 아니라 **진입 차단**이다.
 
