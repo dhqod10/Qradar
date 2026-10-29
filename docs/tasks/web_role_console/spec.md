@@ -963,6 +963,42 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
 **사용자 준비 항목**: 카카오 — JavaScript 키 + 웹 플랫폼 도메인 등록(`localhost`, `order-app-5957e.web.app`).
 네이버 — 클라이언트 ID + Callback URL 등록. (`env.json` 에는 현재 `TOSS_CLIENT_KEY` 뿐이라 둘 다 신규 값이다.)
 
+> ## 🔒 CF 입력 계약 확정 (2026-10-29, 제품 오너 결정 · 앱 세션 relay)
+>
+> 웹 소셜 로그인은 **아래 계약 위에 짓는다.** 서버 구현은 런칭 전이라 지금 CF 가 바뀌지는 않지만,
+> 웹을 토큰 방식으로 먼저 지으면 나중에 갈아끼워야 하므로 **계약만 선결**한다.
+>
+> ### 네이버 — authorization code exchange (방식 변경)
+>
+> ```
+> 웹 OAuth 리다이렉트 → 콜백에서 code 수령
+>   → CF 에 { code, state, redirect_uri } 전달        ← accessToken 이 아니다
+>   → CF 가 server-side 에서 client_secret 으로 code ↔ token 교환
+>   → 프로필 조회 → Firebase 커스텀 토큰 발급
+> ```
+>
+> 코드가 **우리 앱 전용**이라 audience 가 자연 보장된다. T16 이 지적한 수신자 미검증이 구조적으로 해소된다.
+> **CF 입력 계약이 `{accessToken}` → `{code, …}` 로 바뀐다.** 웹은 **처음부터 코드 전송 방식**으로 구현한다.
+>
+> **웹 구현 시 따라오는 것** (이 spec 범위에서 미리 적어 둔다)
+> - **콜백 경로가 필요하다.** 네이버 개발자 콘솔에 **정확한 redirect_uri** 를 등록해야 한다.
+>   콘솔은 해시 라우팅이고 `cleanUrls:false` · `trailingSlash:false` 이므로
+>   `https://order-app-5957e.web.app/console/index.html` 형태가 된다(`/console` rewrite 추가 후에는 그쪽도 등록).
+>   해시(`#/…`)는 서버로 전송되지 않으므로 콜백은 **쿼리스트링** `?code=…&state=…` 를 읽는다.
+> - **`state` 로 CSRF 를 막는다.** 발급 시 저장하고 콜백에서 대조한다.
+> - **code 는 1회용이고 수명이 짧다.** 새로고침·뒤로가기로 재사용되지 않게 소비 즉시 URL 에서 제거한다.
+> - 로그인 실패 시 콘솔은 **fail-closed** 를 유지한다(셸 DOM·데이터 요청 없음).
+>
+> ### 카카오 — 계약 불변
+>
+> 클라이언트는 **access token 을 그대로** 보낸다. 서버가 `/v1/user/access_token_info` 로
+> `app_id`(audience) 검증을 **추가**할 뿐이다. **웹·앱 클라이언트 변경 없음.**
+>
+> ### 계정 동일성은 그대로
+>
+> 두 방식 모두 uid 는 `naver_${id}` / `kakao_${id}` 로 유지된다. 앱·웹이 같은 계정으로 이어진다.
+> 🔴 **기존 카카오 앱 / 네이버 애플리케이션에 웹 플랫폼을 추가**한다(새로 만들면 계정이 쪼개진다 — 위 참조).
+
 **Q5 재정의**: 원래 질문은 "카카오/네이버 계정이 못 들어오는데 괜찮은가" 였으나, 조사 결과 넣을 수 있으므로
 질문은 **"웹 콘솔에 카카오·네이버 로그인을 넣을 것인가, 언제 넣을 것인가"** 로 바뀐다.
 사용자 판단(2026-10-29): **고객 다수가 카카오/네이버로 보이므로, 고객 섹션(리뷰·게시글·QnA)의 전제조건이다.**
