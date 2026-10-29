@@ -240,10 +240,10 @@
   2. **customer 가입**: 앱에서 이메일 가입 → `role='customer'` 문서 생성 `[자동]`(이메일 ASCII)
   3. **admin 승격**: Firebase Console 에서 해당 uid 의 `users.role` → `admin` (자가 승격은 Rules `isAllowedSelfRoleChange` 로 차단되어 콘솔이 유일 경로) `[확인]`
   4. 재로그인 → `AdminScaffold`(승인 큐 / 더보기 2탭) 진입 `[확인]`
-  5. **메인 카테고리** 생성: 더보기 → 메뉴 카테고리 → `mainCategories` 등록 `[수동-한글]`
-  6. **글로벌 서브 카테고리** 생성: `subCategories` `[수동-한글]`
-  7. **글로벌 옵션 그룹** 생성: `optionGroups` `[수동-한글]`
-- 기대: admin UI(task 8·9)로 마스터 데이터가 Firestore 에 생성되어, 이후 B-02 마스터 메뉴가 카테고리/옵션을 참조할 수 있는 상태가 됨
+  5. **메인 카테고리 확인**: 더보기 → 메인 카테고리 관리 → 커피/논커피/디저트 3개가 보이는지 `[확인]`
+     - ⚠️ 2026-10-28 실측: 메인 카테고리는 `MainCategoryCode` enum 기반으로 **앱이 자동 provision** 한다(화면 진입 시 Firestore `mainCategories/{coffee,nonCoffee,dessert}` 자동 생성). **admin 이 수동 생성할 필요 없음**
+  6. (글로벌 서브 카테고리/옵션 그룹 admin UI 는 없음) → **서브 카테고리·옵션 그룹은 브랜드가 brand-scoped 로 생성**한다 (X-01 / B-02, `brands/{brandId}/subCategories`·`/optionGroups`)
+- 기대: admin 측 마스터 데이터는 메인 카테고리 자동 생성으로 충족. 서브/옵션/마스터 메뉴는 X-01 에서 브랜드가 만든다
 - 주의: 시드(`lib/dev/seed`)는 돌리지 않는다. 한글 입력 구간은 사용자가 입력 후 Claude 가 저장/검증 이어받음
 - 우선순위: 🔴 (X-01 의 선행 전제)
 
