@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qradar 관리자 콘솔</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<!--
+  이 페이지는 landing 에서 링크하지 않는다 (spec Q3 조건 ②). 접근은 /admin/index.html 로만 한다.
+  색상 변수는 landing/assets/style.css 를 그대로 상속한다 (읽기 전용 — 이 콘솔에서 수정하지 않는다).
+-->
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="assets/admin.css">
+</head>
+<body>
+
+<!-- 인증 게이트와 셸은 admin.js 가 이 컨테이너 안에 만든다. admin 확인 전에는 셸 DOM 을 만들지 않는다. -->
+<div id="app" class="a-root"></div>
+<div id="toast-region" class="a-toast-region" aria-live="polite"></div>
+
+<noscript>
+  <div class="a-gate"><div class="a-gate-card"><p>이 콘솔은 JavaScript 가 필요해요.</p></div></div>
+</noscript>
+
+<script type="module" src="assets/admin.js"></script>
+</body>
+</html>
