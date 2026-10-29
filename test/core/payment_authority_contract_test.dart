@@ -95,10 +95,22 @@ void main() {
     assert(cases.isNotEmpty);
     for (final c in cases) {
       test(c['name'] as String, () {
+        final rawStatus = c['rawStatus'] as String?;
+        final hasApprovedAt = c['hasApprovedAt'] as bool;
+        final temporaryClosed = c['temporaryClosed'] as bool;
+        expect(
+          storeGateReason(
+            rawStatus: rawStatus,
+            hasApprovedAt: hasApprovedAt,
+            temporaryClosed: temporaryClosed,
+          ),
+          c['expectReason'] as String?,
+        );
         expect(
           canSellNow(
-            rawStatus: c['rawStatus'] as String?,
-            hasApprovedAt: c['hasApprovedAt'] as bool,
+            rawStatus: rawStatus,
+            hasApprovedAt: hasApprovedAt,
+            temporaryClosed: temporaryClosed,
           ),
           c['expect'] as bool,
         );

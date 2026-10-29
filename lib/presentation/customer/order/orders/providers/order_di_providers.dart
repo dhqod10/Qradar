@@ -19,6 +19,7 @@ import 'package:qradar/domain/usecases/request_refund_use_case.dart';
 import 'package:qradar/domain/usecases/start_making_order_use_case.dart';
 import 'package:qradar/domain/usecases/verify_and_create_order_use_case.dart';
 import 'package:qradar/domain/usecases/watch_order_use_case.dart';
+import 'package:qradar/domain/usecases/count_active_store_orders_use_case.dart';
 import 'package:qradar/domain/usecases/watch_store_orders_use_case.dart';
 import 'package:qradar/domain/usecases/watch_store_refund_requests_use_case.dart';
 import 'package:qradar/domain/usecases/watch_user_orders_use_case.dart';
@@ -94,6 +95,11 @@ final watchOrderUseCaseProvider = Provider<WatchOrderUseCase>((ref) {
 
 final watchUserOrdersUseCaseProvider = Provider<WatchUserOrdersUseCase>((ref) {
   return WatchUserOrdersUseCase(ref.watch(orderRepositoryProvider));
+});
+
+final countActiveStoreOrdersUseCaseProvider =
+    Provider<CountActiveStoreOrdersUseCase>((ref) {
+  return CountActiveStoreOrdersUseCase(ref.watch(orderRepositoryProvider));
 });
 
 final watchStoreOrdersUseCaseProvider =

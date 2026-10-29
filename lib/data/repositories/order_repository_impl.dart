@@ -45,6 +45,12 @@ class OrderRepositoryImpl implements OrderRepository {
   }
 
   @override
+  Future<int> countStoreOrdersByStatuses(
+    String storeId,
+    Set<OrderStatus> statuses,
+  ) => _ds.countByStoreAndStatuses(storeId, statuses);
+
+  @override
   Stream<List<OrderEntity>> watchStoreRefundRequests(String storeId) {
     return _ds
         .streamRefundRequestsByStore(storeId)

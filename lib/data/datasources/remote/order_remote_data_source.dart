@@ -69,6 +69,22 @@ class OrderRemoteDataSource {
             snap.docs.map(OrderModel.fromFirestore).toList(growable: false));
   }
 
+  /// 특정 매장의 진행 중 주문 건수 1회 조회 (temporary_closed_gate — 휴업 전환 가드).
+  /// orderBy 없이 `storeId == && status in` — 기존 매장 주문 쿼리와 같은 Rules(isStoreOwner) 범위.
+  Future<int> countByStoreAndStatuses(
+    String storeId,
+    Set<OrderStatus> statuses,
+  ) async {
+    final snap = await _orders
+        .where('storeId', isEqualTo: storeId)
+        .where(
+          'status',
+          whereIn: statuses.map((s) => s.name).toList(growable: false),
+        )
+        .get();
+    return snap.docs.length;
+  }
+
   /// 특정 매장의 환불 요청 주문 stream.
   ///
   /// 조건: `refundRequest` 필드가 존재 + status != refunded + 아직 거절되지 않음.

@@ -17,6 +17,7 @@ class CheckoutValidationRepositoryImpl implements CheckoutValidationRepository {
       rawStatus: raw.rawStatus,
       hasApprovedAt: raw.hasApprovedAt,
       brandId: raw.brandId,
+      temporaryClosed: raw.temporaryClosed,
     );
   }
 

@@ -173,6 +173,15 @@ GateFailureCopy gateFailureCopy(
         secondaryLabel: '다른 매장 둘러보기',
         secondaryAction: PaymentFailureAction.browseStores,
       );
+    case PaymentFailureReason.storeTemporarilyClosed:
+      return const GateFailureCopy(
+        headline: '지금은 임시 휴업중인 매장이에요',
+        body: '매장이 잠시 문을 닫았어요. 영업을 다시 시작하면 주문할 수 있어요. 잠시 후 다시 시도해 주세요. 카트는 그대로 남아 있어요.',
+        primaryLabel: '카트로 돌아가기',
+        primaryAction: PaymentFailureAction.popToCart,
+        secondaryLabel: '다른 매장 둘러보기',
+        secondaryAction: PaymentFailureAction.browseStores,
+      );
     case PaymentFailureReason.storeNotFound:
       return const GateFailureCopy(
         headline: '매장 정보를 찾을 수 없어요',

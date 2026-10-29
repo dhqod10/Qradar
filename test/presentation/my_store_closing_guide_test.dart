@@ -11,7 +11,7 @@ import 'package:qradar/presentation/owner/my_store/my_store_page.dart';
 import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 
 /// payment_server_authority D1 design §6: 점주 화면의 `매장 삭제` 버튼은 사라지고 안내 한 줄(`_ClosingGuide`)이 온다.
-/// 불변: 삭제 버튼 부재 · 임시 휴업 안내 부재(temporaryClosed 는 주문을 막지 못한다 — spec §6.8).
+/// 불변: 삭제 버튼 부재 · my_store 화면에 임시 휴업 안내 띠 부재(안내는 운영폼 토글이 함 — temporary_closed_gate 로 temporaryClosed 는 이제 판매를 막는다).
 const _kApproved = '매장 운영을 그만두려면 관리자에게 문의해 주세요.';
 const _kOther = '매장을 삭제하거나 잘못 등록한 매장을 정리하려면 관리자에게 문의해 주세요.';
 

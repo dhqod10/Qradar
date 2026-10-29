@@ -87,7 +87,10 @@ class StoreMenuHeader extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                   ],
-                  _OpenStatusText(hours: store.businessHours),
+                  if (store.temporaryClosed)
+                    const _TemporaryClosedBadge()
+                  else
+                    _OpenStatusText(hours: store.businessHours),
                   const Spacer(),
                   _TappableGradeBadge(store: store),
                 ],
@@ -177,6 +180,35 @@ class _TappableGradeBadgeState extends State<_TappableGradeBadge> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 임시 휴업 배지 (temporary_closed_gate design §1-1). 영업시간 문구보다 우선한다.
+class _TemporaryClosedBadge extends StatelessWidget {
+  const _TemporaryClosedBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '임시 휴업중인 매장',
+      child: Container(
+        height: 22,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.error,
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: const Text(
+          '임시 휴업중',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: AppColors.onPrimary,
           ),
         ),
       ),

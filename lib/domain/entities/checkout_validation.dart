@@ -10,6 +10,7 @@ class StoreSellabilityInput {
     required this.rawStatus,
     required this.hasApprovedAt,
     this.brandId,
+    this.temporaryClosed = false,
   });
 
   /// `stores/{id}.status` 가공 전 문자열. 부재/비문자열이면 null.
@@ -20,6 +21,9 @@ class StoreSellabilityInput {
 
   /// `stores/{id}.brandId` (비어 있으면 null). 마스터 메뉴를 읽을지 결정하는 데만 쓴다.
   final String? brandId;
+
+  /// `stores/{id}.temporaryClosed == true` 원시 읽기 (부재/비bool → false).
+  final bool temporaryClosed;
 }
 
 /// 메뉴 1종의 판정 입력 (spec §7.2 ②). 문서 존재로 역추론한다 — 카트의 scope/brandId 를 믿지 않는다.
@@ -32,7 +36,7 @@ class CheckoutMenuDocs {
 }
 
 /// 매장 단위 위반.
-enum StoreViolation { notSellable, notFound }
+enum StoreViolation { notSellable, temporarilyClosed, notFound }
 
 /// 메뉴 위반 종류. `unavailable` = 판매 중단(excluded) 또는 메뉴 부재(notFound) — UI 는 둘을 구분하지 않는다.
 enum MenuViolationKind { soldOut, unavailable }

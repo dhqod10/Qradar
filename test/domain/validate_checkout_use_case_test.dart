@@ -202,6 +202,31 @@ void main() {
     }
   });
 
+  test('임시 휴업 -> store temporarilyClosed, 미승인이면 notSellable 이 우선', () async {
+    final closed = await run(
+      _FakeRepo(
+        store: const StoreSellabilityInput(
+          rawStatus: 'approved',
+          hasApprovedAt: true,
+          temporaryClosed: true,
+        ),
+      ),
+      ['a'],
+    );
+    expect(closed.store, StoreViolation.temporarilyClosed);
+    final unapproved = await run(
+      _FakeRepo(
+        store: const StoreSellabilityInput(
+          rawStatus: 'pending',
+          hasApprovedAt: false,
+          temporaryClosed: true,
+        ),
+      ),
+      ['a'],
+    );
+    expect(unapproved.store, StoreViolation.notSellable);
+  });
+
   test('pending + approvedAt 있음 -> 통과 (R2 불변식)', () async {
     final r = await run(
       _FakeRepo(

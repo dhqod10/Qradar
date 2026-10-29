@@ -9,8 +9,28 @@
  * - 영업 중 매장이 정보를 고치면 `status` 가 `pending` 으로 회귀하지만 `approvedAt` 이 남아 있으므로 막히지 않는다 (R2 불변식).
  * - Firebase 비의존 순수 함수.
  */
-export function canSellNow(args: { rawStatus: string | null; hasApprovedAt: boolean }): boolean {
-  if (args.rawStatus === "approved") return true;
-  if (args.rawStatus === "pending" && args.hasApprovedAt) return true;
-  return false;
+export type StoreGateReason = "STORE_NOT_SELLABLE" | "STORE_TEMPORARILY_CLOSED";
+
+/**
+ * 판매 불가 **사유** 를 돌려주는 단일 판정 (temporary_closed_gate spec D1). Dart `storeGateReason` 과 같은 규칙.
+ * 우선순위: ① 승인 조건 실패 → STORE_NOT_SELLABLE (temporaryClosed 무시) ② 휴업 → STORE_TEMPORARILY_CLOSED ③ null.
+ */
+export function storeGateReason(args: {
+  rawStatus: string | null;
+  hasApprovedAt: boolean;
+  temporaryClosed: boolean;
+}): StoreGateReason | null {
+  const approved =
+    args.rawStatus === "approved" || (args.rawStatus === "pending" && args.hasApprovedAt);
+  if (!approved) return "STORE_NOT_SELLABLE";
+  if (args.temporaryClosed) return "STORE_TEMPORARILY_CLOSED";
+  return null;
+}
+
+export function canSellNow(args: {
+  rawStatus: string | null;
+  hasApprovedAt: boolean;
+  temporaryClosed: boolean;
+}): boolean {
+  return storeGateReason(args) === null;
 }

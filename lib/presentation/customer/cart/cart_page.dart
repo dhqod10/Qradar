@@ -162,7 +162,9 @@ class _CartPageState extends ConsumerState<CartPage>
         ..showSnackBar(
           SnackBar(
             content: Text(
-              result.validation.store != null
+              result.validation.store == StoreViolation.temporarilyClosed
+                  ? '지금은 매장이 임시 휴업중이에요. 영업을 다시 시작하면 결제할 수 있어요.'
+                  : result.validation.store != null
                   ? '지금은 이 매장에서 주문할 수 없어요. 잠시 후 다시 시도해 주세요.'
                   : '지금 주문할 수 없는 메뉴가 있어요. 표시된 메뉴를 확인해 주세요.',
             ),

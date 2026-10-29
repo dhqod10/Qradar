@@ -20,6 +20,7 @@ enum CartBannerVariant {
   optionUnavailable,
   serverRejectedOnly,
   storeUnavailable,
+  storeTemporarilyClosed,
 }
 
 /// 한 메뉴의 행 상태. 직접 읽어서 확인한 위반이 서버 지목보다 우선한다.
@@ -54,6 +55,9 @@ CartBannerVariant? resolveCartBannerVariant({
   required Iterable<CartLineAvailability> lines,
   required CheckoutValidation validation,
 }) {
+  if (validation.store == StoreViolation.temporarilyClosed) {
+    return CartBannerVariant.storeTemporarilyClosed;
+  }
   if (validation.store != null) return CartBannerVariant.storeUnavailable;
   var option = false;
   var rejected = false;

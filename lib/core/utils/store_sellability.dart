@@ -10,8 +10,34 @@
 /// - 이것은 **돈을 받을까** 의 질문이다. 고객 매장 목록의 노출 필터(`status == approved`)는 "보여줄까" 의 질문이라
 ///   이 함수로 통합하지 않는다 (spec §6.3 / §12 사실 1).
 /// - 순수 Dart. 외부 SDK import 금지.
-bool canSellNow({required String? rawStatus, required bool hasApprovedAt}) {
-  if (rawStatus == 'approved') return true;
-  if (rawStatus == 'pending' && hasApprovedAt) return true;
-  return false;
+bool canSellNow({
+  required String? rawStatus,
+  required bool hasApprovedAt,
+  required bool temporaryClosed,
+}) =>
+    storeGateReason(
+      rawStatus: rawStatus,
+      hasApprovedAt: hasApprovedAt,
+      temporaryClosed: temporaryClosed,
+    ) ==
+    null;
+
+/// 판매 불가 사유 코드 (서버 `GateReason` 과 동일 문자열).
+const String kStoreNotSellable = 'STORE_NOT_SELLABLE';
+const String kStoreTemporarilyClosed = 'STORE_TEMPORARILY_CLOSED';
+
+/// 판매 불가 **사유** 를 돌려주는 단일 판정 (temporary_closed_gate spec D1). 판매 가능이면 `null`.
+///
+/// 우선순위: ① 승인 조건 실패 → [kStoreNotSellable] (`temporaryClosed` 무시) ② 휴업 → [kStoreTemporarilyClosed] ③ `null`.
+/// TS `storeGateReason` 과 같은 규칙이며 교차 골든으로 고정된다.
+String? storeGateReason({
+  required String? rawStatus,
+  required bool hasApprovedAt,
+  required bool temporaryClosed,
+}) {
+  final approved =
+      rawStatus == 'approved' || (rawStatus == 'pending' && hasApprovedAt);
+  if (!approved) return kStoreNotSellable;
+  if (temporaryClosed) return kStoreTemporarilyClosed;
+  return null;
 }

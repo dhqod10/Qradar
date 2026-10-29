@@ -546,10 +546,18 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
     final ready = ref.watch(menuItemAddToCartReadyProvider(widget.menuItemKey));
     final missing =
         ref.watch(menuItemMissingRequiredGroupsProvider(widget.menuItemKey));
-    // 판정 순서: ① soldOut ② _busy ③ required 미선택. 품절은 최우선이며 토스트를 띄우지 않는다.
+    // 매장 임시 휴업 (temporary_closed_gate). 로딩/에러 중엔 false 취급(막지 않음 — 서버 게이트가 백스톱).
+    final closed =
+        ref
+            .watch(watchedStoreProvider(widget.menuItemKey.storeId))
+            .asData
+            ?.value
+            ?.temporaryClosed ??
+        false;
+    // 판정 순서: ① 휴업 ② soldOut ③ _busy ④ required 미선택. 둘 다 토스트를 띄우지 않는다(라벨로 안내).
     final soldOut = widget.menuItem.soldOut;
-    final enabled = !soldOut && ready && !_busy;
-    final active = !soldOut && ready;
+    final enabled = !closed && !soldOut && ready && !_busy;
+    final active = !closed && !soldOut && ready;
 
     return SafeArea(
       top: false,
@@ -585,7 +593,9 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: soldOut ? AppColors.textMuted : AppColors.primary,
+                    color: (closed || soldOut)
+                        ? AppColors.textMuted
+                        : AppColors.primary,
                   ),
                 ),
               ],
@@ -610,7 +620,15 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: soldOut
+                child: closed
+                    ? const Text(
+                        '임시 휴업중',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                    : soldOut
                     ? const Text(
                         '품절',
                         style: TextStyle(
@@ -643,6 +661,15 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
   }
 
   Future<void> _onAddPressed(List<String> missing) async {
+    // 선택 도중 매장이 휴업으로 바뀌는 경쟁 상태 방어 — 토스트 없이 즉시 종료.
+    if (ref
+            .read(watchedStoreProvider(widget.menuItemKey.storeId))
+            .asData
+            ?.value
+            ?.temporaryClosed ??
+        false) {
+      return;
+    }
     // 선택 도중 품절로 바뀌는 경쟁 상태 방어 — 품절이면 토스트 없이 즉시 종료.
     if (ref.read(menuItemDetailProvider(widget.menuItemKey)).value?.soldOut ??
         widget.menuItem.soldOut) {

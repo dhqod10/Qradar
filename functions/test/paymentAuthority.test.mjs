@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { canSellNow } from '../lib/storeSellability.js';
+import { canSellNow, storeGateReason } from '../lib/storeSellability.js';
 import { applyOverrideForCustomer, classifyCartMenu } from '../lib/menuVisibility.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +30,9 @@ for (const c of visibility.cases) {
 
 for (const c of sellability.cases) {
   test(`store_sellability: ${c.name}`, () => {
-    assert.equal(canSellNow({ rawStatus: c.rawStatus, hasApprovedAt: c.hasApprovedAt }), c.expect);
+    const input = { rawStatus: c.rawStatus, hasApprovedAt: c.hasApprovedAt, temporaryClosed: c.temporaryClosed };
+    assert.equal(storeGateReason(input), c.expectReason);
+    assert.equal(canSellNow(input), c.expect);
   });
 }
 

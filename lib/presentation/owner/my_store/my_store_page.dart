@@ -940,7 +940,7 @@ class _StoreActionButtons extends StatelessWidget {
 /// 점주용 `_ClosingGuide` 문구. 개인 매장 + `approved` 만 폐업 문구, 그 외(pending/rejected, 브랜드 가맹 전체)는
 /// 정리 문구다 (design §6.2).
 ///
-/// **임시 휴업을 안내하지 않는다** — `temporaryClosed` 는 주문을 막지 못하므로 안내하면 거짓이다 (spec §6.8).
+/// 임시 휴업은 운영폼 토글로 안내한다 (temporary_closed_gate 로 판매를 실제로 막는다) — 폐업·삭제 문구와 섞지 않는다.
 String closingGuideMessage(StoreEntity store) {
   final isBrandStore = store.brandId != null && store.brandId!.isNotEmpty;
   if (!isBrandStore && store.status == EntityApprovalStatus.approved) {

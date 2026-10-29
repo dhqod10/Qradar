@@ -1,16 +1,21 @@
 {
-  "_doc": "canSellNow 교차 골든 — Dart(lib/core/utils/store_sellability.dart) 와 TS(functions/src/storeSellability.ts) 가 같은 파일을 읽는다 (spec payment_server_authority §6.3, §18.2). 입력은 가공 전 원시값이다: rawStatus 는 stores/{id}.status 문자열 그대로 (null = 필드 부재), hasApprovedAt 은 approvedAt != null. 판정식(Q1 ⓑ′): status=='approved' || (status=='pending' && approvedAt!=null). 알 수 없는 값/부재는 거절(fail-closed) — EntityApprovalStatus.fromString 의 approved 폴백을 복제하지 않는다.",
+  "_doc": "canSellNow 교차 골든 — Dart(lib/core/utils/store_sellability.dart) 와 TS(functions/src/storeSellability.ts) 가 같은 파일을 읽는다 (spec payment_server_authority §6.3, §18.2). 입력은 가공 전 원시값이다: rawStatus 는 stores/{id}.status 문자열 그대로 (null = 필드 부재), hasApprovedAt 은 approvedAt != null. 판정식(Q1 ⓑ′): status=='approved' || (status=='pending' && approvedAt!=null). 알 수 없는 값/부재는 거절(fail-closed) — EntityApprovalStatus.fromString 의 approved 폴백을 복제하지 않는다. temporary_closed_gate: temporaryClosed(원시 bool) 입력과 expectReason(null|STORE_NOT_SELLABLE|STORE_TEMPORARILY_CLOSED) 추가. 우선순위: 승인 조건 실패 > 휴업. expect 는 expectReason==null 과 동치.",
   "cases": [
-    { "name": "approved", "rawStatus": "approved", "hasApprovedAt": true, "expect": true },
-    { "name": "approved (approvedAt 없음 — M1 백필 전 legacy)", "rawStatus": "approved", "hasApprovedAt": false, "expect": true },
-    { "name": "pending + approvedAt = 수정 대기 (영업 중 정보 수정)", "rawStatus": "pending", "hasApprovedAt": true, "expect": true },
-    { "name": "pending 단독 = 한 번도 승인된 적 없음", "rawStatus": "pending", "hasApprovedAt": false, "expect": false },
-    { "name": "rejected", "rawStatus": "rejected", "hasApprovedAt": false, "expect": false },
-    { "name": "rejected + approvedAt (반려 때 admin 이 approvedAt 을 함께 쓴다)", "rawStatus": "rejected", "hasApprovedAt": true, "expect": false },
-    { "name": "status 부재 (null)", "rawStatus": null, "hasApprovedAt": true, "expect": false },
-    { "name": "status 부재 + approvedAt 없음", "rawStatus": null, "hasApprovedAt": false, "expect": false },
-    { "name": "알 수 없는 문자열", "rawStatus": "weird", "hasApprovedAt": true, "expect": false },
-    { "name": "대소문자 다른 문자열", "rawStatus": "Approved", "hasApprovedAt": true, "expect": false },
-    { "name": "빈 문자열", "rawStatus": "", "hasApprovedAt": true, "expect": false }
+    { "name": "approved", "rawStatus": "approved", "hasApprovedAt": true, "expect": true, "temporaryClosed": false, "expectReason": null },
+    { "name": "approved (approvedAt 없음 — M1 백필 전 legacy)", "rawStatus": "approved", "hasApprovedAt": false, "expect": true, "temporaryClosed": false, "expectReason": null },
+    { "name": "pending + approvedAt = 수정 대기 (영업 중 정보 수정)", "rawStatus": "pending", "hasApprovedAt": true, "expect": true, "temporaryClosed": false, "expectReason": null },
+    { "name": "pending 단독 = 한 번도 승인된 적 없음", "rawStatus": "pending", "hasApprovedAt": false, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "rejected", "rawStatus": "rejected", "hasApprovedAt": false, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "rejected + approvedAt (반려 때 admin 이 approvedAt 을 함께 쓴다)", "rawStatus": "rejected", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "status 부재 (null)", "rawStatus": null, "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "status 부재 + approvedAt 없음", "rawStatus": null, "hasApprovedAt": false, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "알 수 없는 문자열", "rawStatus": "weird", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "대소문자 다른 문자열", "rawStatus": "Approved", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "빈 문자열", "rawStatus": "", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "approved + 휴업", "rawStatus": "approved", "hasApprovedAt": true, "temporaryClosed": true, "expect": false, "expectReason": "STORE_TEMPORARILY_CLOSED" },
+    { "name": "approved (approvedAt 없음 legacy) + 휴업", "rawStatus": "approved", "hasApprovedAt": false, "temporaryClosed": true, "expect": false, "expectReason": "STORE_TEMPORARILY_CLOSED" },
+    { "name": "pending + approvedAt + 휴업", "rawStatus": "pending", "hasApprovedAt": true, "temporaryClosed": true, "expect": false, "expectReason": "STORE_TEMPORARILY_CLOSED" },
+    { "name": "pending 단독 + 휴업 = 승인 문제가 우선", "rawStatus": "pending", "hasApprovedAt": false, "temporaryClosed": true, "expect": false, "expectReason": "STORE_NOT_SELLABLE" },
+    { "name": "status 부재 + 휴업 = 승인 문제가 우선", "rawStatus": null, "hasApprovedAt": true, "temporaryClosed": true, "expect": false, "expectReason": "STORE_NOT_SELLABLE" }
   ]
 }

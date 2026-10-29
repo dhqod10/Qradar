@@ -71,7 +71,7 @@ export function planStoreMigration(docs: Array<[string, Record<string, unknown>]
   for (const [id, d] of docs) {
     const status = statusWritten.has(id) ? "approved" : d.status;
     const hasApprovedAt = approvedAtWritten.has(id) || d.approvedAt != null;
-    if (!canSellNow({ rawStatus: typeof status === "string" ? status : null, hasApprovedAt })) {
+    if (!canSellNow({ rawStatus: typeof status === "string" ? status : null, hasApprovedAt, temporaryClosed: false })) {
       plan.willBeRejected.push({ id, name: typeof d.name === "string" ? d.name : null, status: status ?? null, hasApprovedAt });
     }
   }

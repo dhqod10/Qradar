@@ -263,6 +263,8 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
           return CustomScrollView(
             slivers: [
               _AppBar(store: store),
+              if (liveStore.temporaryClosed)
+                const SliverToBoxAdapter(child: _TemporaryClosedBanner()),
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _CategoryHeaderDelegate(
@@ -419,6 +421,51 @@ class SeamlessStoreMenuRoute<T> extends PageRoute<T>
 
   @override
   bool get opaque => false;
+}
+
+/// 임시 휴업 안내 배너 (temporary_closed_gate design §1-2).
+class _TemporaryClosedBanner extends StatelessWidget {
+  const _TemporaryClosedBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.25)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.storefront_outlined, size: 18, color: AppColors.error),
+          SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '지금은 임시 휴업중이에요',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textHeading,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '메뉴는 볼 수 있지만 주문은 영업을 다시 시작한 뒤에 할 수 있어요.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textBody),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// 검색에서 넘어온 메뉴 안내 띠. 목록에서 찾으면 `검색한 메뉴  {이름}`, 못 찾으면 판매하지 않을 수 있다는 정직한 안내.

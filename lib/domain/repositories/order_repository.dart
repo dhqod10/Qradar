@@ -28,6 +28,12 @@ abstract class OrderRepository {
     int? limit,
   });
 
+  /// 특정 매장의 [statuses] 상태 주문 건수 1회 조회 (휴업 전환 가드용). 실패 시 예외 전파.
+  Future<int> countStoreOrdersByStatuses(
+    String storeId,
+    Set<OrderStatus> statuses,
+  );
+
   /// 특정 매장의 환불 요청 주문 stream (refundRequest != null && status != refunded).
   Stream<List<OrderEntity>> watchStoreRefundRequests(String storeId);
 

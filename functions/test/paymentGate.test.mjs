@@ -117,6 +117,9 @@ const storeCases = [
   ['rejected', { status: 'rejected', approvedAt: {} }, 'STORE_NOT_SELLABLE', 'failed-precondition'],
   ['status 부재 (legacy — M1 전)', { approvedAt: {} }, 'STORE_NOT_SELLABLE', 'failed-precondition'],
   ['알 수 없는 status', { status: 'weird', approvedAt: {} }, 'STORE_NOT_SELLABLE', 'failed-precondition'],
+  ['approved + temporaryClosed (임시 휴업)', { ...OKSTORE, temporaryClosed: true }, 'STORE_TEMPORARILY_CLOSED', 'failed-precondition'],
+  ['pending 단독 + temporaryClosed (승인 문제가 우선)', { status: 'pending', temporaryClosed: true }, 'STORE_NOT_SELLABLE', 'failed-precondition'],
+  ['temporaryClosed:false', { ...OKSTORE, temporaryClosed: false }, null, null],
 ];
 for (const [name, store, reason, code] of storeCases) {
   test(`G1 매장: ${name}`, async () => {

@@ -8,6 +8,7 @@ import 'package:qradar/domain/entities/main_category_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/common/widgets/image_upload_field.dart';
+import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
 import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 
@@ -116,7 +117,7 @@ class _StoreOperationFormPageState
               onChange: (h) => setState(() => _hours = h),
             ),
             const SizedBox(height: 20),
-            // 임시 휴무 토글
+            // 임시 휴업 토글
             _TemporaryClosedToggle(
               value: _temporaryClosed,
               onChanged: (v) => setState(() => _temporaryClosed = v),
@@ -274,6 +275,45 @@ class _StoreOperationFormPageState
     return ok ?? false;
   }
 
+  Future<void> _showActiveOrdersBlockedDialog(int count) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          '지금은 임시 휴업할 수 없어요',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textHeading,
+          ),
+        ),
+        content: Text(
+          '진행 중인 주문이 $count건 있어요. 주문이 모두 끝나면 임시 휴업을 켤 수 있어요.',
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.5,
+            color: AppColors.textBody,
+          ),
+        ),
+        actions: [
+          TextButton(
+            autofocus: true,
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              '확인',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (_submitting) return;
 
@@ -288,6 +328,29 @@ class _StoreOperationFormPageState
       if (!await _confirmAllOff() || !mounted) return;
     }
     setState(() => _submitting = true);
+
+    // 임시 휴업 전환(false→true) 가드 — 진행 중 주문이 있으면 저장 중단 (temporary_closed_gate R5).
+    // 권위가 아니다(TOCTOU 수용): 서버 결제 게이트가 백스톱. 조회 실패 시 막지 않고 저장 후 안내한다.
+    var activeCheckFailed = false;
+    if (_temporaryClosed && !widget.existing.temporaryClosed) {
+      try {
+        final n = await ref
+            .read(countActiveStoreOrdersUseCaseProvider)
+            .call(widget.existing.id);
+        if (!mounted) return;
+        if (n > 0) {
+          setState(() {
+            _temporaryClosed = false;
+            _submitting = false;
+          });
+          await _showActiveOrdersBlockedDialog(n);
+          return;
+        }
+      } catch (_) {
+        activeCheckFailed = true;
+      }
+      if (!mounted) return;
+    }
 
     try {
       // 이미지 업로드 처리
@@ -326,12 +389,21 @@ class _StoreOperationFormPageState
 
       if (!mounted) return;
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
         SnackBar(
           content: const Text('즉시 반영되었습니다'),
           backgroundColor: AppColors.success.withValues(alpha: 0.9),
         ),
       );
+      if (activeCheckFailed) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('진행 중 주문을 확인하지 못했어요. 임시 휴업이 적용돼 신규 주문은 받지 않아요.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -629,7 +701,7 @@ class _TemporaryClosedToggle extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
                 Text(
-                  '임시 휴무',
+                  '임시 휴업',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -638,7 +710,7 @@ class _TemporaryClosedToggle extends StatelessWidget {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  '활성화 시 잠시 휴무 상태로 표시돼요.',
+                  '켜면 손님이 이 매장에서 주문할 수 없어요. 진행 중인 주문이 있으면 켤 수 없어요.',
                   style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
               ],

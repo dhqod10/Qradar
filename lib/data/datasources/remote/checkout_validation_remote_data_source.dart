@@ -12,11 +12,13 @@ class RawStoreFields {
     required this.rawStatus,
     required this.hasApprovedAt,
     required this.brandId,
+    this.temporaryClosed = false,
   });
 
   final String? rawStatus;
   final bool hasApprovedAt;
   final String? brandId;
+  final bool temporaryClosed;
 }
 
 /// 결제 선검증용 신선 읽기 데이터소스. 모든 읽기는 `Source.server` 다 (design N5 — 캐시로 결제를 막지 않는다).
@@ -44,6 +46,7 @@ class CheckoutValidationRemoteDataSource {
       rawStatus: status is String ? status : null,
       hasApprovedAt: data['approvedAt'] != null,
       brandId: brandId is String && brandId.isNotEmpty ? brandId : null,
+      temporaryClosed: data['temporaryClosed'] == true,
     );
   }
 

@@ -9,10 +9,10 @@
  *   - 읽기 실패                    → 거절 + 기록 + `READ_FAILED` (게이트를 무력화하지 않는다)
  *
  * 이 파일은 Firestore 에 직접 의존하지 않는다 (`GateReader` 주입) — confirm 이 호출되지 않음을 단위 테스트로 단언하기 위해서다.
- * 판정 함수는 `canSellNow`(storeSellability.ts) · `classifyCartMenu`(menuVisibility.ts) 두 개뿐이며 여기서 재구현하지 않는다.
+ * 판정 함수는 `storeGateReason`(storeSellability.ts) · `classifyCartMenu`(menuVisibility.ts) 두 개뿐이며 여기서 재구현하지 않는다.
  */
 
-import { canSellNow } from "./storeSellability";
+import { storeGateReason } from "./storeSellability";
 import { classifyCartMenu, CartMenuReason, MergedMenu, RawDoc } from "./menuVisibility";
 
 /**
@@ -21,6 +21,7 @@ import { classifyCartMenu, CartMenuReason, MergedMenu, RawDoc } from "./menuVisi
  */
 export type GateReason =
   | "STORE_NOT_SELLABLE"
+  | "STORE_TEMPORARILY_CLOSED"
   | "STORE_NOT_FOUND"
   | "MENU_SOLD_OUT"
   | "MENU_EXCLUDED"
@@ -50,6 +51,7 @@ export function resolveGateMode(raw: unknown): GateMode {
 /** spec §15 사유 ↔ HttpsError code. */
 export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-found" | "unavailable"> = {
   STORE_NOT_SELLABLE: "failed-precondition",
+  STORE_TEMPORARILY_CLOSED: "failed-precondition",
   STORE_NOT_FOUND: "not-found",
   MENU_SOLD_OUT: "failed-precondition",
   MENU_EXCLUDED: "failed-precondition",
@@ -62,6 +64,7 @@ export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-fo
 /** 사람용 문장 (디버깅·구 앱용). 신 앱 화면은 이 문자열을 그리지 않는다 — 코드 안 상수만 그린다 (spec §15.1). */
 const GATE_TEXT: Record<GateReason, string> = {
   STORE_NOT_SELLABLE: "지금은 이 매장이 주문을 받을 수 없어요. 잠시 후 다시 시도해주세요",
+  STORE_TEMPORARILY_CLOSED: "지금은 매장이 잠시 휴업 중이에요. 잠시 후 다시 시도해주세요",
   STORE_NOT_FOUND: "매장 정보를 찾을 수 없어요. 카트를 비우고 다시 담아주세요",
   MENU_SOLD_OUT: "품절된 메뉴가 있어요. 카트에서 빼고 다시 시도해주세요",
   MENU_EXCLUDED: "이 매장에서 더 이상 판매하지 않는 메뉴가 있어요",
@@ -188,8 +191,10 @@ export async function evaluatePaymentGate(
   }
   const rawStatus = typeof store.status === "string" ? store.status : null;
   const hasApprovedAt = store.approvedAt != null;
-  if (!canSellNow({ rawStatus, hasApprovedAt })) {
-    return { ok: false, reason: "STORE_NOT_SELLABLE", menuItemIds: [], detail: emptyDetail({ rawStatus, hasApprovedAt }) };
+  const temporaryClosed = store.temporaryClosed === true;
+  const storeReason = storeGateReason({ rawStatus, hasApprovedAt, temporaryClosed });
+  if (storeReason !== null) {
+    return { ok: false, reason: storeReason, menuItemIds: [], detail: emptyDetail({ rawStatus, hasApprovedAt }) };
   }
   const brandId = typeof store.brandId === "string" && store.brandId.length > 0 ? store.brandId : null;
 

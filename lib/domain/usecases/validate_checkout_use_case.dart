@@ -25,7 +25,7 @@ const int kMaxOptionGroupDocs = 200;
 /// [applyOverrideForCustomer] · [validateSelection] · [computeLinePrice] 만 호출한다 (서버와 같은 함수 — 자체 계산 금지).
 /// 옵션 그룹 읽기가 실패하면 재가격만 생략한다 (메뉴 위반은 그대로 돌려준다). [reportFailure] 면 그 실패도 던진다.
 ///
-/// 판정은 [canSellNow] / [classifyCheckoutMenu] 만 호출한다 (자체 판정 금지).
+/// 판정은 [storeGateReason] / [classifyCheckoutMenu] 만 호출한다 (자체 판정 금지).
 class ValidateCheckoutUseCase {
   ValidateCheckoutUseCase(
     this._repository, {
@@ -82,10 +82,15 @@ class ValidateCheckoutUseCase {
     if (store == null) {
       return const CheckoutValidation(store: StoreViolation.notFound);
     }
-    if (!canSellNow(
+    final storeReason = storeGateReason(
       rawStatus: store.rawStatus,
       hasApprovedAt: store.hasApprovedAt,
-    )) {
+      temporaryClosed: store.temporaryClosed,
+    );
+    if (storeReason == kStoreTemporarilyClosed) {
+      return const CheckoutValidation(store: StoreViolation.temporarilyClosed);
+    }
+    if (storeReason != null) {
       return const CheckoutValidation(store: StoreViolation.notSellable);
     }
 
