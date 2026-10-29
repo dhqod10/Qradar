@@ -747,7 +747,7 @@ class _StoreMetricsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unrated = store.reviewCount == 0;
+    final unrated = !store.isGraded;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
       decoration: BoxDecoration(
