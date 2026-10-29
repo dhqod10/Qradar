@@ -1,10 +1,10 @@
 # web_admin_console 디자인 명세
 
-- 입력: `docs/tasks/web_admin_console/spec.md` (Q1=B 새 웹 SPA / Q2=읽기 넓게+쓰기 좁게 / Q3=A `landing/admin/`)
-- 대상 산출물: `landing/admin/index.html` + `landing/admin/assets/admin.css` + `admin.js` (HTML/CSS/JS. Flutter 위젯이 아니다)
+- 입력: `docs/tasks/web_admin_console/spec.md` (Q1=B 새 웹 SPA / Q2=읽기 넓게+쓰기 좁게 / Q3=A `landing/console/`)
+- 대상 산출물: `landing/console/index.html` + `landing/console/assets/console.css` + `admin.js` (HTML/CSS/JS. Flutter 위젯이 아니다)
 - 디자인 레퍼런스: `docs/design/screens/` 에는 `home` 만 있고(모바일 앱 홈) 관리자 콘솔용 Figma 는 **없다**. `docs/design/components/` 에는 `bottom_nav.md` 뿐이라 재사용할 데스크톱 컴포넌트가 **없다**. 따라서 이 문서가 데스크톱 레이아웃의 최초 정의다.
 - 기능 흐름 참조(모바일, 분기 조건만 확인, 레이아웃은 가져오지 않음): `lib/presentation/admin/approval/**`, `lib/presentation/common/widgets/reject_reason_dialog.dart`
-- 진입점: `docs/processes/role_flows.md` §admin — 진입 수단이 "앱의 `AdminScaffold`" 에서 "앱 + 웹(`/admin/index.html`)" 으로 하나 늘어난다. 새 역할 흐름은 없다. landing 에서 이 콘솔로 가는 링크는 **만들지 않는다**(Q3 조건 ②).
+- 진입점: `docs/processes/role_flows.md` §admin — 진입 수단이 "앱의 `AdminScaffold`" 에서 "앱 + 웹(`/console/index.html`)" 으로 하나 늘어난다. 새 역할 흐름은 없다. landing 에서 이 콘솔로 가는 링크는 **만들지 않는다**(Q3 조건 ②).
 
 ---
 
@@ -156,7 +156,7 @@ background: color-mix(in srgb, var(--warning) 14%, var(--surface-elevated));
 | A8 | 매장 목록 | `#/stores` | 읽기 | 검색·상태 필터 |
 | A9 | Qoin 현황 | `#/qoin` | 읽기 | 편집 컨트롤 없음 |
 
-해시 라우팅인 이유: `firebase.json` 이 `cleanUrls:false` / rewrite 없음이라 서버 경로를 늘릴 수 없다(spec §11, S7). 접근 URL 은 `/admin/index.html`.
+해시 라우팅인 이유: `firebase.json` 이 `cleanUrls:false` / rewrite 없음이라 서버 경로를 늘릴 수 없다(spec §11, S7). 접근 URL 은 `/console/index.html`.
 
 ### 3-2. 셸 골격 (1024px 이상)
 
@@ -1037,7 +1037,7 @@ UI 는 위 외의 필드를 입력받는 컨트롤을 두지 않는다. 특히 Q
 - **DV-11 (역할 부여 UI 없음)**: `users` 문서를 쓰는 코드·컨트롤이 존재하지 않아야 한다. 검색 키워드 `role`, `users` 쓰기 호출 0건 확인.
 - **DV-12 (D1)**: 브랜드 승인 = `issueBrandKey`(리전 `asia-northeast3`) 성공 후 `update`. 결정에 따라 §6-9 축소안으로 전환.
 - **DV-13 (복사 버튼)**: UID "복사"는 `navigator.clipboard` 실패 시(비보안 컨텍스트 등) 조용히 실패하지 않고 "복사하지 못했어요" 1.5초 표시.
-- **DV-14 (배포 제약)**: 배포는 PG 심사 종료 후 사용자가 수행. landing 에서 `/admin` 링크 없음. 접근은 `/admin/index.html`, 해시 라우팅.
+- **DV-14 (배포 제약)**: 배포는 PG 심사 종료 후 사용자가 수행. landing 에서 `/admin` 링크 없음. 접근은 `/console/index.html`, 해시 라우팅.
 
 ---
 

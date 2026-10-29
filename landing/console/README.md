@@ -1,4 +1,4 @@
-# Qradar 관리자 콘솔 (`landing/admin/`)
+# Qradar 운영 콘솔 (`landing/console/`)
 
 승인 큐 4종 조회, 브랜드/매장 승인·반려, Qoin 현황 조회, 매장 목록 조회를 데스크톱 웹에서 하는 정적 콘솔이다.
 Flutter 앱(`lib/`)이 아니다. 빌드 단계·번들러·npm 이 없고, 브라우저가 이 폴더의 파일을 그대로 읽는다.
@@ -17,12 +17,12 @@ Flutter 앱(`lib/`)이 아니다. 빌드 단계·번들러·npm 이 없고, 브�
 | 파일 | 역할 |
 |---|---|
 | `index.html` | 진입 HTML (스크립트·스타일 로드만) |
-| `assets/admin.css` | 스타일. `../assets/style.css` 의 CSS 변수만 사용 (색상 리터럴 없음) |
+| `assets/console.css` | 스타일. `../assets/style.css` 의 CSS 변수만 사용 (색상 리터럴 없음) |
 | `assets/firebase-config.js` | Firebase 웹 설정 (**시크릿 아님** — 파일 주석 참고) |
-| `assets/admin-data.js` | Firebase SDK 접근(인증/Firestore/Functions) — SDK 는 이 파일에서만 import |
-| `assets/admin-payloads.js` | 승인/반려 payload (SDK 없음, 앱 필드 집합 그대로) |
-| `assets/admin-format.js` | 표시 형식 / 오류 분류 / 입력 검증 (SDK 없음) |
-| `assets/admin.js` | 화면 / 라우터(해시) / 모달 |
+| `assets/console-data.js` | Firebase SDK 접근(인증/Firestore/Functions) — SDK 는 이 파일에서만 import |
+| `assets/console-payloads.js` | 승인/반려 payload (SDK 없음, 앱 필드 집합 그대로) |
+| `assets/console-format.js` | 표시 형식 / 오류 분류 / 입력 검증 (SDK 없음) |
+| `assets/console.js` | 화면 / 라우터(해시) / 모달 |
 
 ## 처음 한 번: 웹 앱 설정 채우기
 

@@ -1,6 +1,6 @@
 /* ============================================================================
    데이터 접근 계층 — Firebase SDK 는 이 파일에서만 import 한다.
-   화면 코드(admin.js)는 SDK 를 직접 부르지 않는다 (spec §9.2 "데이터 접근 함수와 렌더 함수 분리").
+   화면 코드(console.js)는 SDK 를 직접 부르지 않는다 (spec §9.2 "데이터 접근 함수와 렌더 함수 분리").
 
    [Clean Architecture 와의 관계]
    CLAUDE.md 절대규칙 1·2 ("presentation → domain ← data", "Firebase 직접 사용은 data 레이어에서만")
@@ -25,10 +25,10 @@ import {
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js';
 
 import { firebaseWebConfig, FUNCTIONS_REGION } from './firebase-config.js';
-import { AdminError, parseGlobalRate } from './admin-format.js';
+import { AdminError, parseGlobalRate } from './console-format.js';
 import {
   assertPayload, brandApprovePayload, brandRejectPayload, storeApprovePayload, storeRejectPayload,
-} from './admin-payloads.js';
+} from './console-payloads.js';
 
 let app; let auth; let db; let functions;
 

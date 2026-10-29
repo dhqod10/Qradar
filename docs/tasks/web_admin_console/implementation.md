@@ -1,7 +1,7 @@
 # web_admin_console 구현 기록
 
 - 입력: `spec.md` (Q1=B / Q2=읽기 넓게+쓰기 좁게 / Q3=A, §7.1·§9.4 2026-10-29 정정 반영), `design.md` (D1~D6 결정 반영)
-- 산출물 성격: **Flutter 코드가 아니다.** `landing/admin/` 안의 정적 웹 파일(HTML/CSS/JS). `lib/` 는 건드리지 않았고 `flutter analyze` / `flutter test` / `build_runner` 는 대상이 아니다. 아래 "자기 검증" 이 그 대응물이다.
+- 산출물 성격: **Flutter 코드가 아니다.** `landing/console/` 안의 정적 웹 파일(HTML/CSS/JS). `lib/` 는 건드리지 않았고 `flutter analyze` / `flutter test` / `build_runner` 는 대상이 아니다. 아래 "자기 검증" 이 그 대응물이다.
 - **배포하지 않았다.** 코드만 준비했다 (Q3 조건 ③: PG 심사 종료 후 사용자가 배포).
 - 상태: 구현 완료. 단 **Firebase 웹 앱 `apiKey`/`appId` 가 비어 있어 실제 Firebase 연동 E2E 는 아직 못 돌렸다** (사용자 준비 항목 1번).
 
@@ -11,14 +11,14 @@
 
 | 파일 | 줄 수 | 역할 |
 |---|---:|---|
-| `landing/admin/index.html` | 28 | 진입 HTML. `../assets/style.css`(읽기 전용 참조) → `assets/admin.css` 로드, `admin.js` 모듈 로드. 셸 DOM 은 두지 않는다 |
-| `landing/admin/assets/admin.css` | 324 | 콘솔 스타일. `.a-` 접두. **색상 리터럴 0건**, 전부 `var(--…)`, 연한 배경은 `color-mix` 로 변수끼리만 |
-| `landing/admin/assets/firebase-config.js` | 39 | Firebase 웹 설정 + `FUNCTIONS_REGION='asia-northeast3'`. **web config 가 시크릿이 아닌 근거를 파일 주석에 명시** (절대규칙 4 대응). `apiKey`/`appId` 는 비어 있음 |
-| `landing/admin/assets/admin-data.js` | 309 | **Firebase SDK 접근은 이 파일에서만**. 인증, 읽기 전부(`*FromServer`), 건수(`getCountFromServer`), 쓰기 4종, `issueBrandKey` 호출. `landing/` 이 Clean Architecture 밖인 이유(spec §9.2) 주석 |
-| `landing/admin/assets/admin-payloads.js` | 98 | 승인/반려 payload 빌더 + `assertPayload`(키 집합 정확 일치, Qoin 필드 금지, 매장 반려 `approvedAt` 금지). SDK 없음 → node 로 검증 가능 |
-| `landing/admin/assets/admin-format.js` | 197 | 날짜/UID/가격/적립률 표시, `esc`, `safeUrl`, 오류 분류(`classifyError`), 오류 문구 표(design §8), 반려 사유 검증. SDK 없음 |
-| `landing/admin/assets/admin.js` | 1198 | 인증 게이트(A0), 셸, 해시 라우터, 화면 A1~A9, 승인/반려 모달. 보안 모델 주석(화면 숨김은 편의, 권위는 Rules/CF) |
-| `landing/admin/README.md` | 52 | 콘솔 전용 안내(로컬 확인 / 설정 / 배포). `landing/README.md` 는 수정하지 않았다 |
+| `landing/console/index.html` | 28 | 진입 HTML. `../assets/style.css`(읽기 전용 참조) → `assets/admin.css` 로드, `admin.js` 모듈 로드. 셸 DOM 은 두지 않는다 |
+| `landing/console/assets/console.css` | 324 | 콘솔 스타일. `.a-` 접두. **색상 리터럴 0건**, 전부 `var(--…)`, 연한 배경은 `color-mix` 로 변수끼리만 |
+| `landing/console/assets/firebase-config.js` | 39 | Firebase 웹 설정 + `FUNCTIONS_REGION='asia-northeast3'`. **web config 가 시크릿이 아닌 근거를 파일 주석에 명시** (절대규칙 4 대응). `apiKey`/`appId` 는 비어 있음 |
+| `landing/console/assets/console-data.js` | 309 | **Firebase SDK 접근은 이 파일에서만**. 인증, 읽기 전부(`*FromServer`), 건수(`getCountFromServer`), 쓰기 4종, `issueBrandKey` 호출. `landing/` 이 Clean Architecture 밖인 이유(spec §9.2) 주석 |
+| `landing/console/assets/console-payloads.js` | 98 | 승인/반려 payload 빌더 + `assertPayload`(키 집합 정확 일치, Qoin 필드 금지, 매장 반려 `approvedAt` 금지). SDK 없음 → node 로 검증 가능 |
+| `landing/console/assets/console-format.js` | 197 | 날짜/UID/가격/적립률 표시, `esc`, `safeUrl`, 오류 분류(`classifyError`), 오류 문구 표(design §8), 반려 사유 검증. SDK 없음 |
+| `landing/console/assets/console.js` | 1198 | 인증 게이트(A0), 셸, 해시 라우터, 화면 A1~A9, 승인/반려 모달. 보안 모델 주석(화면 숨김은 편의, 권위는 Rules/CF) |
+| `landing/console/README.md` | 52 | 콘솔 전용 안내(로컬 확인 / 설정 / 배포). `landing/README.md` 는 수정하지 않았다 |
 
 spec §9.1 은 `admin.js` 한 파일을 가정했지만, "데이터 접근 함수와 렌더 함수 분리"(§9.2) 와 payload 검증의 node 실행 가능성을 위해 5개 JS 모듈로 나눴다. 전부 정적 ES 모듈이라 빌드 단계는 여전히 없다.
 
@@ -88,13 +88,13 @@ spec §9.1 은 `admin.js` 한 파일을 가정했지만, "데이터 접근 함�
 | 항목 | 명령 요지 | 결과 |
 |---|---|---|
 | 색상 리터럴 | `#[0-9a-fA-F]{3,6}\b`, `rgba?(`, `hsla?(` 를 `assets/*.css *.js index.html` 에서 | **0건** |
-| Qoin 관리 필드 | `qoinAccrual|qoinBulk` 를 `landing/admin` 전체에서 | **1건** — `admin-payloads.js:20` 금지 목록 상수(`QOIN_MANAGED_FIELDS`). payload 빌더 어디에도 없음 |
+| Qoin 관리 필드 | `qoinAccrual|qoinBulk` 를 `landing/console` 전체에서 | **1건** — `admin-payloads.js:20` 금지 목록 상수(`QOIN_MANAGED_FIELDS`). payload 빌더 어디에도 없음 |
 | `accrualRate`/`enabled` | `admin-data.js` | 읽기(`getQoinConfig`) 3줄뿐, 쓰기 0건 |
 | 반려 경로의 `approvedAt` | `admin-payloads.js` | 승인 빌더 2곳 + 매장 반려 금지 assert. 반려 빌더(`brandRejectPayload`, `storeRejectPayload`)에는 없음 |
 | create/set/delete | `setDoc|addDoc|deleteDoc|writeBatch|updateDoc|tx.set|.set(|\bcreate\b` | **0건** (Firestore 쓰기). 매치된 2건은 JS `Map.set`(`admin-data.js:137`, `admin.js:813`). 쓰기는 `tx.update` 1곳(`admin-data.js:238`) |
 | `users` 접근 | `'users'` | `readUserRole` 의 `getDocFromServer` 1건(읽기). 쓰기·역할 변경 코드 0건 (`role` 은 `data.role === 'admin'` 판정과 주석뿐) |
 | 리전 | `getFunctions(app, FUNCTIONS_REGION)` / `asia-northeast3` | 명시됨 |
-| 범위 | `git status` | 변경은 `landing/admin/**` 와 `docs/tasks/web_admin_console/implementation.md` 뿐. `lib/` `functions/` `firestore.rules` 및 `landing/` 기존 파일 diff 0 (`firebase.json` 의 `M` 과 `.firebaserc` 는 이 작업 이전부터 있던 변경이며 건드리지 않음) |
+| 범위 | `git status` | 변경은 `landing/console/**` 와 `docs/tasks/web_admin_console/implementation.md` 뿐. `lib/` `functions/` `firestore.rules` 및 `landing/` 기존 파일 diff 0 (`firebase.json` 의 `M` 과 `.firebaserc` 는 이 작업 이전부터 있던 변경이며 건드리지 않음) |
 
 ### 7.3 동작 스모크 (임시 환경, 저장소 밖)
 
@@ -112,18 +112,18 @@ spec §9.1 은 `admin.js` 한 파일을 가정했지만, "데이터 접근 함�
 
 ## 8. 로컬 확인 방법
 
-1. (한 번) `landing/admin/assets/firebase-config.js` 의 `apiKey`, `appId` 를 채운다(§9-1).
+1. (한 번) `landing/console/assets/firebase-config.js` 의 `apiKey`, `appId` 를 채운다(§9-1).
 2. 터미널 아무 곳에서나 아래 한 줄 실행(종료는 `Ctrl+C`):
 
 ```bash
 cd /Users/Byeonguk/Developer/OrderApp/landing && python3 -m http.server 5500
 ```
 
-3. 브라우저에서 `http://localhost:5500/admin/index.html`. ES 모듈이라 `file://` 로는 동작하지 않는다. `apiKey`/`appId` 를 채우기 전에는 "설정이 필요해요" 화면이 나오는 것이 정상이다.
+3. 브라우저에서 `http://localhost:5500/console/index.html`. ES 모듈이라 `file://` 로는 동작하지 않는다. `apiKey`/`appId` 를 채우기 전에는 "설정이 필요해요" 화면이 나오는 것이 정상이다.
 
 ## 9. 사용자 준비 항목
 
-1. **Firebase 웹 앱 등록 + 설정값 입력.** Firebase Console > 프로젝트 설정 > 내 앱 에서 웹 앱을 추가하고 SDK 설정의 `apiKey`, `appId` 를 `landing/admin/assets/firebase-config.js` 에 채운다. 저장소에 web 설정이 없다(`lib/firebase_options.dart` 는 android/ios 만). android/ios 용 키를 재사용하지 않았다. 이 값은 시크릿이 아니다(파일 주석 참고). **서비스 계정 키는 웹·깃에 절대 넣지 않는다.**
+1. **Firebase 웹 앱 등록 + 설정값 입력.** Firebase Console > 프로젝트 설정 > 내 앱 에서 웹 앱을 추가하고 SDK 설정의 `apiKey`, `appId` 를 `landing/console/assets/firebase-config.js` 에 채운다. 저장소에 web 설정이 없다(`lib/firebase_options.dart` 는 android/ios 만). android/ios 용 키를 재사용하지 않았다. 이 값은 시크릿이 아니다(파일 주석 참고). **서비스 계정 키는 웹·깃에 절대 넣지 않는다.**
 2. **Firebase Auth 승인된 도메인**: Authentication > Settings > 승인된 도메인에 **`localhost`**(로컬 확인용, 기본 포함) 와 **`order-app-5957e.web.app`**(커스텀 도메인이 있으면 함께) 가 있어야 한다. 없으면 `auth/unauthorized-domain` 으로 로그인이 실패하고 콘솔이 그 안내를 보여준다.
 3. **로그인 수단**: Authentication > Sign-in method 에서 Email/Password 와 Google 활성화.
 4. **관리자 계정**: Firestore Console 에서 해당 `users/{uid}.role` 이 `'admin'` 인지 확인. (콘솔에는 역할 부여 기능이 없다.)
@@ -137,15 +137,15 @@ cd /Users/Byeonguk/Developer/OrderApp/landing && python3 -m http.server 5500
 cd /Users/Byeonguk/Developer/OrderApp && firebase deploy --only hosting --project order-app-5957e
 ```
 
-- 이 명령은 `landing/` 전체(랜딩 4페이지 + `landing/admin/`)를 함께 올린다. 배포 후 `https://order-app-5957e.web.app/{index,terms,privacy,refund}.html` 4개가 그대로인지 확인한다.
-- 콘솔 주소: `https://order-app-5957e.web.app/admin/index.html` (`cleanUrls:false` 라 `/admin` 만으로는 열리지 않는다 — spec 별 과제 S7).
+- 이 명령은 `landing/` 전체(랜딩 4페이지 + `landing/console/`)를 함께 올린다. 배포 후 `https://order-app-5957e.web.app/{index,terms,privacy,refund}.html` 4개가 그대로인지 확인한다.
+- 콘솔 주소: `https://order-app-5957e.web.app/console/index.html` (`cleanUrls:false` 라 `/admin` 만으로는 열리지 않는다 — spec 별 과제 S7).
 - 롤백: `cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project order-app-5957e`
-- 참고: `firebase.json` 의 `/assets/**` 캐시 헤더는 루트 `assets/` 에만 걸리고 `admin/assets/` 에는 걸리지 않는다. 배포 직후 구버전 JS 가 보이면 강력 새로고침. `landing/admin/README.md` 도 호스팅에 함께 올라가 공개 URL 로 읽힌다(비밀 값 없음).
+- 참고: `firebase.json` 의 `/assets/**` 캐시 헤더는 루트 `assets/` 에만 걸리고 `admin/assets/` 에는 걸리지 않는다. 배포 직후 구버전 JS 가 보이면 강력 새로고침. `landing/console/README.md` 도 호스팅에 함께 올라가 공개 URL 로 읽힌다(비밀 값 없음).
 
 ### 커밋 명령 예시 (실행하지 않았다 — 경로를 하나씩 명시, `git add -A` / `git add .` 금지)
 
 ```bash
-cd /Users/Byeonguk/Developer/OrderApp && git add landing/admin/index.html landing/admin/README.md landing/admin/assets/admin.css landing/admin/assets/admin.js landing/admin/assets/admin-data.js landing/admin/assets/admin-format.js landing/admin/assets/admin-payloads.js landing/admin/assets/firebase-config.js docs/tasks/web_admin_console/implementation.md && git commit -m "feat: web_admin_console — landing/admin 관리자 콘솔 (승인 큐 4종 조회, 브랜드/매장 승인·반려)"
+cd /Users/Byeonguk/Developer/OrderApp && git add landing/console/index.html landing/console/README.md landing/console/assets/console.css landing/console/assets/console.js landing/console/assets/console-data.js landing/console/assets/console-format.js landing/console/assets/console-payloads.js landing/console/assets/firebase-config.js docs/tasks/web_admin_console/implementation.md && git commit -m "feat: web_admin_console — landing/console 관리자 콘솔 (승인 큐 4종 조회, 브랜드/매장 승인·반려)"
 ```
 
 (`spec.md` / `design.md` 는 별도 역할 산출물이라 위 명령에 넣지 않았다. 필요하면 같은 방식으로 경로를 추가한다. `firebase.json` / `.firebaserc` 는 다른 세션 변경이므로 넣지 않는다.)

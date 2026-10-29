@@ -2,9 +2,9 @@
 
 ## 개요
 
-- **목적**: 완성된 admin 전용 웹 콘솔(`landing/admin/`)을 **역할별 운영 콘솔 `/console/`** 로 확장한다. 로그인한 사용자의 `users/{uid}.role` 에 따라 보이는 섹션이 달라지는 **단일 앱**이다.
-- **작업 유형**: 기존 기능 확장 (신규 플랫폼 표면의 범위 확대). `landing/admin/` 코드를 `landing/console/` 로 **이관**하고 brand / owner / customer 섹션을 추가한다.
-- **출발점**: `docs/tasks/web_admin_console/` 의 spec / design / implementation 이 완료돼 있고 `landing/admin/` 에 동작하는 콘솔(8파일, JS 약 1,850줄)이 있다. **아직 배포된 적이 없다** (PG 심사 종료 전 배포 보류).
+- **목적**: 완성된 admin 전용 웹 콘솔(`landing/console/`)을 **역할별 운영 콘솔 `/console/`** 로 확장한다. 로그인한 사용자의 `users/{uid}.role` 에 따라 보이는 섹션이 달라지는 **단일 앱**이다.
+- **작업 유형**: 기존 기능 확장 (신규 플랫폼 표면의 범위 확대). `landing/console/` 코드를 `landing/console/` 로 **이관**하고 brand / owner / customer 섹션을 추가한다.
+- **출발점**: `docs/tasks/web_admin_console/` 의 spec / design / implementation 이 완료돼 있고 `landing/console/` 에 동작하는 콘솔(8파일, JS 약 1,850줄)이 있다. **아직 배포된 적이 없다** (PG 심사 종료 전 배포 보류).
 - **랜딩(`landing/*.html`)은 그대로 둔다.** 토스 PG 심사 자료이므로 이번 작업에서 **단 한 글자도 바꾸지 않는다.**
 
 ### 이 spec 의 핵심 산출물
@@ -17,7 +17,7 @@ Rules 의 필드 화이트리스트가 역할마다 좁게 걸려 있어, 화면
 | 영역 | 영향 |
 |---|---|
 | 화면 | 신규 `landing/console/` (역할별 섹션). **`landing/{index,terms,privacy,refund}.html` 무변경** |
-| 화면 | `landing/admin/` | **이관 후 제거** (§11) |
+| 화면 | `landing/console/` | **이관 후 제거** (§11) |
 | 화면 | `lib/presentation/**` (admin 59 · brand 32 · owner 37 파일) | **무변경.** 읽기 참조만 — 흐름·검증값 복제의 원본 |
 | Domain / Data / Presentation (`lib/`) | **없음.** `landing/` 은 Flutter 앱이 아니고 Clean Architecture 레이어 체계 밖이다 (§8.4) |
 | Firestore Rules | **변경 없음 — 변경 불가**(§3). 기존 분기 안에서만 동작함을 §5 에서 액션별 검증 |
@@ -40,7 +40,7 @@ Rules 의 필드 화이트리스트가 역할마다 좁게 걸려 있어, 화면
 
 - 로그인 · 역할 판정 · 셸 · 테이블 · 모달 · 에러 분류 · payload 가드를 **한 번만** 만든다.
 - `users.role` 은 **단일 값**이고 Rules `isAllowedSelfRoleChange` (`firestore.rules:158-165`) 가 `customer ↔ owner ↔ brand` 자가 전이를 허용한다 → 역할이 실제로 바뀐다. 경로를 나누면 **역할 변경 후 예전 URL 이 빈 화면**이 된다.
-- 기존 `landing/admin/` 코드는 **버리지 않고 `/console/` 의 admin 섹션으로 이관**한다 (§11).
+- 기존 `landing/console/` 코드는 **버리지 않고 `/console/` 의 admin 섹션으로 이관**한다 (§11).
 
 ### 확정 2. 랜딩 헤더의 "로그인" 버튼은 PG 심사 통과 후에 단다
 
@@ -362,7 +362,7 @@ CLAUDE.md 절대규칙 4의 취지는 "노출되면 피해가 나는 값을 코�
 
 ## 6. payload 가드 — `console-payloads.js` (역할별 확장)
 
-기존 `landing/admin/assets/admin-payloads.js` 는 액션별 **정확한 키 집합**을 상수로 두고 `assertPayload` 로 런타임 검증한다 (SDK 미import → node 로 단독 검증 가능). **이 방식을 역할별로 확장**한다.
+기존 `landing/console/assets/console-payloads.js` 는 액션별 **정확한 키 집합**을 상수로 두고 `assertPayload` 로 런타임 검증한다 (SDK 미import → node 로 단독 검증 가능). **이 방식을 역할별로 확장**한다.
 
 ### 6.1 현재 구조의 한계
 
@@ -543,7 +543,7 @@ landing/console/
 
 ---
 
-## 11. 기존 `landing/admin/` 이관 계획
+## 11. 기존 `landing/console/` 이관 계획
 
 ### 11.1 무엇을 그대로 쓰고 무엇을 바꾸는가
 
@@ -560,7 +560,7 @@ landing/console/
 
 ### 11.2 이관 순서 (충돌 회피)
 
-1. **tester 가 `docs/tasks/web_admin_console/` 작업을 끝낼 때까지 `landing/admin/` 을 건드리지 않는다.** 지금 사용 중이다.
+1. **tester 가 `docs/tasks/web_admin_console/` 작업을 끝낼 때까지 `landing/console/` 을 건드리지 않는다.** 지금 사용 중이다.
 2. test_report 의 FAIL 이 해소된 뒤, **`git mv` 로 한 커밋에 이동**한다 (히스토리 보존).
 3. 그 다음 커밋부터 분할·확장. 이동과 수정을 같은 커밋에 섞지 않는다 — 섞으면 diff 가 전부 신규 파일로 보여 "admin 기능이 안 변했다" 를 리뷰에서 증명할 수 없다.
 
@@ -585,7 +585,7 @@ landing/console/
 
 ### 11.4 기존 `/admin/` 경로 처리 — **제거 (리다이렉트 없음)**
 
-- **근거**: `landing/admin/` 은 **아직 한 번도 배포된 적이 없다** (git status 상 untracked, README 가 "PG 심사 종료까지 배포하지 않는다" 를 명시). 공개 URL 로 존재한 적이 없으므로 **보호할 북마크도 외부 링크도 없다.**
+- **근거**: `landing/console/` 은 **아직 한 번도 배포된 적이 없다** (git status 상 untracked, README 가 "PG 심사 종료까지 배포하지 않는다" 를 명시). 공개 URL 로 존재한 적이 없으므로 **보호할 북마크도 외부 링크도 없다.**
 - 따라서 리다이렉트를 두지 않는다. 입구를 2개 두면 "어느 쪽이 최신인가" 를 매번 확인해야 하고, 그 비용이 존재하지 않는 북마크를 지키는 값보다 크다.
 - 로컬 개발용 북마크는 사용자에게 **새 주소를 알리는 것**으로 끝낸다 (§15).
 
@@ -599,7 +599,7 @@ landing/console/
 
 - `trailingSlash: false` → `/console/` 는 **301 로 `/console` 로 보내진다.**
 - `cleanUrls: false` → `/console` 은 `/console.html` 로도, 디렉토리 인덱스로도 해석되지 않는다.
-- 결과: **`/console` 이 404 로 떨어진다.** 그래서 기존 콘솔은 `/admin/index.html` 로 접근하도록 안내돼 있었다.
+- 결과: **`/console` 이 404 로 떨어진다.** 그래서 기존 콘솔은 `/console/index.html` 로 접근하도록 안내돼 있었다.
 
 ### 12.2 결정 — hosting 블록에 rewrite 1개 추가
 
@@ -814,7 +814,7 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
 
 | 영역 | 원본 |
 |---|---|
-| 콘솔 셸 · 게이트 · 라우터 · 공용 위젯 · 에러 분류 | `landing/admin/assets/*.js` (§11.1) |
+| 콘솔 셸 · 게이트 · 라우터 · 공용 위젯 · 에러 분류 | `landing/console/assets/*.js` (§11.1) |
 | 승인/반려 필드 집합 | `lib/data/models/store_model.dart` `approveFields`/`rejectFields`, `lib/data/repositories/brand_repository_impl.dart:174-199` |
 | 마스터 메뉴 / 메뉴 / 오버라이드 필드 집합 | `lib/data/models/{menu_item_model,menu_override_model}.dart`, `lib/data/repositories/{master_menu_item,menu_item,menu_override}_repository_impl.dart` |
 | 매출 집계 | `lib/domain/usecases/get_store_sales_use_case.dart` `aggregateStoreSales`, `lib/domain/entities/sales_period.dart`, `lib/core/utils/kst.dart`, `lib/core/constants/sales_query_limits.dart` |
@@ -994,7 +994,7 @@ admin 섹션(1차)은 Email/Google 로 충분하므로 **지금 당장 막히는
 
 | # | 질문 | 분기 | 권고 |
 |---|---|---|---|
-| **Q1** | **`landing/admin/` 이관 시점** | **(A)** tester 가 `web_admin_console` 를 끝내고 FAIL 해소 후 `git mv` → 그 다음 확장 (§11.2) / **(B)** 지금 `landing/console/` 을 새로 만들고 `landing/admin/` 은 당분간 둔 뒤 나중에 제거 | **(A).** (B)는 같은 코드가 두 곳에 있는 기간을 만들고, 그 사이 admin 수정이 한쪽에만 들어가면 갈라진다. 다만 (A)는 **tester 작업이 끝날 때까지 이 과제가 대기**한다는 비용이 있다 |
+| **Q1** | **`landing/console/` 이관 시점** | **(A)** tester 가 `web_admin_console` 를 끝내고 FAIL 해소 후 `git mv` → 그 다음 확장 (§11.2) / **(B)** 지금 `landing/console/` 을 새로 만들고 `landing/console/` 은 당분간 둔 뒤 나중에 제거 | **(A).** (B)는 같은 코드가 두 곳에 있는 기간을 만들고, 그 사이 admin 수정이 한쪽에만 들어가면 갈라진다. 다만 (A)는 **tester 작업이 끝날 때까지 이 과제가 대기**한다는 비용이 있다 |
 | **Q2** | **오버라이드 create 에 `masterMenuItemId` 를 넣을까** | **(A)** 넣는다 — Rules 통과에 영향 없는 순수 추가이고 cascade 누락(§11.3-ⓑ)을 웹에서는 안 만든다 / **(B)** 앱과 정확히 같게 둔다 — "값을 새로 정하지 않는다" 를 엄격히 | **(A).** 이것은 값을 새로 정하는 것이 아니라 **빠진 식별자를 채우는 것**이다(앱의 seed 경로는 이미 넣는다). 단 **앱 쪽 수정(T6-ⓑ)이 없으면 앱이 만든 문서는 계속 누락**되므로 반쪽이다 — 그 사실을 받아들이는지 확인이 필요하다 |
 | **Q3** | **owner 매장 정보 수정을 1차에 넣을까** | **(A)** 비범위 유지 (§3-N5) / **(B)** **운영 필드만** 넣는다 (영업시간 · 임시휴무 · 휴무일 · 전화 · 공지 · 설명 — 10키 전부 Rules 화이트리스트 안, §5.4 W-O14) / **(C)** 핵심 필드까지 | **(A), 차선 (B).** (B)는 Rules 상 안전하고 데스크톱에서 하기 좋은 업무지만, 이미지 다중 업로드와 `excludedMainCategories` 해석 규칙(휴면 코드 보존)을 함께 옮겨야 하고 **운영 정보 변경 이력 공백**(T10)을 웹에도 들인다. **(C)는 권하지 않는다** — 핵심 수정이 `status='pending'` 회귀 = 재심사 트리거다 |
 | **Q4** | 마스터 메뉴 운영 수정의 `disabledOption*` | 앱은 이 둘의 변경을 "운영 변경" 으로 **판정만 하고 payload 에 넣지 않아 저장되지 않는다** (§5.3 W-B6). **(A)** 앱과 같게 둔다(저장 안 됨) / **(B)** payload 에 포함해 저장되게 한다 | **(B).** Rules 는 제한이 없고(`:607-608`) 점포 한정 메뉴 경로는 이미 두 키를 포함한다 — 마스터 메뉴만 빠진 것은 **일관성 결함**으로 보인다. 단 사용자가 "마스터 메뉴에서는 의도적으로 안 바꾼다" 로 결정했다면 (A) |

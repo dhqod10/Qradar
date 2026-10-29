@@ -1,7 +1,7 @@
 /* ============================================================================
    Qradar 관리자 콘솔 — 화면 / 라우팅 / 인터랙션
-   데이터 접근은 전부 admin-data.js (Firebase SDK 는 그 파일에서만 import).
-   표시 형식·오류 분류·입력 검증은 admin-format.js, 승인/반려 payload 는 admin-payloads.js.
+   데이터 접근은 전부 console-data.js (Firebase SDK 는 그 파일에서만 import).
+   표시 형식·오류 분류·입력 검증은 console-format.js, 승인/반려 payload 는 console-payloads.js.
 
    [읽기 전에 — 보안 모델 (spec §6)]
    이 콘솔은 클라이언트일 뿐이다. 권한의 최종 권위는 Firestore Security Rules 와 Cloud Functions 에 있다.
@@ -12,7 +12,7 @@
    - 낙관적 UI 없음: 쓰기 성공 응답 전에 목록·건수·배지를 바꾸지 않고, 성공 후에도 서버에서 다시 조회해 그린다.
    - 건수 조회 실패를 0 으로 표시하지 않는다. 반영 여부를 모를 때는 성공/실패로 단정하지 않는다.
 
-   [landing/ 과 Clean Architecture] landing/ 은 Flutter 앱(lib/)의 레이어 규칙 밖이다 (spec §9.2). admin-data.js 주석 참고.
+   [landing/ 과 Clean Architecture] landing/ 은 Flutter 앱(lib/)의 레이어 규칙 밖이다 (spec §9.2). console-data.js 주석 참고.
    ========================================================================== */
 
 import { isFirebaseConfigured } from './firebase-config.js';
@@ -21,11 +21,11 @@ import {
   countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap,
   listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu,
   getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, LIST_LIMIT,
-} from './admin-data.js';
+} from './console-data.js';
 import {
   esc, fmtDateTime, fmtShortDateTime, fmtClock, shortUid, fmtKrw, safeUrl, fmtRatePct, normalizeStatus,
   STATUS_LABEL, validateReason, classifyError, readErrorText, writeErrorText, loginErrorText,
-} from './admin-format.js';
+} from './console-format.js';
 
 const root = document.getElementById('app');
 
@@ -1019,7 +1019,7 @@ function viewQoin(alive) {
 
 /* ============================================================================
    승인 / 반려 모달 (A3, A5) — 확인 단계, 사유 입력, 실패 복귀
-   - 확정 직전에 서버에서 상태를 다시 읽는다 (admin-data.js 의 트랜잭션 / assertPendingNow).
+   - 확정 직전에 서버에서 상태를 다시 읽는다 (console-data.js 의 트랜잭션 / assertPendingNow).
    - 응답 전에는 화면 어느 곳도 '처리됨'으로 바꾸지 않는다. 성공 후 큐로 이동해 서버에서 다시 조회한다.
    - 반려 사유 상한 없음 (D2): 글자 수만 표시하고, 필수 + trim 후 1자 이상만 요구한다.
    ========================================================================== */

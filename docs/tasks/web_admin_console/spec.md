@@ -28,15 +28,15 @@
 >
 > | | 결정 | 내용 |
 > |---|---|---|
-> | **Q1** | **(B) 새 웹 SPA** | `landing/admin/` + Firebase JS SDK. Flutter Web 미채택 |
+> | **Q1** | **(B) 새 웹 SPA** | `landing/console/` + Firebase JS SDK. Flutter Web 미채택 |
 > | **Q2** | **읽기 넓게 + 쓰기 좁게** | 읽기: 승인 대기 큐 4종 · Qoin 전역 적립률/비상정지 · 매장 목록<br>쓰기: **브랜드 승인/반려 + 매장 승인/반려 2쌍만** |
-> | **Q3** | **(A) 같은 사이트 + 조건 ①②③** | `landing/admin/` 하위만 · landing 에서 `/admin` 링크 만들지 않음 · **PG 심사 종료까지 배포하지 않음** |
+> | **Q3** | **(A) 같은 사이트 + 조건 ①②③** | `landing/console/` 하위만 · landing 에서 `/admin` 링크 만들지 않음 · **PG 심사 종료까지 배포하지 않음** |
 >
 > 아래 1절은 결정 근거의 기록으로 남긴다. 구현은 위 결정을 전제로 한다.
 
 ### Q1. 재사용 전략 — Flutter Web(A) vs 새 웹 SPA(B)
 
-| | (A) Flutter Web | (B) 새 웹 SPA (`landing/admin/`, Firebase JS SDK) |
+| | (A) Flutter Web | (B) 새 웹 SPA (`landing/console/`, Firebase JS SDK) |
 |---|---|---|
 | 재사용 | `lib/presentation/admin/**` 59개 파일 + domain/data 전부 | 0. UI·검증 로직을 다시 쓴다 |
 | 일관성 | 앱과 화면·문구·검증이 자동으로 같다 | 두 곳이 갈라질 수 있다 (적립률 범위, 삭제 사유 2~200자 등) |
@@ -84,7 +84,7 @@
 
 ### Q3. 호스팅 경계 — 같은 사이트 `/admin`(A) vs 별도 사이트(B)
 
-| | (A) `landing/admin/` — 같은 호스팅, 같은 도메인 | (B) 별도 Hosting 사이트 (`qradar-admin.web.app`) |
+| | (A) `landing/console/` — 같은 호스팅, 같은 도메인 | (B) 별도 Hosting 사이트 (`qradar-admin.web.app`) |
 |---|---|---|
 | 설정 | 현재 `firebase.json` hosting 블록 그대로. 파일만 추가 | **hosting 을 target 배열로 바꿔야 한다**(단일 객체 → 배열). Firebase 콘솔에서 사이트 추가 + `firebase target:apply` |
 | 배포 명령 | 현재와 동일 (`--only hosting`) | `--only hosting:admin` 등으로 분리. landing 과 독립 배포 가능 |
@@ -94,8 +94,8 @@
 
 **PG 심사 판단**: 심사자가 보는 것은 결제 흐름·약관·환불 정책이고, 관리자 로그인 화면이 같은 도메인에 있는 것 자체가 반려 사유가 되지는 않는다. 다만 **심사 중에 심사 자료가 들어 있는 디렉토리를 건드리는 배포를 반복하는 것**이 실질 위험이다(파일 누락·캐시·일시 404). 이것은 Q3 보다 "심사 종료까지 배포하지 않는다"로 다루는 게 맞다.
 
-**권고: (A) 같은 사이트 `landing/admin/`, 단 ①~③ 조건부.**
-1. `landing/admin/` 하위에만 파일을 둔다. 기존 4개 html / `assets/` 는 손대지 않는다.
+**권고: (A) 같은 사이트 `landing/console/`, 단 ①~③ 조건부.**
+1. `landing/console/` 하위에만 파일을 둔다. 기존 4개 html / `assets/` 는 손대지 않는다.
 2. `index.html` 등 landing 페이지에서 `/admin` 으로 가는 **링크를 만들지 않는다**. 숨김은 보안이 아니지만(§6) 심사자 동선에서 빼는 효과는 있다.
 3. **PG 심사가 끝날 때까지 배포하지 않는다.** 코드만 머지하고 배포는 심사 종료 후 사용자가 수행한다(§9).
 
@@ -158,7 +158,7 @@ Q1=B / Q2=권고안 / Q3=A 를 가정한 1차 범위다. 결정이 바뀌면 이
 
 | 구분 | 대상 | 영향 |
 |---|---|---|
-| 화면 | 신규 `landing/admin/` 정적 페이지 | 신규. 기존 `landing/{index,terms,privacy,refund}.html` 무변경 |
+| 화면 | 신규 `landing/console/` 정적 페이지 | 신규. 기존 `landing/{index,terms,privacy,refund}.html` 무변경 |
 | 화면 | `lib/presentation/admin/**` (59개) | **무변경**. 읽기 참조만 (흐름·분기 조건 복제의 원본) |
 | 데이터 | `brands`, `brands/{id}/private/profile`, `stores`, `mainCategories`, `config/qoin`, `config/qoin/qoinRateHistory`, `{path=**}/menuItems`, `{path=**}/menuOverrides`, `users/{uid}` | **읽기**. 스키마 변경 없음 |
 | 데이터 | `brands/{id}`, `stores/{id}` 의 승인 메타 필드 | **쓰기**(F3/F4). 기존 앱이 보내는 것과 **동일한 필드 집합**(§7.2) |
@@ -191,7 +191,7 @@ Q1=B / Q2=권고안 / Q3=A 를 가정한 1차 범위다. 결정이 바뀌면 이
 | 2 (`functions/` 읽기 전용) | CF 를 **호출만** 한다. 새 CF 를 만들거나 기존 CF 시그니처를 바꾸는 설계 금지 |
 | 3 (hosting 블록만) | **Q3 권고가 (A)인 주된 이유.** (B)는 hosting 을 단일 객체에서 target 배열로 바꿔야 하고, 그 구조 변경이 다른 세션의 배포 명령과 충돌한다 |
 | 1 + 4 | 배포 타이밍을 사용자가 통제한다. 콘솔은 **코드 머지와 배포를 분리**해 설계한다(배포 전까지 `/admin` 이 없어도 landing 은 정상) |
-| 5 | developer 는 커밋 시 `landing/admin/...` 경로를 하나씩 명시해 add 한다 |
+| 5 | developer 는 커밋 시 `landing/console/...` 경로를 하나씩 명시해 add 한다 |
 
 ---
 
@@ -226,7 +226,7 @@ CLAUDE.md 절대규칙 4는 "API key, secret, 환경별 설정값을 코드에 �
 
 | 값 | 성격 | 취급 |
 |---|---|---|
-| Firebase **web config** (`apiKey`, `authDomain`, `projectId`, `appId`, `messagingSenderId`) | **시크릿이 아니다.** 프로젝트 공개 식별자이며 브라우저에 반드시 노출된다. 보호는 apiKey 가 아니라 **Rules + Auth 승인 도메인 + App Check** 가 한다 | `landing/admin/` 의 JS 에 평문으로 두어도 된다. 규칙 4의 "secret" 에 해당하지 않음을 **파일 주석으로 명시**해 다음 사람이 혼동하지 않게 한다 |
+| Firebase **web config** (`apiKey`, `authDomain`, `projectId`, `appId`, `messagingSenderId`) | **시크릿이 아니다.** 프로젝트 공개 식별자이며 브라우저에 반드시 노출된다. 보호는 apiKey 가 아니라 **Rules + Auth 승인 도메인 + App Check** 가 한다 | `landing/console/` 의 JS 에 평문으로 두어도 된다. 규칙 4의 "secret" 에 해당하지 않음을 **파일 주석으로 명시**해 다음 사람이 혼동하지 않게 한다 |
 | 서비스 계정 키 / Admin SDK 자격증명 | **진짜 시크릿.** Rules 를 전부 우회한다 | **웹·깃에 절대 넣지 않는다.** 콘솔은 Admin SDK 를 쓰지 않는다. 특권 작업은 전부 기존 CF 를 호출한다 |
 | 토스 시크릿 키 등 PG 자격증명 | 진짜 시크릿 | 콘솔 범위 밖. 서버(CF)에만 존재 |
 | 환경별 설정 (dev/prod projectId 분기) | 환경값 | 1차는 prod 단일이라 분기 없음. 분기가 생기면 빌드 단계 없는 정적 사이트이므로 **파일 분리**로 다룬다(별 과제) |
@@ -325,7 +325,7 @@ CLAUDE.md 절대규칙 4는 "API key, secret, 환경별 설정값을 코드에 �
 ### 9.1 화면 (Q1=B, Q2=권고안 기준)
 
 ```
-landing/admin/
+landing/console/
 ├── index.html            로그인 + 셸 (좌측 네비 + 본문)
 └── assets/
     ├── admin.css         style.css 의 CSS 변수를 재사용
@@ -338,7 +338,7 @@ landing/admin/
 ### 9.2 데이터 흐름
 
 ```
-브라우저 (landing/admin)
+브라우저 (landing/console)
   → Firebase JS SDK (Auth / Firestore / Functions[asia-northeast3])
   → Firestore Security Rules  ← 권위 ①
   → (특권 작업만) Cloud Functions requireAdmin()  ← 권위 ②
@@ -445,7 +445,7 @@ landing/admin/
 cd /Users/Byeonguk/Developer/OrderApp && firebase deploy --only hosting --project order-app-5957e
 ```
 
-- 이 명령은 `landing/` 전체(= landing 4개 페이지 + 새 `landing/admin/`)를 함께 올린다. **landing 페이지가 깨지지 않았는지 배포 후 반드시 확인**한다.
+- 이 명령은 `landing/` 전체(= landing 4개 페이지 + 새 `landing/console/`)를 함께 올린다. **landing 페이지가 깨지지 않았는지 배포 후 반드시 확인**한다.
 - **전체 `firebase deploy` 를 실행하지 않는다.** Rules·Functions 가 함께 올라가면 다른 세션의 작업을 덮을 수 있다.
 
 ### 배포 후 확인 (사용자)
@@ -462,10 +462,10 @@ https://order-app-5957e.web.app/refund.html
 그 다음 관리자 콘솔에 접속해 로그인과 승인 큐 조회를 확인한다.
 
 ```
-https://order-app-5957e.web.app/admin/index.html
+https://order-app-5957e.web.app/console/index.html
 ```
 
-`trailingSlash: false` / `cleanUrls: false` 설정 때문에 **`/admin` 이 아니라 `/admin/index.html` 로 접근**해야 한다. `/admin` 으로도 열리게 하려면 hosting 블록에 rewrite 를 추가해야 하고, 그것은 landing 의 URL 동작에도 영향을 주므로 **별 과제 S7** 로 둔다.
+`trailingSlash: false` / `cleanUrls: false` 설정 때문에 **`/admin` 이 아니라 `/console/index.html` 로 접근**해야 한다. `/admin` 으로도 열리게 하려면 hosting 블록에 rewrite 를 추가해야 하고, 그것은 landing 의 URL 동작에도 영향을 주므로 **별 과제 S7** 로 둔다.
 
 ### 롤백
 
@@ -498,7 +498,7 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
 - 구현 항목: §2 의 F1~F7.
 - **재사용할 기존 구조**: `landing/assets/style.css` CSS 변수. 승인/반려 **필드 집합**은 `lib/data/models/store_model.dart:338-361`(`approveFields`/`rejectFields`)과 `lib/data/repositories/brand_repository_impl.dart:174-199` 를 **그대로 옮긴다**(값을 새로 정하지 않는다).
 - **주의할 규칙**:
-  - 코드는 **`landing/admin/` 밖으로 나가지 않는다.** `lib/` · `functions/` · `firestore.rules` 수정 금지(§5).
+  - 코드는 **`landing/console/` 밖으로 나가지 않는다.** `lib/` · `functions/` · `firestore.rules` 수정 금지(§5).
   - `firebase.json` 은 **손대지 않는다**(Q3=A 면 불필요).
   - 승인/반려 payload 에 **Qoin 관리 필드를 넣지 않는다** — 넣으면 Rules 가 전부 거부한다(§7.2).
   - 매장 반려는 `rejectedAt` 에 쓴다. **`approvedAt` 에 쓰지 않는다**(§7.2 R8).
@@ -506,7 +506,7 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
   - 낙관적 UI 금지 — 쓰기 성공 응답 전에 목록을 바꾸지 않는다.
   - `create` 를 보내지 않는다(§8-7).
   - Firebase web config 가 시크릿이 아닌 이유, `landing/` 이 Clean Architecture 레이어 밖인 이유를 **파일 주석으로 남긴다**(§6-4, §9.2).
-  - git 커밋 시 `git add landing/admin/...` 처럼 **경로를 하나씩 명시**한다.
+  - git 커밋 시 `git add landing/console/...` 처럼 **경로를 하나씩 명시**한다.
 
 ### tester — **호출 필요**
 
@@ -519,7 +519,7 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
   - 콘솔이 `create` 를 보내지 않는지.
 - **반드시 확인할 예외 케이스**:
   - **비admin 계정으로 로그인** → 본문이 렌더되지 않고 데이터 요청도 나가지 않는가.
-  - **미로그인 상태로 `/admin/index.html` 직접 접근** → 로그인 화면만.
+  - **미로그인 상태로 `/console/index.html` 직접 접근** → 로그인 화면만.
   - **DOM 에서 버튼 비활성화를 강제로 풀어 승인 시도** → Rules 가 거부하고 콘솔이 성공으로 표시하지 않는가(권위 검증 — §6-1 의 핵심 테스트).
   - `users/{uid}` 읽기 실패 시 **fail-closed** 인가.
   - 승인 실패 시 목록에서 항목이 사라지지 않는가.
@@ -543,7 +543,7 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
 | S4 | 승인 심사 이력 서브컬렉션 | 현재 승인 메타는 문서에 1세대만 남아 재심사 이력이 덮인다. 수정은 `lib/` 모델·Rules·CF 전부에 걸친다 | 별 spec. CF 가 이력을 쓰는 설계 필요(audit_trail: 쓰기 주체는 CF 가 기본) |
 | S5 | 다중 선택 일괄 승인 | 일괄 처리는 "대상 수·덮어쓰기 여부" 를 묶어 남기는 이력이 필요하고(audit_trail §4-5), 그 쓰기 주체는 CF 여야 한다. `functions/` 는 읽기 전용 | 새 CF + 이력 스키마 설계. 별 spec |
 | S6 | 액션 출처(앱/웹) 기록 | 기존 문서에 필드를 추가해야 하고 `lib/` 의 모델 호환성 검토가 필요 | `lib/` 수정 권한 + 모델 변경 검토 |
-| S7 | `/admin` (확장자 없이) 접근 | `cleanUrls: false` / `trailingSlash: false` 이고 rewrite 추가는 landing URL 동작에 영향을 준다 | hosting 블록에 `/admin` → `/admin/index.html` rewrite 추가. 심사 종료 후 |
+| S7 | `/admin` (확장자 없이) 접근 | `cleanUrls: false` / `trailingSlash: false` 이고 rewrite 추가는 landing URL 동작에 영향을 준다 | hosting 블록에 `/admin` → `/console/index.html` rewrite 추가. 심사 종료 후 |
 | S8 | Flutter Web 전환(Q1=A) | §1-Q1: `firebase_options.dart` web 설정 부재 + 웹 미지원 플러그인 3종 + `lib/` 읽기 전용 | `flutterfire configure`, 플러그인 플랫폼 분기, admin 화면 반응형 재작업, `firebase.json` flutter 블록 수정 |
 | S9 | App Check (웹) | 1차 범위 밖. 콘솔의 보호는 Rules + Auth 가 하고 있다 | reCAPTCHA Enterprise 설정 + CF `enforceAppCheck` 검토(= `functions/` 수정) |
 

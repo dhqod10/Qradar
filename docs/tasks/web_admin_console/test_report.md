@@ -1,7 +1,7 @@
 # web_admin_console 테스트 리포트
 
 - 검증일: 2026-10-29
-- 기준: `spec.md` (§7.1·§9.4 2026-10-29 정정 포함) / `design.md` / `implementation.md` / `landing/admin/` 8개 파일
+- 기준: `spec.md` (§7.1·§9.4 2026-10-29 정정 포함) / `design.md` / `implementation.md` / `landing/console/` 8개 파일
 - **운영 데이터 쓰기 0건.** Firestore 에뮬레이터(프로젝트 ID `demo-admin-console-test`, 포트는 `emulators:exec` 자동 할당)만 사용했다. 운영 프로젝트에 대한 Firestore 쓰기, Cloud Function 호출, `firebase deploy` 는 실행하지 않았다.
 - 코드 수정 없음. 테스트 스크립트는 저장소 밖 scratchpad 에만 있다 (아래 "재현 방법").
 
@@ -26,7 +26,7 @@
 | 2 | `QOIN_MANAGED_FIELDS` = `qoinManagedFields()` | **PASS** | `firestore.rules:75-78` 를 파싱해 정렬 비교: `qoinAccrualEnabled, qoinAccrualRate, qoinBulkAt, qoinBulkHistoryId, qoinBulkStatus` 5개, 집합 동일 (`EQUAL true`) |
 | 3 | 매장 반려가 `rejectedAt` 에 쓰고 `approvedAt` 미접촉 | **PASS** | 빌더 코드 + `assertPayload` 가드 + **에뮬레이터 실측**: `rejectStore` 후 문서에 `rejectedAt` 있고 `approvedAt === undefined` (모듈 직접 호출, UI 경유 둘 다) |
 | 4 | `approvedBy` 가 로그인 uid | **PASS** | 4개 액션 모두 에뮬레이터 실측으로 `approvedBy === 로그인 uid` (브랜드 승인/반려, 매장 승인/반려). `requireUid` 가 빈 값이면 throw. `currentUid()` 는 `auth.currentUser.uid`, 없으면 `unauthenticated` |
-| 5 | `create` 없음 | **PASS** | `landing/admin` 에서 `setDoc/addDoc/writeBatch/updateDoc/deleteDoc/tx.set/tx.delete` 0건. Firestore 쓰기는 `admin-data.js` 의 `tx.update` 1곳뿐 (나머지 `.set(` 2건은 `Map.set`). `users` 는 `readUserRole` 의 읽기뿐, 역할 변경 코드 없음 |
+| 5 | `create` 없음 | **PASS** | `landing/console` 에서 `setDoc/addDoc/writeBatch/updateDoc/deleteDoc/tx.set/tx.delete` 0건. Firestore 쓰기는 `admin-data.js` 의 `tx.update` 1곳뿐 (나머지 `.set(` 2건은 `Map.set`). `users` 는 `readUserRole` 의 읽기뿐, 역할 변경 코드 없음 |
 | 6 | 브랜드 승인 2단계, 실패 시 문서 불변 | **PASS** | 코드 순서 `precheck → issueBrandKey → tx.update`. 에뮬레이터 실측: CF 가 throw 하면 `err.stage==='issueKey'` 이고 `brands/b3` 가 `pending`·`approvedBy` 없음 그대로. CF 응답에 `brandKey` 가 없으면 `parse` 로 실패 처리하는 분기는 코드 확인 (실행은 안 함 — CF 응답은 스텁) |
 | 7 | Functions 리전 명시 | **PASS** | `getFunctions(app, FUNCTIONS_REGION)`, `FUNCTIONS_REGION='asia-northeast3'`. 에뮬레이터 통합 실행에서 `issueBrandKey` 호출이 `region: asia-northeast3`, `{brandId}` 로 기록됨 |
 | 8 | 신규 색상값 0건 | **PASS** | `admin.css / admin.js / index.html` 에 `#hex`, `rgb(a)`, `hsl(a)` 0건 (색 이름 grep 도 `white-space` 외 없음). 사용된 `var(--…)` 18종 전부 `landing/assets/style.css` 에 정의됨. 연한 배경은 `color-mix` 로 변수끼리만. `style.css` 및 landing 4페이지 diff 0 |
@@ -74,7 +74,7 @@
 
 ## 5. 관찰 사항 (FAIL 아님, 후속 후보)
 
-1. **`landing/admin/README.md` 가 호스팅 공개 URL 로 함께 올라간다** (implementation.md §10 도 인지). 비밀 값은 없다. 필요하면 `firebase.json` 의 hosting `ignore` 에 `**/README.md` 추가 (hosting 블록 변경이라 다른 세션 협의 필요).
+1. **`landing/console/README.md` 가 호스팅 공개 URL 로 함께 올라간다** (implementation.md §10 도 인지). 비밀 값은 없다. 필요하면 `firebase.json` 의 hosting `ignore` 에 `**/README.md` 추가 (hosting 블록 변경이라 다른 세션 협의 필요).
 2. **`firebase.json` 의 `admin/assets/` 에는 캐시 헤더가 걸리지 않는다** (`/assets/**` 는 루트 `assets/` 만). 구버전 JS 가 남을 수 있다 — 기능 결함은 아님.
 3. **"승인은 UI 가 막지 않는다"는 설계 의도 그대로 확인됨**: 연결 브랜드 pending 매장은 DOM 강제로 모달까지 열린다. 그 뒤 막는 것은 `approveStore` 의 클라이언트 재확인(편의)이며 **Rules 는 브랜드 상태를 강제하지 않는다** (spec §6-1: 편의이지 보안 장치 아님). 앱도 동일한 구조이므로 이 콘솔이 새로 만든 위험은 아니다.
 4. `approveBrand` 의 `issueBrandKey` 성공 후 `status` 쓰기가 Rules 거부로 실패하면 키는 발급된 채 `pending` 이 남는다 (CF 멱등이라 재시도로 복구, UI 문구도 안내). 앱과 동일한 설계 한계.
@@ -86,7 +86,7 @@
 근거:
 - 지시된 20개 검증 항목 **FAIL 0건**. 가장 중요한 4개 — `approvedBy` = 로그인 uid, 매장 반려가 `rejectedAt` 만 쓰고 `approvedAt` 불변, Qoin 관리 필드 혼입 시 admin 도 거부, 브랜드 승인 2단계(CF 실패 시 문서 불변) — 를 **실제 Rules + 실제 콘솔 data 코드**로 실측했다.
 - 권위 검증(§6-1)의 핵심 테스트를 통과했다: UI 게이트를 우회한 비admin 클라이언트가 승인/반려/브랜드 승인을 시도해도 Rules 가 거부하고 콘솔은 성공으로 표시하지 않으며 DB 는 변하지 않는다.
-- 코드 변경 범위가 `landing/admin/**` 로 한정(`lib/`·`functions/`·`firestore.rules`·기존 landing 파일 diff 0), 콘솔은 `update` 만 보낸다.
+- 코드 변경 범위가 `landing/console/**` 로 한정(`lib/`·`functions/`·`firestore.rules`·기존 landing 파일 diff 0), 콘솔은 `update` 만 보낸다.
 
 배포(사용자 수행, PG 심사 종료 후) 직후 반드시 할 일 — 이 둘은 이번 환경에서 검증할 수 없었다:
 1. 실계정 로그인 + 대시보드 건수 4종/큐 로딩 확인 (Auth 승인 도메인, 운영 색인).

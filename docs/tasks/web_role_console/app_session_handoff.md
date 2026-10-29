@@ -224,7 +224,7 @@ create·update 양쪽 모두 `soldOut` · `disabledOptionGroupIds` · `disabledO
 **Web 앱 등록** | `order-app-5957e` 에 `Qradar Admin Console` (`1:835847199015:web:d44f3e33...`) 추가 | Android·iOS 앱 무관. **`flutterfire configure` 를 다시 돌리면 플랫폼 목록에 `web` 이 뜬다** — 자동 선택되지는 않는다 |
 **`.firebaserc` 신규** | `default` → `order-app-5957e` | 저장소 전체의 기본 프로젝트가 고정된다. `--project` 없이 firebase 명령을 쓰면 이 값이 적용된다. 불필요하면 지워도 된다(웹 쪽 명령은 `--project` 를 항상 명시한다) |
 **`firebase.json` hosting 블록 추가** | `public: "landing"` 외 4키. **기존 `firestore`·`storage`·`functions`·`flutter`·`emulators` 블록은 무변경**(diff +30 / −0) | 없음 |
-**`landing/` 신규** | 토스 PG 심사용 랜딩 4페이지 + 관리자 콘솔 `landing/admin/` | `lib/` · `functions/` 와 무관 |
+**`landing/` 신규** | 토스 PG 심사용 랜딩 4페이지 + 관리자 콘솔 `landing/console/` | `lib/` · `functions/` 와 무관 |
 
 **아직 배포한 적이 없다.** 랜딩도 콘솔도 로컬에만 있다.
 
