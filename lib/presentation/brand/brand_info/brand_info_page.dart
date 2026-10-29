@@ -120,7 +120,13 @@ class _BrandCard extends StatelessWidget {
                   width: 72,
                   height: 72,
                   child: brand.logoUrl.isNotEmpty
-                      ? Image.network(brand.logoUrl, fit: BoxFit.cover)
+                      ? ColoredBox(
+                          color: AppColors.surface,
+                          child: Image.network(
+                            brand.logoUrl,
+                            fit: BoxFit.contain,
+                          ),
+                        )
                       : Container(
                           color: AppColors.surface,
                           child: const Icon(

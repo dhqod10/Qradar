@@ -286,7 +286,13 @@ class _BrandQueueTile extends StatelessWidget {
             width: 52,
             height: 52,
             child: brand.logoUrl.isNotEmpty
-                ? Image.network(brand.logoUrl, fit: BoxFit.cover)
+                ? ColoredBox(
+                    color: AppColors.surface,
+                    child: Image.network(
+                      brand.logoUrl,
+                      fit: BoxFit.contain,
+                    ),
+                  )
                 : Container(
                     color: AppColors.surface,
                     child: const Icon(Icons.storefront_rounded,
@@ -414,7 +420,13 @@ class _BrandPendingTile extends ConsumerWidget {
             width: 52,
             height: 52,
             child: logoUrl.isNotEmpty
-                ? Image.network(logoUrl, fit: BoxFit.cover)
+                ? ColoredBox(
+                    color: AppColors.surface,
+                    child: Image.network(
+                      logoUrl,
+                      fit: BoxFit.contain,
+                    ),
+                  )
                 : Container(
                     color: AppColors.surface,
                     child: const Icon(

@@ -117,7 +117,13 @@ class _AdminBrandApprovalDetailPageState
                       width: 80,
                       height: 80,
                       child: brand.logoUrl.isNotEmpty
-                          ? Image.network(brand.logoUrl, fit: BoxFit.cover)
+                          ? ColoredBox(
+                              color: AppColors.surface,
+                              child: Image.network(
+                                brand.logoUrl,
+                                fit: BoxFit.contain,
+                              ),
+                            )
                           : Container(
                               color: AppColors.surface,
                               child: const Icon(Icons.storefront_rounded,
