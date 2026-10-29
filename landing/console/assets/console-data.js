@@ -481,6 +481,38 @@ export async function saveStoreOperation(storeId, changes, fallbackImageUrl = ''
 }
 
 /**
+ * 아직 끝나지 않은 주문의 수. 임시 휴업을 켜기 전에 확인한다.
+ *
+ * 왜 필요한가 — `temporary_closed_gate`(앱 세션 커밋 2066f5c) 이후 `temporaryClosed` 는
+ * **신규 주문**을 서버에서 막는다(`canSellNow` → `STORE_TEMPORARILY_CLOSED`). 그러나
+ * **이미 받은 주문은 그대로 남는다.** 점주가 그것을 모른 채 휴업하고 가게를 닫으면
+ * 그 손님들은 상품을 받지 못한다. 앱도 같은 이유로 같은 확인을 한다.
+ *
+ * 이것은 **사전 확인이지 권위가 아니다.** 결제 게이트가 막는 것은 신규 주문뿐이라
+ * 이 확인을 건너뛰어도 Rules 는 거부하지 않는다. 그래서 UI 에서 막는다.
+ *
+ * 쿼리: `storeId ==` + `status in [...]`. 인덱스 `storeId ASC, status ASC, createdAt DESC`
+ * 의 접두가 처리하므로 신규 인덱스가 필요 없다. Rules 는 `orders.read` 의
+ * `isStoreOwner(resource.data.storeId)` 분기로 통과하며, 모든 문서가 같은 storeId 라
+ * `get(stores/{id})` 는 한 경로로 모인다.
+ *
+ * @returns {Promise<{count:number, capped:boolean}>} capped 면 실제 건수가 더 많다.
+ */
+export const INFLIGHT_ORDER_STATUSES = Object.freeze(['paid', 'accepted', 'making', 'ready']);
+const INFLIGHT_PROBE_LIMIT = 20;
+
+export async function countInflightOrders(storeId) {
+  const q = query(
+    collection(db, 'orders'),
+    where('storeId', '==', storeId),
+    where('status', 'in', INFLIGHT_ORDER_STATUSES),
+    limit(INFLIGHT_PROBE_LIMIT),
+  );
+  const snap = await withTimeout(getDocsFromServer(q), READ_TIMEOUT_MS);
+  return { count: snap.size, capped: snap.size >= INFLIGHT_PROBE_LIMIT };
+}
+
+/**
  * 매장 핵심 정보 (폼 ②) — 🔴 서버 상태를 트랜잭션 안에서 다시 읽어 payload 를 정한다 (DV-5).
  *   · 서버 status === 'rejected' 일 때만 재제출 payload(승인 메타 null 클리어)를 만든다.
  *   · 그 외에는 approvedBy/approvedAt/rejectedAt/rejectedReason 키가 payload 에 없다 → canSellNow 가 흔들리지 않는다.

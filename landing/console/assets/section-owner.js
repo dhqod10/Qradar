@@ -13,7 +13,7 @@
    ========================================================================== */
 
 import {
-  listMyStores, getStoreFresh, getBrand, getQoinConfig, listStoreOrdersInPeriod, listStoreReviews, listMainCategories, listMasterOptionGroups, listAll, listStoreMenus, listStoreOverrides, listMasterMenus, saveStoreOperation, submitStoreCore, createPersonalMenu, updatePersonalMenu, updateStoreMenuOperation, deleteStoreMenu, setOverrideSoldOut, setOverrideOptionDisable, fetchOptionGroups, uploadImage, storagePaths,
+  listMyStores, getStoreFresh, getBrand, getQoinConfig, listStoreOrdersInPeriod, listStoreReviews, listMainCategories, listMasterOptionGroups, listAll, listStoreMenus, listStoreOverrides, listMasterMenus, saveStoreOperation, countInflightOrders, submitStoreCore, createPersonalMenu, updatePersonalMenu, updateStoreMenuOperation, deleteStoreMenu, setOverrideSoldOut, setOverrideOptionDisable, fetchOptionGroups, uploadImage, storagePaths,
 } from './console-data.js';
 import {
   esc, fmtShortDateTime, fmtClock, fmtWon, fmtDateOnly, parseDateInput, safeUrl, LIMITS, RE_BIZNO, storeStatusOf, storeSellClass, normalizeStatus, STATUS_LABEL, ownerScoreView, parseRateCell, parseSwitchCell, resolveEffectiveQoinRate, qoinRateText, aggregateSales, salesPeriod, prevPeriod, nextPeriod, canGoNext, canGoPrevious, periodLabel, ORDER_STATUS, itemsSummary, checkImageFile, sameValue, appliedOverride, saveErrorText, classifyError,
@@ -242,6 +242,7 @@ function viewOps(alive) {
     };
     let st = JSON.parse(JSON.stringify(init)); st.files = []; // files: [{file, url}]
     let saving = false;
+    let inflightUnverified = false;   // 진행중 주문을 확인하지 못한 채 휴업을 켰는가 (저장 후 안내용)
     const activeIds = () => (cats || []).map((c) => c.id);
     const dormant = () => init.excluded.filter((c) => !activeIds().includes(c)); // 휴면 코드는 화면에 없어도 저장 시 보존
     const resolveExcluded = () => [...dormant(), ...activeIds().filter((id) => st.excluded.includes(id))];
@@ -282,12 +283,8 @@ function viewOps(alive) {
 
                  🔴 콘솔 배포 전 확인 2가지
                    ① C 의 functions 재배포가 실제로 끝났는지. 안 끝났으면 이 문구가 거짓이다.
-                   ② 진행중 주문 가드(아래 TODO)가 들어갔는지. 앱은 false→true 전환 시
-                      paid/accepted/making/ready 주문을 조회해 1건 이상이면 차단·롤백한다.
-                      웹에 없으면 웹에서 켠 점주만 진행중 주문을 방치하게 된다. -->
-            <!-- TODO(가드): 휴업 ON 전환 시 진행중 주문 1회 조회 → 1건 이상이면 차단 + 안내 + 롤백.
-                 status whereIn ['paid','accepted','making','ready'] 단건 쿼리. 신규 인덱스·Rules 불필요.
-                 서버 백스톱은 결제 게이트가 하지만, 그건 '신규 주문'만 막는다 — 이미 받은 주문은 남는다. -->
+                   ② (완료 2026-10-30) 진행중 주문 가드 — guardInflight 참조. -->
+            <!-- 진행중 주문 가드는 doSave → guardInflight 에 구현돼 있다 (2026-10-30). -->
           <div class="a-field"><span class="a-label">휴무 날짜</span><div class="a-row"><label class="a-sr" for="op-date">휴무 날짜 선택</label><input class="a-input a-time" type="date" id="op-date"> <button type="button" class="a-btn sm" id="op-dadd">추가</button></div>
             <div class="a-field-err" id="op-date-err" hidden></div>
             <div class="a-datechips">${st.closedDates.length ? st.closedDates.map((d) => `<span class="a-datechip">${esc(d)} <button type="button" class="a-link" data-drm="${esc(d)}" aria-label="${esc(d)} 휴무 삭제">삭제</button></span>`).join('') : '<span class="a-cap">추가된 휴무 날짜가 없어요.</span>'}</div></div></div>
@@ -342,6 +339,45 @@ function viewOps(alive) {
       $('#sb-save').onclick = () => doSave();
     };
 
+    /**
+     * 진행중 주문 가드. 통과하면 true, 막으면 false(스위치를 끄고 안내를 남긴다).
+     * 조회 자체가 실패하면 **막지 않는다** — 읽기 실패로 휴업을 못 하게 하면
+     * 정작 닫아야 할 때 못 닫는다. 대신 확인하지 못했다고 알린다.
+     */
+    const guardInflight = async () => {
+      const btn = $('#sb-save'); const label = btn.textContent;
+      btn.disabled = true; btn.innerHTML = '<span class="a-spin"></span>주문 확인 중…';
+      let res = null; let failed = false;
+      try { res = await countInflightOrders(s.id); } catch (e) {
+        console.error('[owner] 진행중 주문 조회 실패', e?.code || e); failed = true;
+      }
+      if (!alive()) return false;
+      btn.disabled = false; btn.textContent = label; refresh();
+
+      if (failed) {
+        // fail-open — 읽기 실패가 휴업을 막지는 않는다. 다만 확인하지 못했다는 사실은 저장 뒤에 알린다.
+        // 여기서 formBanner 를 쓰면 바로 뒤 write() 의 formBanner('') 가 지워버려 점주가 보지 못한다.
+        inflightUnverified = true;
+        return true;
+      }
+      inflightUnverified = false;
+      if (res.count === 0) { formBanner(''); return true; }
+
+      // 되돌린다 — 저장하지 않으므로 화면도 끈 상태로 되돌려야 한다.
+      st.temporaryClosed = false;
+      const n = res.capped ? `${res.count}건 이상` : `${res.count}건`;
+      openDialog({
+        title: '아직 처리 중인 주문이 있어요',
+        bodyHtml: `<p class="a-ask">접수·제조·수령 대기 중인 주문이 <strong>${esc(n)}</strong> 있어요.<br>`
+          + '휴업을 켜면 <strong>새 주문만</strong> 막히고 이 주문들은 그대로 남아요.<br>'
+          + '먼저 처리한 뒤에 휴업해주세요.</p>',
+        noConfirm: true,          // 알림이지 선택이 아니다 — 버튼 하나만 둔다
+        cancelLabel: '알겠어요',
+      });
+      render();
+      return false;
+    };
+
     const doSave = async () => {
       if (saving || count() === 0) return;
       const hours = (st.open && !st.close) || (!st.open && st.close);
@@ -349,6 +385,15 @@ function viewOps(alive) {
       if (hours) { he.hidden = false; he.textContent = '영업 시작과 종료를 모두 입력해주세요'; $('#op-open').focus(); return; }
       he.hidden = true;
       const c = changes();
+
+      // 임시 휴업을 켜는 전환이면, 아직 끝나지 않은 주문이 있는지 먼저 본다.
+      // 휴업은 신규 주문만 막는다 — 이미 받은 주문은 남으므로, 모르고 닫으면 그 손님이 못 받는다.
+      // 앱(temporary_closed_gate)도 같은 확인을 한다. 권위가 아니라 사전 확인이다.
+      if ('temporaryClosed' in c && st.temporaryClosed === true) {
+        const ok = await guardInflight();
+        if (!ok) return;
+      }
+
       const allOff = !catsErr && cats && cats.length > 0 && cats.every((x) => st.excluded.includes(x.id));
       const wasAllOff = cats && cats.length > 0 && cats.every((x) => init.excluded.includes(x.id));
       if ('excludedMainCategories' in c && allOff && !wasAllOff) {
@@ -382,7 +427,9 @@ function viewOps(alive) {
         return;
       }
       saving = false; S.busy = false; registerDirty(() => false);
-      S.flash = '즉시 반영되었습니다';
+      S.flash = inflightUnverified
+        ? '저장했어요. 진행중 주문이 있는지는 확인하지 못했으니 주문 내역을 확인해주세요'
+        : '즉시 반영되었습니다';
       await invalidateStore();
       if (alive()) hooks.go('#/o/store');
     };
