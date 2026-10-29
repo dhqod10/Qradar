@@ -90,6 +90,19 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:channel:deploy preview
 | `assets/site.js` | **사업자 정보 단일 진실원** + 공통 헤더 · 푸터 주입 | 푸터 필수 표기 전부 |
 | `assets/style.css` | 스타일 | 앱 팔레트 토큰을 CSS 변수로 미러링 |
 | `assets/favicon.svg` | 파비콘 | — |
+| `console/` | **운영 콘솔** (별도 앱 — 심사 대상 아님) | 아래 참조 |
+
+### `console/` — 역할별 운영 콘솔
+
+`landing/console/` 은 심사용 랜딩과 **별개의 앱**이다. 로그인한 사용자의 `users/{uid}.role` 에 따라
+admin / brand / owner / customer 섹션이 갈린다. 작업 문서는 `docs/tasks/web_admin_console/` 과
+`docs/tasks/web_role_console/`.
+
+- 접근: `/console/index.html` (`trailingSlash:false` + `cleanUrls:false` 라 `/console` 은 아직 404.
+  배포 전에 hosting 블록에 rewrite 1줄을 넣어야 한다 — 규칙 2 가 허용하는 범위)
+- 🔴 **랜딩에서 `/console` 로 가는 링크를 만들지 않는다.** PG 심사 종료 후 헤더에 로그인 버튼을 단다.
+- 🔴 **PG 심사 종료까지 배포하지 않는다.**
+- 로컬에서 열어도 **로그인하면 운영 Firebase 에 붙는다.** 쓰기 확인은 테스트 계정으로만.
 
 ### 고치는 위치
 
