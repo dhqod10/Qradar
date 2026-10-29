@@ -3,7 +3,7 @@ import 'package:qradar/domain/repositories/store_repository.dart';
 
 /// 매장 운영 필드 수정 UseCase (결정 J, T2).
 ///
-/// 운영 필드: businessHours / temporaryClosed / closedDates / phone / imageUrls / description / notice.
+/// 운영 필드: businessHours / temporaryClosed / closedDates / phone / imageUrls / description / notice / excludedMainCategories.
 /// status / 승인 메타 모두 보존. 즉시 반영.
 class UpdateStoreOperationFieldsUseCase {
   final StoreRepository _repository;

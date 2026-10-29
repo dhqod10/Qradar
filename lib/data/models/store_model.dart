@@ -47,6 +47,7 @@ class StoreModel {
   final List<DateTime> closedDates;
   final List<String> imageUrls;
   final String? notice;
+  final List<String> excludedMainCategories;
   final DateTime? updatedAt;
 
   /// Qoin 적립률 개별 설정 — **읽기 전용 필드.** 어떤 `toFirestore*` 맵에도 넣지 않는다
@@ -85,6 +86,7 @@ class StoreModel {
     this.closedDates = const [],
     this.imageUrls = const [],
     this.notice,
+    this.excludedMainCategories = const [],
     this.updatedAt,
     this.qoinAccrualRate = QoinRateSetting.absent,
     this.qoinAccrualEnabled = QoinSwitchSetting.enabled,
@@ -152,6 +154,11 @@ class StoreModel {
       closedDates: closedDates,
       imageUrls: imageUrls,
       notice: data['notice'] as String?,
+      excludedMainCategories:
+          (data['excludedMainCategories'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          const <String>[],
       updatedAt: tsField('updatedAt'),
       qoinAccrualRate: QoinRateSetting.fromRaw(
         data[FirestorePaths.qoinAccrualRateField],
@@ -196,6 +203,7 @@ class StoreModel {
       closedDates: entity.closedDates,
       imageUrls: entity.imageUrls,
       notice: entity.notice,
+      excludedMainCategories: entity.excludedMainCategories,
       updatedAt: entity.updatedAt,
       qoinAccrualRate: entity.qoinAccrualRate,
       qoinAccrualEnabled: entity.qoinAccrualEnabled,
@@ -233,6 +241,7 @@ class StoreModel {
       closedDates: closedDates,
       imageUrls: imageUrls,
       notice: notice,
+      excludedMainCategories: excludedMainCategories,
       updatedAt: updatedAt,
       qoinAccrualRate: qoinAccrualRate,
       qoinAccrualEnabled: qoinAccrualEnabled,
@@ -291,6 +300,7 @@ class StoreModel {
         'phone': phone,
         'description': description,
         'notice': notice,
+        'excludedMainCategories': excludedMainCategories,
         'businessHours':
             businessHours != null ? businessHours!.toMap() : FieldValue.delete(),
         'temporaryClosed': temporaryClosed,

@@ -742,3 +742,17 @@ stores/{storeId}
 | PPA-P6 | 비활성 키 `{groupId}_{itemId}` 를 **쓰는** 화면 3곳(브랜드 옵션 선택기 · 점주/브랜드 비활성 시트)이 형식을 직접 조립한다 — 가드 허용 목록 | payment_price_authority 구현 중 발견. 판정(읽기)은 `option_availability.dart` 1곳이지만 쓰기 쪽이 같은 형식을 따로 만든다. 한 헬퍼로 모으면 가드의 예외가 사라진다 |
 | PPA-P7 | **옵션 선택 중복(`duplicate`) 은 spec 의 6종 밖에서 구현자가 추가한 7번째 위반이다** | 음수 `priceDelta` 를 같은 항목으로 반복 선택하면 가격이 깎인다(`multi` 그룹). 설계자 확인 요청 — implementation.md §작업표와 현실의 차이 |
 | **PPA-P8** | **금액 게이트 실 어댑터 경로의 에뮬레이터 하네스화 (test_report F-03)** | 단위 테스트가 `fakeReader` 만 써서 scope 경로(master/brand/store)·`storeBrandId` null·`MAX_LINE_QUANTITY` 경계 변이가 생존한다. **코드는 맞다 — tester 가 실 Firestore 로 12건(3 scope 옵션·승인 override·W2·모드 조합) 일회성 확인했다.** 하네스(Firestore 에뮬레이터 + `makeFirestoreGateReader`)는 후속 — 이번 batch 에서 만들지 않았다 |
+
+## 카테고리 / 검색 (2026-10-28 테스트 중 논의 확정)
+
+### ⬜ 검색 동의어(synonym) 레이어 — 세밀 검색
+유저 어휘 다양성("탄산"으로 "에이드" 찾기)은 카테고리 중앙화로 풀리지 않는다. 메뉴명 검색(이미 있음, `docs/tasks/home_search`)에 **동의어 확장 레이어**를 얹어야 풀린다 (Uber Eats query-understanding + cuisine synonym 방식). **별도 과제**로 분리.
+- **왜:** admin이 카테고리를 "에이드"로 정해도 유저는 "탄산"이라 칠 수 있음 → 카테고리 체계만으로 미해결. 매장-교차 세밀 검색이 필요해질 때 착수.
+
+### ✅ 카테고리 소유권 정책 — 확정 (변경 없음 + opt-out 신규)
+- **메인 카테고리 = admin 전용** (현행 유지). 브랜드/가맹점은 메뉴 등록 시 선택만. admin이 `mainCategories` 에 추가로 세분화 가능.
+- **서브 카테고리 = 브랜드/가맹점 관리** (현행 유지, 중앙화 **안 함**). 근거: "매장 내 메뉴 구성(display)" 레이어 — 매장-교차 검색 미사용. 업계 표준(POS 메뉴 섹션은 가맹점 자율). 브랜드 내 일관성은 brand-scoped subCategories 공유로 보장.
+- **매장별 카테고리 opt-out = 신규** → `store_category_optout` 과제 (점주가 매장별 메인 카테고리 on/off, 즉시 반영). 검색도 메인 카테고리로 통일 + 오염된 `stores.menuCategories` 폐기.
+
+### ⬜ 이미지 fit 정책 — 로고는 contain (일부 반영됨)
+`ImageUploadField` 에 `fit` 파라미터 추가 완료, 브랜드 로고 폼은 `BoxFit.contain` 적용(2026-10-28). 브랜드 로고를 **표시**하는 다른 화면(brand_info_page / admin 승인 상세 / 매장 카드 등)이 cover로 로고를 잘라 보이면 동일하게 contain 정렬 검토.

@@ -367,6 +367,7 @@ service cloud.firestore {
             'description', 'menuCategories', 'businessHours',
             'isOpen', 'updatedAt', 'notice', 'tags',
             'temporaryClosed', 'closedDates', 'imageUrls',
+            'excludedMainCategories',
             // 핵심 필드 수정 시 승인 메타 회귀
             'status', 'submittedBy', 'submittedAt',
             'businessRegistrationNumber',
@@ -404,6 +405,7 @@ service cloud.firestore {
             'description', 'menuCategories', 'businessHours',
             'isOpen', 'updatedAt', 'notice', 'tags',
             'temporaryClosed', 'closedDates', 'imageUrls',
+            'excludedMainCategories',
             'status', 'submittedBy', 'submittedAt',
             'businessRegistrationNumber',
             'approvedBy', 'approvedAt', 'rejectedAt', 'rejectedReason'

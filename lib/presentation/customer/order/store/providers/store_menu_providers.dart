@@ -14,6 +14,7 @@ import 'package:qradar/domain/repositories/menu_item_repository.dart';
 import 'package:qradar/domain/usecases/watch_menu_items_by_store_use_case.dart';
 import 'package:qradar/domain/usecases/watch_sub_categories_use_case.dart';
 import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
+import 'package:qradar/presentation/customer/review/providers/store_review_providers.dart';
 
 // ── DI ───────────────────────────────────────────────────────────────────
 
@@ -147,13 +148,28 @@ class SelectedSubCategoryIdNotifier extends Notifier<String?> {
 
 // ── Derived ──────────────────────────────────────────────────────────────
 
+/// 점주가 끈 메인 카테고리 코드 집합 (store_category_optout).
+///
+/// store doc 구독값에서 파생한다. **loading/error 는 그대로 전달** — 화면이 확정 전에는 로딩 상태를 유지해
+/// "숨겨야 할 메뉴가 잠깐 보였다 사라지는" 플리커를 막는다. store doc 이 없으면(null) 빈 집합.
+final storeExcludedMainCategoriesProvider =
+    Provider.family<AsyncValue<Set<String>>, String>((ref, storeId) {
+  return ref
+      .watch(watchedStoreProvider(storeId))
+      .whenData((s) => (s?.excludedMainCategories ?? const <String>[]).toSet());
+});
+
 /// 매장이 보유한 메인 카테고리 id 집합 (메뉴 0개인 카테고리 비활성 처리에 사용).
 ///
 /// inactive 카테고리는 자동 제외 (spec 결정 4b — customer 측 탭에서 보이지 않음).
 /// active 카테고리 stream 미도달 시에는 보수적으로 매장 전체 카테고리 노출.
+/// 점주가 끈 카테고리(`excludedMainCategories`)는 차집합으로 제외한다.
 final storeAvailableMainCategoriesProvider =
     Provider.family<Set<String>, String>((ref, storeId) {
   final asyncItems = ref.watch(storeMenuItemsProvider(storeId));
+  final excluded =
+      ref.watch(storeExcludedMainCategoriesProvider(storeId)).asData?.value ??
+          const <String>{};
   final activeCategories = ref.watch(mainCategoriesActiveProvider).maybeWhen(
         data: (cats) => cats.map((c) => c.id).toSet(),
         orElse: () => null,
@@ -164,7 +180,8 @@ final storeAvailableMainCategoriesProvider =
             activeCategories == null ||
             activeCategories.contains(m.mainCategoryCode))
         .map((m) => m.mainCategoryCode)
-        .toSet(),
+        .toSet()
+        .difference(excluded),
     orElse: () => <String>{},
   );
 });
@@ -194,6 +211,9 @@ final filteredMenuItemsProvider =
   final asyncItems = ref.watch(storeMenuItemsProvider(storeId));
   final main = ref.watch(selectedMainCategoryProvider);
   final subId = ref.watch(selectedSubCategoryIdProvider);
+  final excluded =
+      ref.watch(storeExcludedMainCategoriesProvider(storeId)).asData?.value ??
+          const <String>{};
   // active 카테고리 id 집합. null = stream 미도달.
   final activeCategories = ref.watch(mainCategoriesActiveProvider).maybeWhen(
         data: (cats) => cats.map((c) => c.id).toSet(),
@@ -214,6 +234,7 @@ final filteredMenuItemsProvider =
                 visible: m.visible,
                 mainCategoryCode: m.mainCategoryCode,
                 activeCategoryIds: activeCategories,
+                excludedCategoryIds: excluded,
               ))
           .map((m) => m.mainCategoryCode)
           .toSet();
@@ -226,6 +247,7 @@ final filteredMenuItemsProvider =
           visible: m.visible,
           mainCategoryCode: m.mainCategoryCode,
           activeCategoryIds: activeCategories,
+          excludedCategoryIds: excluded,
         )) {
           return false;
         }

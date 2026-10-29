@@ -6,13 +6,19 @@ import 'package:qradar/domain/entities/menu_override_entity.dart';
 ///
 /// 매장 메뉴 화면(`filteredMenuItemsProvider`)과 홈 검색 결과(`menuSearchResultsProvider`)가
 /// **같은 함수**를 써서 "검색에 걸렸는데 매장 화면에는 없다" 를 구조적으로 막는다.
-/// 기준: 고객 노출(`visible`) + 활성 메인 카테고리. 순수 Dart.
+/// 기준: 고객 노출(`visible`) + 활성 메인 카테고리 + **점주가 끄지 않은** 카테고리
+/// ([excludedCategoryIds] = `store.excludedMainCategories`, store_category_optout). 순수 Dart.
+///
+/// 카테고리 제외(coarser)는 per-item override 제외(finer)와 독립 AND — 이 함수는 카테고리 쪽만 본다.
 bool isMenuShownOnStoreScreen({
   required bool visible,
   required String mainCategoryCode,
   required Set<String> activeCategoryIds,
+  Set<String> excludedCategoryIds = const <String>{},
 }) {
-  return visible && activeCategoryIds.contains(mainCategoryCode);
+  return visible &&
+      activeCategoryIds.contains(mainCategoryCode) &&
+      !excludedCategoryIds.contains(mainCategoryCode);
 }
 
 /// 브랜드 매장의 마스터 메뉴 1건에 그 매장의 override 를 **고객 기준으로** 적용한다 (spec §15.2).

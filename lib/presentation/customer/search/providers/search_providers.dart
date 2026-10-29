@@ -193,6 +193,13 @@ final menuSearchResultsProvider =
       }
       final index = indexAsync.requireValue;
       final activeIds = activeAsync.requireValue.map((c) => c.id).toSet();
+      // 매장별 점주 제외 카테고리 (스냅샷 파생, 추가 읽기 0). 스냅샷에 없는 매장은 제외 없음으로 본다.
+      final excludedByStore = <String, Set<String>>{
+        for (final s in ref.watch(storeSnapshotProvider).asData?.value ??
+            const <StoreEntity>[])
+          if (s.excludedMainCategories.isNotEmpty)
+            s.id: s.excludedMainCategories.toSet(),
+      };
 
       final shown = index.hits
           .where(
@@ -200,6 +207,7 @@ final menuSearchResultsProvider =
               visible: true, // 인덱스가 visible 메뉴만 담는다 (buildIndex 필터)
               mainCategoryCode: h.mainCategoryCode,
               activeCategoryIds: activeIds,
+              excludedCategoryIds: excludedByStore[h.storeId] ?? const {},
             ),
           )
           .toList(growable: false);

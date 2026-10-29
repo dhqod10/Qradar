@@ -145,7 +145,11 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
 
   /// 목록 확정 후 1회: 검색한 메뉴가 이 화면 목록에 있으면 상세를 그 위에 올린다 (spec §15.8).
   /// 빌드 중 Navigator 호출은 금지이므로 다음 프레임에 올린다.
-  void _maybeAutoOpen(List<MenuItemEntity> allItems, Set<String>? activeIds) {
+  void _maybeAutoOpen(
+    List<MenuItemEntity> allItems,
+    Set<String>? activeIds,
+    Set<String> excludedIds,
+  ) {
     final id = widget.autoOpenMenuItemId;
     if (id == null || _autoOpened || activeIds == null) return;
     _autoOpened = true; // 판정은 한 번 — 있든 없든 다시 시도하지 않는다
@@ -156,6 +160,7 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
             visible: m.visible,
             mainCategoryCode: m.mainCategoryCode,
             activeCategoryIds: activeIds,
+            excludedCategoryIds: excludedIds,
           ),
     );
     if (!found) {
@@ -198,6 +203,9 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
       storeAvailableSubCategoryIdsProvider(storeId),
     );
     final filtered = ref.watch(filteredMenuItemsProvider(storeId));
+    // 점주가 끈 카테고리. 확정 전(loading)에는 메뉴를 그리지 않는다 (숨길 메뉴가 잠깐 보이는 플리커 방지).
+    final excludedAsync = ref.watch(storeExcludedMainCategoriesProvider(storeId));
+    final excludedIds = excludedAsync.asData?.value ?? const <String>{};
     final activeCategoryIds = ref
         .watch(mainCategoriesActiveProvider)
         .asData
@@ -227,9 +235,30 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
           onRetry: () => ref.invalidate(storeMenuItemsProvider(storeId)),
         ),
         data: (allItems) {
-          _maybeAutoOpen(allItems, activeCategoryIds);
+          if (excludedAsync.isLoading && !excludedAsync.hasValue) {
+            return _LoadingShimmer(store: liveStore);
+          }
+          if (excludedAsync.hasError && !excludedAsync.hasValue) {
+            return _ErrorView(
+              store: liveStore,
+              onRetry: () =>
+                  ref.invalidate(watchedStoreProvider(storeId)),
+            );
+          }
+          _maybeAutoOpen(allItems, activeCategoryIds, excludedIds);
           if (allItems.isEmpty) {
             return _EmptyView(store: liveStore);
+          }
+          // 메뉴는 있으나 점주가 모든 카테고리를 꺼 가용 카테고리가 0 — 중립 문구 (내부 사정 비노출).
+          // availableMains 는 active 스트림 미도달 시 전체를 보수적으로 통과시키므로, 도달 후에만 판정한다.
+          if (activeCategoryIds != null &&
+              excludedIds.isNotEmpty &&
+              availableMains.isEmpty) {
+            return _EmptyView(
+              store: liveStore,
+              title: '지금은 주문할 수 있는 메뉴가 없어요',
+              subtitle: '매장에서 메뉴 준비 중이에요. 다른 매장을 둘러보세요.',
+            );
           }
           return CustomScrollView(
             slivers: [
@@ -274,6 +303,7 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
                                 visible: m.visible,
                                 mainCategoryCode: m.mainCategoryCode,
                                 activeCategoryIds: activeCategoryIds,
+                                excludedCategoryIds: excludedIds,
                               ),
                         )
                         .map((m) => m.name)
@@ -723,8 +753,14 @@ class _ErrorView extends StatelessWidget {
 }
 
 class _EmptyView extends StatelessWidget {
-  const _EmptyView({required this.store});
+  const _EmptyView({
+    required this.store,
+    this.title = '등록된 메뉴가 없어요',
+    this.subtitle,
+  });
   final StoreEntity store;
+  final String title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -743,14 +779,30 @@ class _EmptyView extends StatelessWidget {
                   size: 56,
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  '등록된 메뉴가 없어요',
-                  style: TextStyle(
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textHeading,
                   ),
                 ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      subtitle!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 TextButton(
                   onPressed: () => Navigator.of(context).maybePop(),

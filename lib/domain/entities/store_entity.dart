@@ -70,6 +70,10 @@ abstract class StoreEntity with _$StoreEntity {
     /// 매장 안내 문구 (운영 필드).
     String? notice,
 
+    /// 점주가 끈 메인 카테고리 코드 목록 (운영 필드, opt-out). 빈 목록 = 전부 노출.
+    /// sticky: 한 번 끄면 이후 해당 카테고리 메뉴가 생겨도 계속 숨긴다.
+    @Default([]) List<String> excludedMainCategories,
+
     /// 최종 수정 시점.
     DateTime? updatedAt,
 

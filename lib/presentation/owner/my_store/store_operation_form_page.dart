@@ -4,15 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/business_hours.dart';
+import 'package:qradar/domain/entities/main_category_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/common/widgets/image_upload_field.dart';
+import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
 import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 
 /// 매장 운영 필드 폼 — status 변동 없이 즉시 반영.
 ///
 /// 다루는 필드: phone / businessHours / temporaryClosed / closedDates /
-///             description / imageUrls / notice.
+///             description / imageUrls / notice / excludedMainCategories.
 /// 저장 시 UpdateStoreOperationFieldsUseCase 호출.
 class StoreOperationFormPage extends ConsumerStatefulWidget {
   final StoreEntity existing;
@@ -35,6 +37,10 @@ class _StoreOperationFormPageState
   late List<DateTime> _closedDates;
   late List<String> _imageUrls;
 
+  /// 점주가 끈(숨긴) 메인 카테고리 코드. 원본 전체를 들고 있고, 화면에는 active 만 렌더한다.
+  /// 저장 시 active 가 아닌(휴면) 코드는 그대로 보존한다 (spec §2.1 / design §1.7).
+  late Set<String> _excluded;
+
   File? _pickedImage;
   bool _submitting = false;
 
@@ -49,6 +55,7 @@ class _StoreOperationFormPageState
     _temporaryClosed = e.temporaryClosed;
     _closedDates = List<DateTime>.from(e.closedDates);
     _imageUrls = List<String>.from(e.imageUrls);
+    _excluded = e.excludedMainCategories.toSet();
   }
 
   @override
@@ -122,6 +129,17 @@ class _StoreOperationFormPageState
               onRemove: (d) => setState(() => _closedDates.remove(d)),
             ),
             const SizedBox(height: 20),
+            // 카테고리 노출 설정 (임시 휴무와 같은 "매장 노출/운영" 성격이라 근처에 둔다)
+            _CategoryExposureSection(
+              async: ref.watch(mainCategoriesActiveProvider),
+              excluded: _excluded,
+              enabled: !_submitting,
+              onToggle: (code, visible) => setState(() {
+                visible ? _excluded.remove(code) : _excluded.add(code);
+              }),
+              onRetry: () => ref.invalidate(mainCategoriesActiveProvider),
+            ),
+            const SizedBox(height: 20),
             // 소개
             _FormField(
               label: '소개',
@@ -192,8 +210,83 @@ class _StoreOperationFormPageState
     });
   }
 
+  /// 저장할 excluded = (원본 중 active 가 아닌 휴면 코드) ∪ (화면에서 OFF 인 active 코드).
+  /// active 목록을 못 불러온 상태(loading/error)면 원본을 그대로 보존한다.
+  List<String> _resolveExcluded(List<MainCategoryEntity>? active) {
+    if (active == null) return widget.existing.excludedMainCategories;
+    final activeIds = active.map((c) => c.id).toSet();
+    final dormant = widget.existing.excludedMainCategories
+        .where((c) => !activeIds.contains(c));
+    final off = activeIds.where(_excluded.contains);
+    return [...dormant, ...off];
+  }
+
+  /// "전부 끄기" = 렌더된 active 카테고리가 1개 이상이고 전부 OFF.
+  bool _allOff(List<MainCategoryEntity>? active) =>
+      active != null &&
+      active.isNotEmpty &&
+      active.every((c) => _excluded.contains(c.id));
+
+  Future<bool> _confirmAllOff() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          '메뉴가 모두 숨겨져요',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textHeading,
+          ),
+        ),
+        content: const Text(
+          '모든 카테고리를 끄면 손님은 이 매장에서 메뉴를 볼 수 없어요. 그래도 저장할까요?',
+          style: TextStyle(
+            fontSize: 13,
+            height: 1.5,
+            color: AppColors.textBody,
+          ),
+        ),
+        actions: [
+          TextButton(
+            autofocus: true,
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              '돌아가기',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              '저장',
+              style: TextStyle(
+                color: AppColors.error,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
   Future<void> _submit() async {
     if (_submitting) return;
+
+    final active = ref.read(mainCategoriesActiveProvider).asData?.value;
+    // 이미 전부 OFF 로 저장돼 있고 그대로면 다이얼로그 생략 (반복 경고 방지).
+    final wasAllOff = active != null &&
+        active.isNotEmpty &&
+        active.every(
+          (c) => widget.existing.excludedMainCategories.contains(c.id),
+        );
+    if (_allOff(active) && !wasAllOff) {
+      if (!await _confirmAllOff() || !mounted) return;
+    }
     setState(() => _submitting = true);
 
     try {
@@ -220,6 +313,7 @@ class _StoreOperationFormPageState
         businessHours: _hours,
         temporaryClosed: _temporaryClosed,
         closedDates: _closedDates,
+        excludedMainCategories: _resolveExcluded(active),
         imageUrls: finalImageUrls,
         imageUrl: finalImageUrls.isNotEmpty
             ? finalImageUrls.first
@@ -556,6 +650,282 @@ class _TemporaryClosedToggle extends StatelessWidget {
             activeThumbColor: AppColors.error,
             activeTrackColor: AppColors.error.withValues(alpha: 0.2),
             inactiveTrackColor: AppColors.surface,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 카테고리 노출 설정 ─────────────────────────────────────────────────────
+
+/// 메인 카테고리별 노출 on/off. ON = 손님에게 노출 (기본 전부 ON), OFF 코드만 excluded 로 저장된다.
+/// 로컬 폼 상태만 바꾸고 저장은 폼의 저장 버튼이 담당한다.
+class _CategoryExposureSection extends StatelessWidget {
+  final AsyncValue<List<MainCategoryEntity>> async;
+  final Set<String> excluded;
+  final bool enabled;
+  final void Function(String code, bool visible) onToggle;
+  final VoidCallback onRetry;
+
+  const _CategoryExposureSection({
+    required this.async,
+    required this.excluded,
+    required this.enabled,
+    required this.onToggle,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cats = async.asData?.value;
+    final hasCats = cats != null && cats.isNotEmpty;
+    final allOff = hasCats && cats.every((c) => excluded.contains(c.id));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: const Text(
+            '카테고리 노출 설정',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textBody,
+            ),
+          ),
+        ),
+        if (cats == null || hasCats) ...[
+          const SizedBox(height: 4),
+          const Text(
+            '끄면 이 매장의 메뉴 탭과 검색에서 해당 카테고리 메뉴가 모두 사라져요. '
+            '나중에 브랜드가 메뉴를 추가해도 다시 켜기 전까지 보이지 않아요.',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          alignment: Alignment.topCenter,
+          child: allOff
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Semantics(
+                    liveRegion: true,
+                    label: '모든 카테고리가 꺼져 있어요. 손님에게 메뉴가 보이지 않아요',
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.warning.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: AppColors.warning),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '모든 카테고리를 끄면 손님에게 메뉴가 하나도 보이지 않아 주문을 받을 수 없어요.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.4,
+                                color: AppColors.warning,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+        _body(cats),
+      ],
+    );
+  }
+
+  Widget _body(List<MainCategoryEntity>? cats) {
+    if (async.hasError && cats == null) {
+      return Row(
+        children: [
+          const Icon(Icons.error_outline_rounded,
+              size: 16, color: AppColors.error),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              '카테고리를 불러오지 못했어요',
+              style: TextStyle(fontSize: 12, color: AppColors.error),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text(
+              '다시 시도',
+              style: TextStyle(fontSize: 12, color: AppColors.primary),
+            ),
+          ),
+        ],
+      );
+    }
+    if (cats == null) {
+      return _card(
+        List.generate(3, (_) => const _CategoryShimmerRow()),
+      );
+    }
+    if (cats.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Center(
+          child: Text(
+            '설정할 수 있는 카테고리가 없어요',
+            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+          ),
+        ),
+      );
+    }
+    return _card([
+      for (final c in cats)
+        _CategoryToggleRow(
+          label: c.label,
+          visible: !excluded.contains(c.id),
+          enabled: enabled,
+          onChanged: (v) => onToggle(c.id, v),
+        ),
+    ]);
+  }
+
+  Widget _card(List<Widget> rows) {
+    final children = <Widget>[];
+    for (var i = 0; i < rows.length; i++) {
+      if (i > 0) {
+        children.add(const Divider(height: 1, color: AppColors.border));
+      }
+      children.add(rows[i]);
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(children: children),
+    );
+  }
+}
+
+class _CategoryToggleRow extends StatelessWidget {
+  final String label;
+  final bool visible;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  const _CategoryToggleRow({
+    required this.label,
+    required this.visible,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: Semantics(
+        label: '$label 카테고리 노출',
+        hint: '켜면 손님에게 보이고, 끄면 숨겨져요',
+        toggled: visible,
+        child: InkWell(
+          onTap: enabled ? () => onChanged(!visible) : null,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ExcludeSemantics(
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textHeading,
+                          ),
+                        ),
+                      ),
+                      if (!visible) ...[
+                        const SizedBox(height: 2),
+                        const ExcludeSemantics(
+                          child: Text(
+                            '손님에게 숨김',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: visible,
+                  onChanged: enabled ? onChanged : null,
+                  activeThumbColor: AppColors.onPrimary,
+                  activeTrackColor: AppColors.primary,
+                  inactiveThumbColor: AppColors.textMuted,
+                  inactiveTrackColor: AppColors.surface,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryShimmerRow extends StatelessWidget {
+  const _CategoryShimmerRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Row(
+        children: [
+          Container(
+            width: 80,
+            height: 14,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+          const Spacer(),
+          Container(
+            width: 44,
+            height: 24,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         ],
       ),
