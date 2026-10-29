@@ -936,7 +936,7 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
 | **T13** | App Check (웹) | 1차 범위 밖. 현재 보호는 Rules + Auth 승인 도메인 | reCAPTCHA Enterprise 설정 + CF `enforceAppCheck` 검토(= `functions/` 수정) |
 | **T14** | `storage.rules` 정밀화 | 현재 규칙은 **인증된 누구나 어디에나** image 를 쓸 수 있는 임시 규칙(`storage.rules:4-6` 이 재작성 필요를 명시). `storage.rules` 는 이 세션 읽기 전용 | 별 spec (`docs/tasks/storage_security_rules/`). 콘솔은 앱과 **같은 경로 규칙**을 지켜 나중에 좁혀질 때 어긋나지 않게 한다 |
 | **T15** | 네이버/카카오 로그인 (웹) | **조사 완료 (2026-10-29) — 아래 T15 보강 참조.** 기술적 차단 요인 없음. 미구현일 뿐 | **고객 섹션의 전제조건으로 승격.** Q5 재정의 |
-| **T16** | 🔴 `verifyKakaoToken`/`verifyNaverToken` 의 **토큰 수신자(audience) 미검증** | 아래 T16 상세. **운영 중인 계정 탈취 경로**이며 웹과 무관하게 이미 존재. `functions/` 는 이 세션 읽기 전용 | **앱 세션으로 이관.** 웹 로그인 추가 전에 처리하는 것이 바람직 |
+| **T16** | ⚠️ `verifyKakaoToken`/`verifyNaverToken` 의 **토큰 수신자(audience) 미검증** | 아래 T16 상세. **표준 하드닝 누락**(심각도 정정 — 계정 탈취 아님). 웹과 무관하게 이미 존재. `functions/` 는 이 세션 읽기 전용 | **앱 세션으로 이관.** 웹 로그인 추가 전에 처리하는 것이 바람직 |
 
 ### T15 보강 — 웹 소셜 로그인은 "불가"가 아니라 "미구현" (2026-10-29 조사)
 
@@ -968,15 +968,17 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
 사용자 판단(2026-10-29): **고객 다수가 카카오/네이버로 보이므로, 고객 섹션(리뷰·게시글·QnA)의 전제조건이다.**
 admin 섹션(1차)은 Email/Google 로 충분하므로 **지금 당장 막히는 것은 없다.**
 
-### T16 상세 — 소셜 로그인 CF 의 토큰 수신자 미검증 🔴
+### T16 상세 — 소셜 로그인 CF 의 토큰 수신자 미검증 ⚠️ (심각도 정정됨)
 
 `verifyKakaoToken.ts` 는 받은 `accessToken` 으로 `https://kapi.kakao.com/v2/user/me` 를 호출하고,
 돌아온 `id` 를 그대로 믿어 `createCustomToken('kakao_' + id)` 를 발급한다(`:50-85`).
 **그 토큰이 어느 카카오 앱에서 발급됐는지 확인하지 않는다.** `verifyNaverToken.ts` 도 같은 구조다.
 
-**공격 경로**: 공격자가 자기 카카오 앱을 만들고, 피해자가 그 앱에 카카오 로그인을 한 번 하면,
-공격자는 그때 받은 accessToken 을 Qradar 의 CF 에 그대로 넘겨 **피해자 계정으로 로그인할 수 있다.**
-id 충돌에 의존하지 않는다 — 같은 사람의 토큰을 **다른 앱에서 재사용**하는 것이다.
+**심각도 정정 (2026-10-29, 앱 세션 검증)**: 최초 작성의 "피해자 계정 직접 탈취" 는 **과장이었다.**
+카카오 회원번호는 **앱 단위 스코프**라 타 앱 토큰은 `kakao_<다른 id>` 로 매핑되어 피해자 계정에 닿지 않는다.
+**표준 하드닝 누락 + 조건부 위험**으로 분류한다. 남는 위험: ① 같은 **앱 그룹**이면 회원번호를 공유해 성립
+② **네이버는 스코프 특성이 달라 더 노출될 수 있다**(확인 필요) ③ 임의 외부 토큰으로 **Firebase 계정을
+만들 수 있는 엔드포인트**라 남용·할당량 문제는 남는다.
 
 **현재 노출**: 웹과 무관하게 **앱 경로로 이미 존재한다.** 웹 로그인을 추가하면 표면이 하나 늘 뿐이다.
 
