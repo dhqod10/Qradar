@@ -15,8 +15,12 @@ class GradeCalculator {
     return StoreGrade.c;
   }
 
+  /// 등급 부여 가능 여부. 평가 수가 [GradeThresholds.minReviewsForGrade] 이상이어야 한다.
+  static bool isGraded(int reviewCount) =>
+      reviewCount >= GradeThresholds.minReviewsForGrade;
+
   /// 리뷰 개별 등급 리스트로부터 최종 매장 등급 계산.
-  /// 리뷰가 0개이면 C로 폴백.
+  /// 리뷰가 0개이면 C로 폴백. (현재 소비처 없음 — 최소 평가 수 판정은 [isGraded] 별도.)
   static StoreGrade fromReviews(List<StoreGrade> grades) {
     if (grades.isEmpty) return StoreGrade.c;
     final sum = grades.fold<int>(0, (acc, g) => acc + g.score);

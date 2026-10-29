@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:qradar/core/utils/grade_calculator.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
 import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
@@ -13,6 +14,8 @@ part 'store_entity.freezed.dart';
 /// sub-phase 2: 승인 게이트 필드 + 운영 필드 추가.
 @freezed
 abstract class StoreEntity with _$StoreEntity {
+  const StoreEntity._();
+
   const factory StoreEntity({
     required String id,
     required String name,
@@ -88,4 +91,7 @@ abstract class StoreEntity with _$StoreEntity {
     /// 적립 스위치 (`qoinAccrualEnabled`). 부재/true = 사용, false = 사용 안 함. **읽기 전용.**
     @Default(QoinSwitchSetting.enabled) QoinSwitchSetting qoinAccrualEnabled,
   }) = _StoreEntity;
+
+  /// 등급 부여 여부(파생, 저장 필드 아님). 평가 수가 최소 기준 미만이면 false → '신규'.
+  bool get isGraded => GradeCalculator.isGraded(reviewCount);
 }

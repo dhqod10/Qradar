@@ -35,6 +35,9 @@ class MapConfig {
     }
   }
 
+  /// 미평가(신규) 매장 마커 색 hex. 등급 4색과 겹치지 않는 중립색.
+  static String get unratedMarkerColorHex => _toHex(AppColors.border);
+
   static String _toHex(Color color) {
     final rgb = color.toARGB32() & 0xFFFFFF;
     return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';

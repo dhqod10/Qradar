@@ -19,6 +19,10 @@ class GradeThresholds {
   static const double bMin = 1.5;
   // C급: 1.0 ~ 1.4
 
+  /// 등급을 부여하기 위한 최소 평가(리뷰) 수. 미만이면 등급 없이 중립 '신규' 로 표시한다.
+  /// (docs/tasks/grade_min_reviews/spec.md)
+  static const int minReviewsForGrade = 3;
+
   // 주변 매장 조회 반경 (km)
   static const double nearbyRadiusKm = 20.0;
 

@@ -18,7 +18,7 @@ class RecommendedSortNotifier extends Notifier<RecommendedSort> {
   void select(RecommendedSort sort) => state = sort;
 }
 
-/// 정렬 규칙(순수) — `grade`: averageScore 내림차순, 동점이면 거리 오름차순(거리 미상은 뒤).
+/// 정렬 규칙(순수) — `grade`: 등급 부여 매장 우선(미평가 후순위), 그 안에서 averageScore 내림차순, 동점이면 거리 오름차순(거리 미상은 뒤).
 /// `distance`: 스냅샷이 이미 거리순이므로 입력 순서 그대로.
 List<StoreEntity> sortRecommended(
   List<StoreEntity> stores,
@@ -27,6 +27,7 @@ List<StoreEntity> sortRecommended(
   if (sort == RecommendedSort.distance) return stores;
   final copy = [...stores];
   copy.sort((a, b) {
+    if (a.isGraded != b.isGraded) return a.isGraded ? -1 : 1; // 미평가 후순위
     final c = b.averageScore.compareTo(a.averageScore);
     if (c != 0) return c;
     return (a.distanceKm ?? double.infinity).compareTo(

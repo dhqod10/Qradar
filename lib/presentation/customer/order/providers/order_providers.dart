@@ -67,8 +67,10 @@ final orderStoresProvider = Provider<AsyncValue<List<StoreEntity>>>((ref) {
   final grades = ref.watch(orderGradeFilterProvider);
 
   return base.whenData((stores) {
+    // 등급 칩을 일부만 선택(좁힘)하면 미평가(신규) 매장은 제외, 전부 선택이면 노출.
+    final narrowed = grades.length < StoreGrade.values.length;
     final filtered = stores.where((s) {
-      if (!grades.contains(s.grade)) return false;
+      if (narrowed && (!s.isGraded || !grades.contains(s.grade))) return false;
       if (query.isEmpty) return true;
       return s.name.toLowerCase().contains(query);
     }).toList();

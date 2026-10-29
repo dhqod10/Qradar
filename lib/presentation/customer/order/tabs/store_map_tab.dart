@@ -198,8 +198,11 @@ class _StoreMapTabState extends ConsumerState<StoreMapTab> {
                 'id': s.id,
                 'lat': s.location.latitude,
                 'lng': s.location.longitude,
-                'grade': s.grade.asString,
-                'color': MapConfig.markerColorHexForGrade(s.grade),
+                // 미평가(신규)는 등급 문자열을 보내지 않는다 — JS 가 핀 라벨로 표시하므로.
+                'grade': s.isGraded ? s.grade.asString : '',
+                'color': s.isGraded
+                    ? MapConfig.markerColorHexForGrade(s.grade)
+                    : MapConfig.unratedMarkerColorHex,
               })
           .toList(),
     };

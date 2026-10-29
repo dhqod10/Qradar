@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/grade_calculator.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
 
 /// 매장 등급 + 평가 개수 통합 배지.
@@ -7,7 +8,7 @@ import 'package:qradar/domain/entities/store_grade.dart';
 /// home.png 스펙 기준 — 등급별 색 구분 대신 **미드나잇 단일 채움 pill**.
 /// 등급 구분은 텍스트("S급")로 전달한다.
 ///
-/// 평가가 0건이면 등급 대신 약한 `미평가` pill 을 보여준다 (C급 폴백이 아님).
+/// 평가가 최소 기준(N=3) 미만이면 등급 대신 약한 중립 `신규` pill 을 보여준다 (C급 폴백이 아님).
 /// [showChevron] 은 탭 어포던스(`>`)로, 매장 메뉴 헤더에서만 켠다.
 class GradeBadge extends StatelessWidget {
   final StoreGrade grade;
@@ -23,9 +24,9 @@ class GradeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (reviewCount == 0) {
+    if (!GradeCalculator.isGraded(reviewCount)) {
       return Semantics(
-        label: '아직 평가가 없는 매장',
+        label: reviewCount == 0 ? '아직 평가가 없는 신규 매장' : '신규 매장, 평가 $reviewCount개',
         excludeSemantics: true,
         child: _unrated(),
       );
@@ -90,7 +91,7 @@ class GradeBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            '미평가',
+            '신규',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
