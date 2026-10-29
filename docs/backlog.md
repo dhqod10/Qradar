@@ -797,3 +797,22 @@ FCM 토큰 등록은 **로그인 성공 시(auth_provider)** 와 **알림 설정
 - **영향:** 재설치/토큰 로테이션 사용자가 로그인만으로는 푸시를 못 받을 수 있다. onOrderStatusChanged 는 무효 토큰을 만나면 `fcmToken` 을 비우므로(정상), 이후 재등록 경로가 약하면 알림이 조용히 끊긴다.
 - **후보 조치:** ⓐ 앱 시작/로그인 후 `onTokenRefresh` 구독 → `updateFcmToken`. ⓑ 로그인 시 register 가 null 이면 짧게 재시도(또는 FirebaseMessaging 초기화 완료 후 1회 재호출). ⓒ 홈 진입 시 토큰 존재 보장 체크.
 - 관측: 2026-10-29 알림테스트. CF 로그 `[onOrderStatusChanged] Invalid FCM token — clearing`. 토큰 재등록 후 `accepted→making`·`making→ready` 푸시 정상 도착 확인.
+
+## 리뷰 / 등급 무결성 (2026-10-29 점검)
+
+### ✅ 리뷰 생성 규칙 — 이미 탄탄 (점검 결과, 조치 불필요)
+- 매장당 **1인 1리뷰**: `reviews/{reviewId}`, reviewId = `{storeId}_{userId}` 강제(Rules).
+- **완료 주문 한정**: `reviewOrderEligible` = 본문 orderId 의 주문이 `o.userId==uid && o.status=='completed' && o.storeId==d.storeId`. 실제 구매(완료) 없이는 리뷰 작성 불가.
+- 등급↔점수 일치(`reviewGradeOk`), `createdAt==request.time`, 평균/카운트는 **CF(onReviewWritten) 전량 재계산 전담**(점주 조작 불가, stores 블록 미변경).
+- 결론: 정직한 클라/같은 계정 경로는 막혀 있음. 남는 리뷰 어뷰징은 **부계정(sock-puppet) = Layer 2(탐지) 영역**(docs/backlog.md Q3 결정 참조).
+
+### ⬜ 등급에 최소 리뷰 수 없음 — "리뷰 1개 = 즉시 S급" (설계 태스크로 분리)
+`GradeCalculator.fromAverage(averageScore)` 는 **reviewCount 를 보지 않는다**. 임계값은 평균 점수만(S≥3.5 … ). 그래서 리뷰 1건(S, score=4)이면 평균 4.0 → **바로 S급**. "평가 부족/신규" 상태가 없음.
+- **영향 1 (어뷰징)**: 완료주문 1건(자기/부계정) → S 리뷰 1개 → 즉시 S급. **등급 조작의 최단 경로**. 자기거래(Q3)의 주 피해(등급/리뷰 조작)와 직결 — 지문 없이 완화 가능한 가장 싼 레버.
+- **영향 2 (신뢰성)**: 악의 없어도 n=1 로 S급은 통계적으로 신뢰 불가. 제품 신뢰도(등급=핵심 가치) 저하.
+- **왜 "작은 가드"가 아니라 중간 태스크인가**:
+  - `grade_calculator` 에 reviewCount 조건 + **StoreGrade 에 "미평가/평가부족" 개념 신설** 필요.
+  - 등급 **표시 전반 파급**: `grade_badge`, `grade_filter_chips`, 매장 카드, 정렬, 홈/검색 등급 필터 — 미평가 매장을 필터·정렬·노출에서 어떻게 다룰지.
+  - **제품 결정 필요**: 최소 N(예: 3건), 미달 시 표기(미평가/신규/숨김), 필터·정렬 처리.
+- **착수 경로**: /architect 부터 (N·표시방식·필터정렬 정책 확정) → designer(배지/빈상태) → developer → tester.
+- **선택적 defense-in-depth(부분적)**: reviews create Rules 에 `uid != store.ownerId`(및 브랜드 보유자) 자기리뷰 차단. Q3 주문 가드와 중복성 있고 부계정은 못 막음 — 우선순위 낮음.
