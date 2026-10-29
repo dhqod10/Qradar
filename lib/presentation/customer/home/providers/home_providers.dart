@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/constants/grade_thresholds.dart';
-import 'package:qradar/core/constants/menu_categories.dart';
 import 'package:qradar/core/errors/permission_denied_exception.dart';
 import 'package:qradar/data/datasources/remote/location_data_source.dart';
 import 'package:qradar/data/datasources/remote/store_remote_data_source.dart';
@@ -141,7 +140,7 @@ final nearbyStoresProvider = Provider<AsyncValue<List<StoreEntity>>>((ref) {
       .whenData(GetNearbyStoresUseCase.withinRadius);
 });
 
-/// 선택된 카테고리(다중 선택). 초기값: ["추천메뉴"]. 최소 1개 유지.
+/// 선택된 메인 카테고리 코드(id, 다중 선택). 초기값 빈 집합 = "전체"(필터 없음). 칩 토글로 필터.
 final selectedCategoriesProvider =
     NotifierProvider<SelectedCategoriesNotifier, Set<String>>(
   SelectedCategoriesNotifier.new,
@@ -149,13 +148,11 @@ final selectedCategoriesProvider =
 
 class SelectedCategoriesNotifier extends Notifier<Set<String>> {
   @override
-  Set<String> build() => {MenuCategories.defaultSelected};
+  Set<String> build() => const <String>{};
 
   void toggle(String category) {
     final next = <String>{...state};
     if (next.contains(category)) {
-      // 최소 1개 유지
-      if (next.length <= 1) return;
       next.remove(category);
     } else {
       next.add(category);

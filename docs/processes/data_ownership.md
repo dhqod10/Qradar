@@ -132,7 +132,7 @@
 | create | (위) | **승인 메타(`approvedAt` / `approvedBy` / `rejectedReason`) 설정 금지 — 부재 또는 null 만 허용** (payment_server_authority Rules-A). 결제 게이트 `canSellNow` 가 `approvedAt` 을 **권한 판정 입력**으로 쓰므로 create 도 쓰기 경로다 (`onlyChangedFields` 는 update 전용이라 create 를 보호하지 않는다 — §6.7 상시 규칙). 현재 앱 create payload 2개는 이 키를 보내지 않는다 (가드 테스트가 고정) |
 | create | (위) | **Qoin 보호 필드 집합 포함 create 차단** (`!hasQoinManagedOnCreate()` — 필드 목록은 Rules 의 `qoinManagedFields()` **1곳**에서 선언된다) |
 | delete | `admin` | **점주 하드 삭제는 닫혔다** (payment_server_authority Rules-C). 정상 경로는 **`deleteStore` CF (admin)** — 이력(`storeDeletionHistory`) + 하위 문서 재귀 삭제 + Storage 정리, 진행 중 주문(`paid`/`accepted`/`making`/`ready`)이 있으면 차단. 이로써 "삭제·재생성으로 적립 중단 상태를 지우기" 가 양쪽에서 막힌다 (G1: 재생성 매장은 `approvedAt` 이 없어 결제 거절) |
-| Cloud Function 전담 | **`averageScore` / `reviewCount`** (`onReviewWritten`) · **`qoinAccrualRate`** (`setQoinAccrualRate` / `applyBrandQoinRate` / `migrateQoinZeroRates`) · **`qoinAccrualEnabled`** (`setQoinAccrualEnabled` / `migrateQoinZeroRates`) · **`qoinBulk*` 포인터** (`applyBrandQoinRate` **단독**) | — |
+| Cloud Function 전담 | **`averageScore` / `reviewCount`** (`onReviewWritten`) · **`availableMainCategories`** (검색/홈 카테고리 필터용 파생. `onStoreOwnMenuWritten` / `onStoreMenuOverrideWritten` / `onStoreOptoutWritten` / `onBrandMasterMenuWritten` / `onMainCategoryActiveWritten` + `backfillAvailableMainCategories`. 클라이언트 create/update 모두 차단 — create 는 Rules 가드, update 는 화이트리스트 제외) · **`qoinAccrualRate`** (`setQoinAccrualRate` / `applyBrandQoinRate` / `migrateQoinZeroRates`) · **`qoinAccrualEnabled`** (`setQoinAccrualEnabled` / `migrateQoinZeroRates`) · **`qoinBulk*` 포인터** (`applyBrandQoinRate` **단독**) | — |
 
 **핵심 불일치**: ~~Repository 의 status='pending' 회귀가 Rules 에서 차단될 가능성~~ → **해소 확인** ([`entity_lifecycle.md §3.3`](./entity_lifecycle.md)): 화이트리스트에 `status`(`'pending'` 으로만) · `submittedBy/At` · `approvedBy/At`(null 클리어만) · `rejectedReason` 이 이미 들어 있다.
 
@@ -383,6 +383,12 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | `verifyKakaoToken` | 비로그인 (Kakao OAuth 직후) | accessToken | Kakao API 호출 → Firebase Custom Token (`kakao_{kakaoUid}`) 발급 | Kakao OAuth → Firebase Auth 브릿지. 클라이언트가 Firebase Admin SDK 사용 불가 |
 | `verifyNaverToken` | 동일 | accessToken | 동일 (`naver_{naverUid}`) | 동일 |
 | `onReviewWritten` | customer (평가 작성·수정·삭제) | `reviews/{reviewId}` written 트리거 | 해당 `storeId` 의 리뷰를 `count()` + `sum('score')` 로 **전량 재계산**해 `stores.averageScore` / `reviewCount` **2필드만** overwrite | 1) 고객은 `stores` 를 쓸 권한이 없고, Rules 를 완화하면 **점주가 자기 평점을 조작**할 수 있다 2) 전량 재계산이라 멱등하고 시드 오염이 자기 치유되며, 수정·삭제가 생성과 같은 코드 경로를 타 **집계 보정 로직이 불필요**하다 |
+| `onStoreOwnMenuWritten` | owner (자기 메뉴 쓰기) | `stores/{s}/menuItems/{id}` written | 해당 매장 `availableMainCategories` 전량 재계산(같으면 write 생략) | 파생값 CF 전담(`store_category_optout` Phase B) |
+| `onStoreMenuOverrideWritten` | owner/brand/admin (override 쓰기) | `stores/{s}/menuOverrides/{id}` written | 해당 매장 재계산 | 위와 동일 |
+| `onStoreOptoutWritten` | owner (`excludedMainCategories` 변경) / 매장 생성 | `stores/{s}` written | `excludedMainCategories`·`brandId` 변경 또는 생성시에만 해당 매장 재계산 (자기 파생 쓰기는 루프 가드로 무시) | 위와 동일 |
+| `onBrandMasterMenuWritten` | brand (마스터 메뉴 쓰기) | `brands/{b}/menuItems/{id}` written | 카테고리 집합에 영향 있는 변화(카테고리/visible/승인/생성/삭제)일 때만 산하 매장 fan-out(400건 청크) | 위와 동일 |
+| `onMainCategoryActiveWritten` | admin (카테고리 active 토글) | `mainCategories/{id}` written | active 실제 플립시에만 전 매장 재계산 | 위와 동일 |
+| `backfillAvailableMainCategories` | admin (callable) | 수동 호출, `dryRun` 기본 | 전 매장 `availableMainCategories` 재계산, `migrationHistory` 1건(affected/total). 상시 정합 도구(멱등) | 시드·트리거 누락 치유 |
 
 | `onOrderQoinSettled` | customer/owner (주문 status 전이) | `orders/{orderId}` updated 트리거 | 계층 해석(매장→브랜드→전역) 후 `users/{uid}/qoinTransactions/{txId}` create + `users/{uid}.qoinBalance` 절대값 갱신 (한 트랜잭션) | 1) 원장·잔액은 클라이언트 쓰기 `if false` 2) **적립률은 돈의 계수** — 저장값을 믿지 않고 발행 직전 경계 재검증 3) 멱등 가드(`earn_{orderId}`)가 서버에만 있을 수 있다 |
 | `setQoinAccrualRate` | admin (단건 설정) | `{scope, targetId, rate\|clear, reason?}` | `stores`/`brands`/`config` 의 적립률 1필드 + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) 이력을 클라이언트가 쓰면 **위조·누락** 가능 3) admin role **서버 재검증** + 범위 검증 |

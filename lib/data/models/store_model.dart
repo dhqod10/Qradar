@@ -48,6 +48,8 @@ class StoreModel {
   final List<String> imageUrls;
   final String? notice;
   final List<String> excludedMainCategories;
+  /// CF 전담 파생 필드(읽기 전용). 어떤 toFirestore* 맵에도 넣지 않는다.
+  final List<String> availableMainCategories;
   final DateTime? updatedAt;
 
   /// Qoin 적립률 개별 설정 — **읽기 전용 필드.** 어떤 `toFirestore*` 맵에도 넣지 않는다
@@ -87,6 +89,7 @@ class StoreModel {
     this.imageUrls = const [],
     this.notice,
     this.excludedMainCategories = const [],
+    this.availableMainCategories = const [],
     this.updatedAt,
     this.qoinAccrualRate = QoinRateSetting.absent,
     this.qoinAccrualEnabled = QoinSwitchSetting.enabled,
@@ -159,6 +162,11 @@ class StoreModel {
               ?.whereType<String>()
               .toList(growable: false) ??
           const <String>[],
+      availableMainCategories:
+          (data['availableMainCategories'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          const <String>[],
       updatedAt: tsField('updatedAt'),
       qoinAccrualRate: QoinRateSetting.fromRaw(
         data[FirestorePaths.qoinAccrualRateField],
@@ -204,6 +212,7 @@ class StoreModel {
       imageUrls: entity.imageUrls,
       notice: entity.notice,
       excludedMainCategories: entity.excludedMainCategories,
+      availableMainCategories: entity.availableMainCategories,
       updatedAt: entity.updatedAt,
       qoinAccrualRate: entity.qoinAccrualRate,
       qoinAccrualEnabled: entity.qoinAccrualEnabled,
@@ -242,6 +251,7 @@ class StoreModel {
       imageUrls: imageUrls,
       notice: notice,
       excludedMainCategories: excludedMainCategories,
+      availableMainCategories: availableMainCategories,
       updatedAt: updatedAt,
       qoinAccrualRate: qoinAccrualRate,
       qoinAccrualEnabled: qoinAccrualEnabled,

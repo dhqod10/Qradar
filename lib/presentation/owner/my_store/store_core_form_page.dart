@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kpostal/kpostal.dart';
-import 'package:qradar/core/constants/menu_categories.dart';
 import 'package:qradar/core/errors/brand_key_lookup_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_key_lookup.dart';
@@ -63,7 +62,6 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
   final _bizNumCtrl = TextEditingController();
   final _brandKeyCtrl = TextEditingController();
 
-  final _selectedCategories = <String>{};
   UserLocation? _location;
   String? _resolvedAddress;
   bool _submitting = false;
@@ -81,7 +79,6 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
       _nameCtrl.text = e.name;
       _addressCtrl.text = e.address;
       _bizNumCtrl.text = e.businessRegistrationNumber ?? '';
-      _selectedCategories.addAll(e.menuCategories);
       _location = e.location;
     }
   }
@@ -98,7 +95,6 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
   bool get _isValid {
     return _nameCtrl.text.trim().isNotEmpty &&
         _addressCtrl.text.trim().isNotEmpty &&
-        _selectedCategories.isNotEmpty &&
         _location != null;
   }
 
@@ -206,18 +202,6 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
               required: true,
               controller: _addressCtrl,
               placeholder: '예: 서울시 강남구 테헤란로 1',
-            ),
-            const SizedBox(height: 20),
-            // 카테고리
-            _CategoryMultiSelect(
-              selected: _selectedCategories,
-              onToggle: (c) => setState(() {
-                if (_selectedCategories.contains(c)) {
-                  _selectedCategories.remove(c);
-                } else {
-                  _selectedCategories.add(c);
-                }
-              }),
             ),
             const SizedBox(height: 20),
             // 사업자등록번호 (선택)
@@ -336,7 +320,8 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
         grade: e?.grade ?? StoreGrade.c,
         averageScore: e?.averageScore ?? 0.0,
         reviewCount: e?.reviewCount ?? 0,
-        menuCategories: _selectedCategories.toList(growable: false),
+        // deprecated(Phase B): 점주 수동 선택 제거 — 기존 값 보존만 한다.
+        menuCategories: e?.menuCategories ?? const [],
         createdAt: e?.createdAt ?? DateTime.now(),
         address: _addressCtrl.text.trim(),
         businessRegistrationNumber: _bizNumCtrl.text.trim().isEmpty
@@ -586,82 +571,6 @@ class _AddressSearchTile extends StatelessWidget {
 }
 
 // ── 카테고리 다중 선택 ───────────────────────────────────────────────────
-
-class _CategoryMultiSelect extends StatelessWidget {
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  const _CategoryMultiSelect({
-    required this.selected,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Row(
-          children: [
-            Text(
-              '카테고리',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textBody,
-              ),
-            ),
-            Text(
-              ' *',
-              style: TextStyle(color: AppColors.accent, fontSize: 13),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: MenuCategories.all.map((c) {
-            final active = selected.contains(c);
-            return GestureDetector(
-              onTap: () => onToggle(c),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: active
-                      ? AppColors.primaryBright.withValues(alpha: 0.18)
-                      : AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: active
-                        ? AppColors.primaryBright
-                        : AppColors.surfaceElevated,
-                  ),
-                ),
-                child: Text(
-                  c,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: active
-                        ? AppColors.primaryBright
-                        : AppColors.textBody,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
-// ── 브랜드 키 입력 필드 (V3) ────────────────────────────��─────────────────
 
 class _BrandKeyField extends StatelessWidget {
   final TextEditingController controller;

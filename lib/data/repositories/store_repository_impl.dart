@@ -80,12 +80,14 @@ class StoreRepositoryImpl implements StoreRepository {
     required List<String> categories,
     required UserLocation location,
   }) async {
-    if (categories.isEmpty) return const [];
     final models = await _dataSource.fetchAll(limit: 100);
     final approved = _filterApproved(models);
-    final filtered = approved.where((m) {
-      return m.menuCategories.any(categories.contains);
-    }).toList(growable: false);
+    // categories = 메인 카테고리 코드. 빈 선택 = 필터 없음(전체).
+    final filtered = categories.isEmpty
+        ? approved
+        : approved.where((m) {
+            return m.availableMainCategories.any(categories.contains);
+          }).toList(growable: false);
     final withDistance = _attachDistance(filtered, location);
     withDistance.sort((a, b) => a.$2.compareTo(b.$2));
     return withDistance

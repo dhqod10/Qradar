@@ -27,7 +27,8 @@ StoreEntity store(
   grade: StoreGrade.a,
   averageScore: 4,
   reviewCount: 1,
-  menuCategories: cats,
+  menuCategories: const [],
+  availableMainCategories: cats,
   createdAt: DateTime(2026),
   address: address,
   distanceKm: km,
@@ -136,7 +137,7 @@ void main() {
         ['a'],
       );
     });
-    test('filterByCategories: 하나라도 가지면 포함, 빈 선택은 빈 목록, 순서 보존', () {
+    test('filterByCategories: 하나라도 가지면 포함, 빈 선택은 필터 없음(전체), 순서 보존', () {
       expect(
         GetStoresByCategoriesUseCase.filterByCategories(snap, {
           '커피',
@@ -144,8 +145,8 @@ void main() {
         ['a', 'c', 'd'],
       );
       expect(
-        GetStoresByCategoriesUseCase.filterByCategories(snap, {}),
-        isEmpty,
+        GetStoresByCategoriesUseCase.filterByCategories(snap, {}).map((s) => s.id),
+        snap.map((s) => s.id),
       );
     });
   });

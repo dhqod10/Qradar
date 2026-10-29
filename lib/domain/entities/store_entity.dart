@@ -74,6 +74,10 @@ abstract class StoreEntity with _$StoreEntity {
     /// sticky: 한 번 끄면 이후 해당 카테고리 메뉴가 생겨도 계속 숨긴다.
     @Default([]) List<String> excludedMainCategories,
 
+    /// 검색/홈 필터용 파생 메인 카테고리 코드 (Cloud Function 전담, 읽기 전용).
+    /// 노출 메뉴의 mainCategory ∩ active − excluded. 부재 = 빈 목록.
+    @Default([]) List<String> availableMainCategories,
+
     /// 최종 수정 시점.
     DateTime? updatedAt,
 

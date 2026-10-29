@@ -49,3 +49,14 @@ export {
 } from "./onMenuPriceWritten";
 // payment_price_authority — 임시 감사 도구 (읽기 전용, 완료 후 정리 커밋으로 삭제: 배포 ⑩)
 export { auditOrderPriceIntegrity } from "./auditOrderPriceIntegrity";
+
+// store_category_optout Phase B — stores.availableMainCategories 파생 (CF 전담, 홈 카테고리 필터용 soft freshness).
+export {
+  onStoreOwnMenuWritten,
+  onStoreMenuOverrideWritten,
+  onStoreOptoutWritten,
+  onBrandMasterMenuWritten,
+  onMainCategoryActiveWritten,
+} from "./onAvailableCategoriesWritten";
+// 임시 자산 아님 — 트리거 누락 치유/신규 시드용 상시 정합 재조정 도구 (admin, dryRun 기본, migrationHistory 1건).
+export { backfillAvailableMainCategories } from "./backfillAvailableMainCategories";

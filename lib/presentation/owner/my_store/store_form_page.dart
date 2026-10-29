@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:kpostal/kpostal.dart';
-import 'package:qradar/core/constants/menu_categories.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
@@ -32,7 +31,6 @@ class _StoreFormPageState extends ConsumerState<StoreFormPage> {
   final _addressCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
 
-  final _selectedCategories = <String>{};
   UserLocation? _location;
   String? _resolvedAddress;
   BusinessHours? _hours;
@@ -51,7 +49,6 @@ class _StoreFormPageState extends ConsumerState<StoreFormPage> {
       _phoneCtrl.text = e.phone;
       _addressCtrl.text = e.address;
       _descCtrl.text = e.description ?? '';
-      _selectedCategories.addAll(e.menuCategories);
       _location = e.location;
       _hours = e.businessHours;
       _existingImageUrl = e.imageUrl.isNotEmpty ? e.imageUrl : null;
@@ -71,7 +68,6 @@ class _StoreFormPageState extends ConsumerState<StoreFormPage> {
     return _nameCtrl.text.trim().isNotEmpty &&
         _phoneCtrl.text.trim().isNotEmpty &&
         _addressCtrl.text.trim().isNotEmpty &&
-        _selectedCategories.isNotEmpty &&
         _location != null;
   }
 
@@ -138,17 +134,6 @@ class _StoreFormPageState extends ConsumerState<StoreFormPage> {
               location: _location,
               resolvedAddress: _resolvedAddress,
               onTap: _openAddressSearch,
-            ),
-            const SizedBox(height: 20),
-            _CategoryMultiSelect(
-              selected: _selectedCategories,
-              onToggle: (c) => setState(() {
-                if (_selectedCategories.contains(c)) {
-                  _selectedCategories.remove(c);
-                } else {
-                  _selectedCategories.add(c);
-                }
-              }),
             ),
             const SizedBox(height: 20),
             _BusinessHoursPicker(
@@ -251,7 +236,8 @@ class _StoreFormPageState extends ConsumerState<StoreFormPage> {
         grade: widget.existing?.grade ?? StoreGrade.c,
         averageScore: widget.existing?.averageScore ?? 0.0,
         reviewCount: widget.existing?.reviewCount ?? 0,
-        menuCategories: _selectedCategories.toList(growable: false),
+        // deprecated(Phase B): 점주 수동 선택 제거 — 기존 값 보존만 한다.
+        menuCategories: widget.existing?.menuCategories ?? const [],
         createdAt: widget.existing?.createdAt ?? DateTime.now(),
         phone: _phoneCtrl.text.trim(),
         address: _addressCtrl.text.trim(),
@@ -569,82 +555,6 @@ class _AddressSearchTile extends StatelessWidget {
 }
 
 // ── 카테고리 다중 선택 ───────────────────────────────────────────────────
-
-class _CategoryMultiSelect extends StatelessWidget {
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  const _CategoryMultiSelect({
-    required this.selected,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Row(
-          children: [
-            Text(
-              '카테고리',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textDefault,
-              ),
-            ),
-            Text(
-              ' *',
-              style: TextStyle(color: AppColors.accent, fontSize: 13),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: MenuCategories.all.map((c) {
-            final active = selected.contains(c);
-            return GestureDetector(
-              onTap: () => onToggle(c),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: active
-                      ? AppColors.primaryBright.withValues(alpha: 0.18)
-                      : AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: active
-                        ? AppColors.primaryBright
-                        : AppColors.surfaceElevated,
-                  ),
-                ),
-                child: Text(
-                  c,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: active
-                        ? AppColors.primaryBright
-                        : AppColors.textDefault,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
-// ── 운영시간 ─────────────────────────────────────────────────────────────
 
 class _BusinessHoursPicker extends StatelessWidget {
   final BusinessHours? hours;

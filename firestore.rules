@@ -326,7 +326,10 @@ service cloud.firestore {
                     && request.resource.data.get('approvedBy', null) == null
                     && request.resource.data.get('rejectedReason', null) == null
                     // [F-02/§6.8] rejectedAt 도 승인 메타와 같은 계열의 권한 값이다 — 자가 설정 금지.
-                    && request.resource.data.get('rejectedAt', null) == null;
+                    && request.resource.data.get('rejectedAt', null) == null
+                    // [store_category_optout Phase B] availableMainCategories 는 CF 전담 파생 필드 — 클라이언트 주입(검색 노출 위조) 차단.
+                    // update 는 두 화이트리스트에 없어 onlyChangedFields 가 거부한다. create 는 보호받지 못하므로 여기서 막는다.
+                    && !('availableMainCategories' in request.resource.data);
 
       // delete: admin 만. [payment_server_authority Rules-C] 점주 하드 삭제 제거 — "삭제·재생성으로 적립 재개" 경로 차단,
       // 진행 중 주문의 취소·환불(cancelTossPayment/processRefund 가 stores 를 읽는다)을 묶지 않는다.

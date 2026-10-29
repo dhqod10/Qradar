@@ -4,7 +4,7 @@
 
 - 작성: architect
 - 작성일: 2026-10-28
-- 상태: 설계 완료 — §0.3 taxonomy 결정 **확정(A: 메인 카테고리로 통일)** 2026-10-28. Phase A·B 모두 진행.
+- 상태: Phase A **구현·배포 완료**(커밋 e6f889f, firestore.rules 배포). Phase B **상세 설계 확정 — §12** 2026-10-29. developer 착수 대기.
 
 ---
 
@@ -306,3 +306,182 @@ available = (보유 메뉴 mainCategoryCode ∩ active) − store.excludedMainCa
 - [ ] (Phase B, taxonomy 결정 후) availableMainCategories CF + 백필(migrationHistory) + 검색/홈 전환 + menuCategories 제거
 - [ ] audit §4 체크리스트 6항목 통과(설정 변경 이력 보류 사유 명시 — §8)
 - [ ] FAIL 없음 또는 후속 분리
+
+---
+
+## 12. Phase B 상세 설계 (검색 택소노미 통합 · menuCategories 은퇴 · CF 파생) — 확정 2026-10-29
+
+Phase A(가맹점별 메인 카테고리 노출 제외)는 이미 구현·배포 완료다. Phase B 는 "검색이 쓰는 택소노미를 메인 카테고리(A 체계)로 통일(§0.3)" 을 이행한다. 아래 §12.1~§12.9 는 developer 가 플래그한 미결 설계 결정(implementation.md §미구현/보류)을 모두 확정한다.
+
+### 12.0 전제 — availableMainCategories 의 freshness 등급은 "soft" 다 (설계를 가르는 핵심 통찰)
+
+**이 필드를 소비하는 곳은 홈 "카테고리로 매장 찾기" 칩 필터 하나뿐이다.** 매장 메뉴 탭과 메뉴명 검색은 **Phase A 에서 이미** `excludedMainCategories` 를 클라이언트에서 즉시 반영한다(store doc watch 차집합 + `isMenuShownOnStoreScreen(excludedCategoryIds)`). 따라서:
+
+- `availableMainCategories` 가 잠시 stale 해도 **매장 진입 시 탭은 항상 정확**하다(Phase A). 최악은 "방금 디저트를 끈 매장이 홈의 '디저트' 필터에 잠깐 더 뜬다" — 들어가면 디저트 탭은 없다. **자기교정되는 발견(discovery) 지연**이지 돈·권한·정합성 게이트가 아니다.
+- 그러므로 **초단위 즉시성이 불필요**하다. 이 등급 차이가 fan-out 비용 전략을 정한다(아래 §12.1). 반대로 Phase A 의 store-local 즉시성은 이미 확보돼 있어 Phase B 가 끌어내릴 필요가 없다.
+
+> 결제 게이트(`verifyTossPayment` canSellNow / 금액 게이트)는 이 필드를 **읽지 않는다.** 검색 노출용 파생값이므로 권한·금액 판정 입력이 아니다(§12.6).
+
+### 12.1 결정 1 — availableMainCategories 파생 소스 설계 (fan-out)
+
+#### 12.1.1 저장 위치 — `stores/{storeId}.availableMainCategories` 필드 (별도 문서 아님) ✅
+
+- 근거: 검색/홈은 `store_repository_impl.getStoresByCategories` / `filteredStoresProvider` 가 **매장 문서만** 로드(`fetchAll`)하고 메뉴를 로드하지 않는다. 읽는 문서에 denormalize 하면 **검색 시점 추가 읽기 0**. `averageScore`/`reviewCount`(`onReviewWritten`)와 **동일 패턴**.
+- 별도 문서(예: `stores/{id}/derived/categories`)는 검색이 매장당 문서 1건을 더 읽어야 해 fan-out 읽기만 늘고 이득이 없다. 기각.
+- 값 체계 = **A(메인 카테고리 코드)**. mainCategory 문서 id 와 동일(`'coffee'`/`'dessert'`…).
+
+#### 12.1.2 파생식 (단일 진실원 = `MenuItemRepositoryImpl.watchByStore` 의 머지 규칙)
+
+```
+availableMainCategories(store)
+  = { visibleMenu.mainCategoryCode
+        | visibleMenu ∈ watchByStore(store) }     # 개인: stores/{s}/menuItems · 가맹: 마스터+override 머지 ∪ store-scope
+    ∩ activeMainCategoryIds                        # mainCategories active == true
+    − store.excludedMainCategories                 # Phase A 운영 필드(점주 opt-out)
+```
+
+- "visible menu" 판정은 **이미 TS 포팅이 존재**한다 — `functions/src/menuVisibility.ts applyOverrideForCustomer` / `classifyCartMenu`(override.excluded=제외, status 분기 포함). **재포팅 금지, 재사용**(payment_price_authority 가드 5 와 동일 규율: 판정은 이 파일 1곳).
+- 신규 순수 함수 `functions/src/availableCategories.ts` → `computeAvailableMainCategories({ storeOwnMenus, brandMasterMenus, storeOverrides, activeCodes, excludedByStore }): string[]`. `applyOverrideForCustomer` 를 import 해서 각 마스터 메뉴의 노출 여부를 판정하고, 살아남은 메뉴의 `mainCategoryCode` 를 모아 ∩active −excluded. **Dart `watchByStore` 머지 시맨틱을 그대로 미러**(개인/가맹 분기 포함). 단위 테스트 대상(읽기 0 순수).
+
+#### 12.1.3 소스 → 트리거 → 재계산 범위 매트릭스
+
+| # | 바뀌는 소스 | 트리거(신규) | 재계산 범위 | 비용 |
+|---|---|---|---|---|
+| ① | 브랜드 마스터 메뉴 (`brands/{b}/menuItems/{id}`) 추가/삭제/`mainCategoryCode` 변경/승인·visible 변경 | `onBrandMasterMenuWritten` (`onDocumentWritten`) | **관련성 diff 통과 시에만** `brandId==b` 매장 전체 fan-out | 중 (diff 게이트로 희소화) |
+| ② | store menuOverride (`stores/{s}/menuOverrides/{id}`) | `onStoreMenuOverrideWritten` | 매장 s 1건 | 저 |
+| ③ | store.excludedMainCategories (Phase A 필드) | `onStoreOptoutWritten` (`stores/{s}`) | 매장 s 1건 | 저 |
+| ③' | store 자기 메뉴 (`stores/{s}/menuItems/{id}`, 개인 매장 또는 store-scope 메뉴) | `onStoreOwnMenuWritten` | 매장 s 1건 | 저 |
+| ④ | mainCategories active 토글 (`mainCategories/{id}`, admin) | `onMainCategoryActiveWritten` | **active 플립 시에만** 전 매장 fan-out | 고 (극히 희소) |
+
+재계산 단위 함수 `recomputeStore(storeId)`:
+1. store doc 읽기(brandId / excludedMainCategories) — 트리거 payload 로 이미 있으면 재사용.
+2. active mainCategory id 집합 — 호출당 1회 읽어 캐시(`mainCategories` where active).
+3. store 자기 `menuItems` 서브컬렉션 읽기.
+4. brandId 있으면 `brands/{b}/menuItems`(마스터) + `stores/{s}/menuOverrides` 읽기 — 마스터는 **브랜드 fan-out 1회당 1번 읽어 매장 루프에서 공유**.
+5. `computeAvailableMainCategories(...)` → `availableMainCategories` 계산.
+6. **계산값 == 저장값이면 write 생략**(churn·트리거 재발화 방지), 다르면 `stores/{s}.update({availableMainCategories})`.
+
+#### 12.1.4 멱등 / 정합성 / 루프 안전
+
+- **루프 가드(③ 핵심)**: `onStoreOptoutWritten` 는 자신이 `stores/{s}.availableMainCategories` 를 되쓰므로 재발화한다. `onMenuPriceWritten` 의 diff 패턴처럼 **소스 필드(`excludedMainCategories`·`brandId`)가 바뀐 경우에만** 진행하고, `availableMainCategories` 만 바뀐 diff 는 즉시 return. 추가로 §12.1.3-6 의 "같으면 write 생략" 이 2차 방어.
+- **①④ diff 게이트**: ① 은 before/after 의 `mainCategoryCode`·존재(생성/삭제)·승인/visible 가 **카테고리 집합에 영향 없으면 return**(가격·이름만 바뀐 편집은 fan-out 안 함 → 대부분 편집이 무비용). ④ 는 `active` 필드가 **실제 플립**된 경우에만 진행.
+- **전량 재계산 = 멱등**: `recomputeStore` 는 증분이 아니라 소스에서 다시 계산하므로 `onReviewWritten` 처럼 시드 오염·누락이 자기교정되고 재전달(at-least-once)에 안전.
+- **배치**: fan-out 쓰기는 400건 청크 배치(`migrateStoreApprovalMeta` 패턴). 타임아웃 `timeoutSeconds` 상향.
+- 실패는 `console.error` 후 swallow(트리거 재시도 폭주 방지) — freshness soft(§12.0)라 수용. 누락은 다음 소스 변경 또는 백필(§12.2)이 치유.
+
+#### 12.1.5 fan-out 비용 상한 · 가맹점 수 가정 (⚠️ 사용자 확인 필요 — §12.9)
+
+- **가정(현 단계 규모)**: 브랜드당 가맹점 ≤ 약 50, 전 매장 ≤ 약 500, 매장당 메뉴·override 각 ≤ 약 200.
+- 최악 비용:
+  - ① 카테고리-관련 마스터 메뉴 편집 1건: `N가맹점 × (자기메뉴 읽기 + override 읽기)` + 마스터 1회. 50점 기준 수천~1만 읽기. **diff 게이트로 "카테고리 집합을 바꾸는 편집"에만 발생**(가격·이름 편집은 0).
+  - ④ admin 카테고리 active 토글 1건: **전 매장**. 500점 기준 수만 읽기. **운영상 극히 드묾**(이미 확인 다이얼로그가 있는 무거운 admin 액션).
+- **규모가 가정을 넘으면(예: 브랜드당 수백 가맹)**: 아래 §12.1.6 대안 C(디바운스 스케줄러 + dirty 플래그)로 전환. 본 설계는 그 전환이 가능하도록 `recomputeStore` 순수화 + 백필 콜러블을 동일 코어로 재사용한다.
+
+#### 12.1.6 대안 비교 (권고안 = 트리거 + 백필 하이브리드)
+
+| 안 | 내용 | 판정 |
+|---|---|---|
+| **A (권고)** | 이벤트 트리거(store-local 즉시 + ①④ diff게이트·청크 fan-out) + 백필(시드·정합) | ✅ store-local 비용 저, ①④ 는 diff 로 희소화. 현 규모에 적합. soft freshness 와 정합 |
+| B | 읽기 시점 계산 유지 + 검색 전용 인덱스 분리 | ❌ 검색은 매장 문서만 로드(메뉴 미로드) → 매장별 메뉴 다건 읽기 불가피. §6 에서 이미 기각된 경로 |
+| C | 트리거 없이 **주기적(스케줄) 재계산**만 | △ fan-out 동기 비용 없음·단순. staleness=주기. **soft freshness 라 성립.** 규모 초과 시 A 의 fallback 으로 채택(①④ 를 dirty-flag + 디바운스로 대체) |
+
+**권고: A.** store-local(②③③')는 트리거로 즉시, ①④는 diff 게이트 + 청크 배치로 비용을 묶는다. 규모 가정(§12.1.5)이 깨지면 ①④ 트리거만 C(브랜드/전역 dirty 마킹 → 5~15분 디바운스 스케줄 재계산)로 바꾸고 나머지는 유지 — `recomputeStore` 가 순수 코어라 전환이 국소적이다.
+
+### 12.2 결정 2 — 백필(backfill) 마이그레이션
+
+- 신규 **admin 전용 callable** `backfillAvailableMainCategories` (`onCall`, `requireAdmin`, `qoinAdmin.ts` 헬퍼 재사용). `migrateStoreApprovalMeta` 구조를 그대로 따른다.
+- `{ dryRun?: boolean = true }` — **dryRun 기본**. dryRun 은 쓰기 0, 각 매장의 `before`(현 저장값 또는 부재)/`after`(계산값)/변경 건수를 리포트.
+- 실행: 전 매장을 `recomputeStore` 코어로 계산 → 400건 청크 배치 update → `migrationHistory/{autoId}` **1건** + `affected`(변경된 매장 수)·`total`(전체 수) 기록(audit §4-5/§4-6, `migrationHistory` 는 Cloud Logging 아님).
+- **시드 + 정합 재사용**: 신규 매장이 아직 트리거를 안 탔거나 트리거 누락이 의심될 때 다시 돌려도 멱등(전량 재계산).
+- 임시 자산 아님(상시 정합 도구) — `auditOrderPriceIntegrity` 처럼 삭제 예정이 아니라, 운영 중 재조정용으로 보존. (판단은 developer 가 index.ts 주석에 명시.)
+
+### 12.3 결정 3 — Rules 가드 + data_ownership §2.5 갱신
+
+- `availableMainCategories` 는 **CF 전담 파생 필드.** 클라이언트가 `stores` **create/update** 로 주입 못 하게 차단:
+  - **update**: owner/brand 운영 필드 화이트리스트(`isStoreOwnerFieldUpdate` / `isStoreOwnerBrandUpdate`)에 **넣지 않는다** → `onlyChangedFields` 가 거부. (`averageScore`/`reviewCount` 와 동급.)
+  - **create**: `stores` create 분기에 `!('availableMainCategories' in request.resource.data)` 가드 1건 추가 — 검색 노출 위조 방지(§7.2 의 create 가드 방침, audit §4-7 상시 항목: create 는 `onlyChangedFields` 로 보호 안 됨).
+- **data_ownership.md §2.5 갱신**:
+  - `stores` "Cloud Function 전담" 행에 **`availableMainCategories`** 추가(`averageScore`/`reviewCount` 옆). 트리거 주체 = `onStoreOwnMenuWritten`/`onStoreMenuOverrideWritten`/`onStoreOptoutWritten`/`onBrandMasterMenuWritten`/`onMainCategoryActiveWritten` + `backfillAvailableMainCategories`.
+  - §3 Cloud Function 카탈로그에 위 5 트리거 + 백필 콜러블 1행씩 추가.
+- 이 필드는 결제·권한 판정 입력이 **아니므로** Qoin 보호 필드 집합·`touchesQoinManaged()` 와 무관, 핵심/승인 메타와도 분리.
+
+### 12.4 결정 4 — 클라이언트 전환 (menuCategories → 메인 카테고리)
+
+| 대상 | 현행 | 전환 후 |
+|---|---|---|
+| 홈 "카테고리" 칩 (`category_filter_section.dart` + `selectedCategoriesProvider`) | `MenuCategories.all` 12종(한글 마케팅 문자열) | `mainCategoriesActiveProvider` 의 카테고리 — **표시=label, 저장/비교=code(id)** |
+| 홈 필터 (`filteredStoresProvider` → `GetStoresByCategoriesUseCase.filterByCategories`) | `store.menuCategories.any(selected.contains)` | `store.availableMainCategories.any(selectedCodes.contains)` |
+| 매장 찾기 (`store_repository_impl.getStoresByCategories`) | `m.menuCategories.any(...)` | `m.availableMainCategories.any(...)` |
+| 점주 수동 카테고리 칩 (`store_form_page`/`store_core_form_page` 의 menuCategories 선택) | 점주가 수동 선택 | **제거** (파생으로 대체) |
+| `stores.menuCategories` 필드 | create/coreUpdate/brandCreate 맵에 존재 | **제거 (2단계: deprecate → 제거)** — 아래 |
+
+- `selectedCategoriesProvider` 초기값(`{MenuCategories.defaultSelected='추천메뉴'}`)은 메인 카테고리에 대응물이 없다 → 초기 선택을 **"전체(빈 선택 = 필터 없음)"** 또는 active 목록의 첫 코드로 재정의. `filterByCategories` 는 빈 선택 시 현재 `const []` 반환이므로, 홈 기본 노출을 "전체 매장" 으로 바꾸려면 빈 선택 의미를 "필터 없음"으로 바꿀지 **UX 결정**(designer/§12.9).
+- `StoreModel`: `availableMainCategories` **읽기 전용** 추가(`fromFirestore` 부재→`[]`, 어떤 `toFirestore*` 맵에도 넣지 않음). `menuCategories` 는 **2단계 제거**:
+  1. (전환 배포) 소비처를 `availableMainCategories` 로 모두 옮기고, 점주 수동 칩·write 경로 제거. `menuCategories` 는 읽기만 남겨 **deprecate**(아직 문서에 남은 레거시 값 무해).
+  2. (후속 정리) `StoreModel`/`StoreEntity` 에서 필드 제거 + create/coreUpdate/brandCreate 맵에서 제거 + data_ownership §2.5 update 화이트리스트에서 `menuCategories` 삭제. 별도 정리 커밋.
+
+### 12.5 결정 5 — 배포 / 전환 순서 (안전) — CF 배포는 **사용자(운영) 수행**
+
+⚠️ CF·Rules 배포는 **프로덕션 반영**이라 사용자가 수행한다(운영 조치). 코드만 먼저 머지하면 배포 전까지 홈 필터가 깨지므로 순서를 고정한다.
+
+1. **(developer)** CF 5 트리거 + `recomputeStore`/`computeAvailableMainCategories` 코어 + 백필 콜러블 + Rules create 가드 구현·머지. **클라이언트 소비처는 아직 `menuCategories` 그대로**(이 커밋은 홈을 깨지 않는다).
+2. **(사용자)** `firebase deploy --only functions` — 5 트리거·백필 콜러블 배포. 이 시점부터 모든 소스 변경이 `availableMainCategories` 를 유지.
+3. **(사용자)** 백필 콜러블 `{dryRun:true}` → 리포트 확인 → `{dryRun:false}` 실행. 전 매장에 `availableMainCategories` 시드 + `migrationHistory` 1건.
+4. **(사용자)** `firebase deploy --only firestore:rules` — create 가드 반영(트리거가 쓰는 필드라 Rules 와 무관하게 CF 는 Admin SDK로 우회하지만, 클라 주입 차단을 위해 배포).
+5. **(developer→사용자)** 클라이언트 전환 커밋(§12.4 1단계: 홈/검색 칩·필터를 `availableMainCategories`·메인 카테고리로 교체, 점주 수동 칩 제거) 머지 → 앱 배포. **3이 끝난 뒤에만** — 그래야 전환 시점에 모든 매장이 이미 `availableMainCategories` 를 갖는다.
+6. **(후속)** `menuCategories` 필드 물리 제거(§12.4 2단계) 정리 커밋 + 배포.
+
+> **깨짐 방지 핵심**: 소비처 교체(5)는 데이터 시드(3) **이후**. 반대로 하면 전환 직후 모든 매장이 `availableMainCategories` 부재(=빈 목록)로 읽혀 홈 필터가 전부 0건이 된다. "코드-먼저" 금지, "데이터-먼저" 순서를 강제한다.
+
+### 12.6 audit §4 체크리스트 재확인 (Phase B)
+
+| # | 항목 | 판정 |
+|---|---|---|
+| 1 | 돈·권한·정책 값 변경? | `availableMainCategories` 는 **검색 노출용 파생값**. 돈·권한·정책 값 아님. 소스(점주 excluded·메뉴·active)는 각자 이력 정책을 가짐(Phase A §8 A2 보류, 메뉴=`priceHistory`, 카테고리 active=후속). 파생 자체 전용 이력 **불필요** — 전량 재계산으로 언제든 재생성 가능 |
+| 2 | 덮어쓰기 손실 | 파생값은 소스에서 재계산되므로 손실 개념 없음 |
+| 3 | 기록 문서가 정책 값 참조만? | 해당 없음(거래/기록 문서 미생성) |
+| 4 | "누가" | 백필 `migrationHistory.executedBy=admin uid`. 트리거 쓰기는 시스템(CF) |
+| 5 | batch/마이그레이션 | 백필 `migrationHistory` **1건 + affected/total**(§12.2) |
+| 6 | CF 로그 의존 | 백필 근거를 Cloud Logging 아닌 `migrationHistory`(Firestore) 영구 기록. 트리거 실패는 로그만(soft·자기교정이라 수용) |
+| 7 | 판정 필드 create/update 교차 | `availableMainCategories` 는 권한 판정 입력 아님(§12.6-1). 그래도 §12.3 대로 **create 가드 1건 + update 화이트리스트 제외 + 정상 payload 회귀** 하네스 각 1건 |
+
+### 12.7 결정 6 — 작업 분배
+
+#### designer — **호출 불필요 (조건부)**
+- 홈/검색 칩의 **라벨 소스만** 바뀐다(마케팅 12종 → 메인 카테고리 label). 칩 컴포넌트·스타일은 Phase A design.md 에서 재사용 가능(이미 명시). **큰 재디자인 아님 → designer 생략.**
+- 단, **2가지는 제품/UX 결정이라 사용자 확인 필요**(§12.9): (a) 홈 기본 선택(현재 "추천메뉴" 대응물 없음 → "전체" vs active 첫 코드), (b) 칩 개수 축소(12→active 메인 카테고리 수, 현재 3~4종)로 홈 체감이 바뀜. 확인 결과가 "칩 배치/빈 선택 UX 변경"을 요구하면 그때 designer 1회 호출.
+
+#### developer — 호출 (Phase B 전체)
+- **CF(functions/)**: `availableCategories.ts`(순수 `computeAvailableMainCategories`, `menuVisibility.ts applyOverrideForCustomer` 재사용) + `recomputeStore` + 5 트리거(`onStoreOwnMenuWritten`/`onStoreMenuOverrideWritten`/`onStoreOptoutWritten`/`onBrandMasterMenuWritten`/`onMainCategoryActiveWritten`) + `backfillAvailableMainCategories` 콜러블. index.ts export. diff 게이트·루프 가드·청크 배치(§12.1.4).
+- **Rules**: `stores` create 에 `availableMainCategories` 주입 차단 가드(§12.3). update 화이트리스트엔 넣지 않음(현행 유지).
+- **data_ownership.md §2.5 / §3** 갱신(§12.3).
+- **클라이언트**: `StoreModel.availableMainCategories` 읽기 추가 / 홈 칩·`selectedCategoriesProvider`·`filteredStoresProvider`·`getStoresByCategories` 를 메인 카테고리·`availableMainCategories` 로 교체 / 점주 수동 칩 제거 / `menuCategories` deprecate(§12.4 1단계).
+- **레이어 규칙**: presentation 은 Firebase 직접 import 금지(기존 DataSource 경유 유지). CF 는 `menuVisibility.ts` 재포팅 금지(재사용).
+- 배포는 하지 않는다(코드 머지까지) — §12.5 의 2·3·4·5 배포는 사용자.
+
+#### tester — developer 후 호출
+- `computeAvailableMainCategories` 순수 단위테스트: 개인/가맹, override excluded, soldOut(카테고리엔 영향 없음 확인), ∩active, −excluded 조합. 교차 골든은 `menuVisibility.ts` 계약 재사용.
+- diff 게이트: 가격·이름만 바뀐 마스터 메뉴 편집이 fan-out 안 함 / 카테고리 변경·생성·삭제는 함. 루프 가드: `availableMainCategories` 자체 write 가 재발화 안 함.
+- 백필 before/after·멱등(두 번 돌려 동일)·`migrationHistory` 1건+affected.
+- "디저트 끈 매장이 **홈 '디저트' 필터**에 안 뜸"(트리거·백필 후). 홈 칩 교체 회귀(라벨/code). 빈 선택 동작.
+- Rules 하네스: `availableMainCategories` create 주입 거부 / update 화이트리스트 밖 거부 / 정상 payload 회귀.
+- (에뮬레이터) 트리거 통합: ①~④ 각각이 올바른 매장 집합을 갱신하는지.
+
+### 12.8 엣지 / 정합성 (Phase B 추가분)
+
+| 케이스 | 처리 |
+|---|---|
+| 전환 직후 매장에 `availableMainCategories` 부재 | 백필(§12.5-3)이 선행 → 부재 없음. 그래도 `fromFirestore` 부재→`[]`, 홈 필터 0건(안전). 순서 위반이 유일 위험이라 §12.5 로 고정 |
+| 점주가 Phase A 로 카테고리 off → 홈 필터 반영 지연 | soft(§12.0). `onStoreOptoutWritten` 가 수초 내 반영. 매장 탭은 이미 즉시 정확 |
+| 브랜드가 첫 디저트 마스터 메뉴 추가 | ① diff 게이트 통과(생성) → 산하 매장 fan-out → `availableMainCategories` 에 `dessert` 추가(단, 그 매장이 Phase A 로 excluded 했으면 −excluded 로 안 들어감 = sticky 유지) |
+| admin 카테고리 비활성화 | ④ → 전 매장 재계산, ∩active 에서 빠져 홈 필터에서 사라짐. 점주 excluded 목록은 Phase A 규칙대로 보존(재활성 시 여전히 제외) |
+| 트리거 누락/실패 | 백필 재실행으로 치유(멱등). soft freshness 라 치명적 아님 |
+| 개인(비가맹) 매장 | 자기 `menuItems` 만으로 계산. 동일 경로 |
+
+### 12.9 사용자 확인이 필요한 결정사항 (Phase B)
+
+1. **fan-out 비용 전략 & 가맹점 수 가정 승인(§12.1.5)** — "브랜드당 ≤50, 전 매장 ≤500" 가정과, ①(diff게이트 동기 fan-out)·④(전 매장 재계산) 수용 여부. 규모가 더 크면 §12.1.6 대안 C(디바운스 스케줄러)로 시작할지.
+2. **홈 기본 선택 UX(§12.4/§12.7)** — 현재 "추천메뉴"는 메인 카테고리에 없음. 홈 진입 기본을 **"전체 매장(필터 없음)"** 으로 할지, active 메인 카테고리 첫 코드로 할지. (빈 선택 = 필터 없음 의미 변경 동반)
+3. **칩 개수 축소 수용(§12.7)** — 홈 칩이 12종 → active 메인 카테고리(현재 3~4종)로 줄어드는 체감 변화. designer 재검토가 필요한 수준인지.
+4. **`menuCategories` 물리 제거 시점(§12.4)** — 전환과 같은 릴리스에서 제거할지, deprecate 후 별도 정리 커밋으로 미룰지(권고: 2단계 분리).
+5. **백필 콜러블 보존/삭제** — 상시 정합 도구로 보존 권고(임시 아님). 이견 여부.
