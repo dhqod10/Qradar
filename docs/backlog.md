@@ -844,10 +844,11 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
 ### ✅ [검증됨 — 문제 없음] 5. 품절 토글이 옵션 비활성을 덮어쓸 가능성 → 아님
 인라인 품절 토글(`owner_store_menu_list_page.dart _toggleSoldOut`)은 두 경로 모두 `item.copyWith(soldOut:)` / `override.copyWith(soldOut:)` 로 **현재 항목에서 복사** → disabled*(옵션 비활성) 보존. 리포지토리(`menu_override_repository_impl.dart:169-194`)가 soldOut+disabled* 3필드를 함께 쓰지만 호출부가 **빈 배열이 아닌 현재값**을 넘기므로 덮어쓰기 없음. (이론상 좁은 stale-read 레이스만 존재 — 토글이 옵션을 날리는 버그 아님.)
 
-### ⚠️ [검증됨 — 잠재 취약, 중간] 6. 브랜드 핵심필드 수정이 타임스탬프 왕복에 의존 — `firestore.rules`(isBrandSelfUpdate) + `brand_repository_impl.dart`
+### ✅ [해결됨 2026-10-29] 6. 브랜드 write 타임스탬프 왕복 의존 — `brand_update_partial_hardening`
 브랜드 핵심필드 수정 경로가 `_dataSource.set(brandId, model.toFirestore())` 로 **전체 문서**를 보냄(createdAt/approvedAt 포함, copyWith 로 approvedBy/At 보존). Rules `isBrandSelfUpdate` 는 `diff().affectedKeys().hasAny(['brandKey','approvedBy','approvedAt','createdAt'])` 로 이 4개 변경을 금지. → **createdAt/approvedAt 가 read→entity→write 왕복에서 바이트 동일해야만 update 통과.**
 - **현재 상태**: flutter test 통과 + 브랜드 수정이 동작한다면 현재 직렬화는 정확 왕복 중(깨진 상태 아님). 단 **brittle** — BrandModel 직렬화나 Timestamp 처리가 바뀌면 브랜드 정보 수정이 조용히 전면 거부될 수 있음.
 - **견고한 수정(권고)**: 핵심필드 분기를 full `set` 대신 **부분 `update()`** 로 — 화이트리스트 필드(name/logoUrl/description/phone/address/businessHours/tags/companyName/status:pending/submittedBy/submittedAt/updatedAt)만 보내고 createdAt/approvedAt/brandKey 는 payload 에서 제외. 왕복 의존 제거. data 레이어 소규모. (logoUrl-only 분기는 이미 부분 update 라 안전 — 같은 패턴.)
+- **해결(+확장)**: `brand_update_partial_hardening`. 동일 class 가 **브랜드 write 3경로**에 있었고, 배포된 brand_self_approve_guard rules 아래 "이미 승인된 걸 수정" 거부 **라이브 회귀**였음(웹 세션 approvedAt 왕복 지적에서 발견). 3경로 전부 payload 에서 approvedBy/approvedAt/createdAt 제거: ① brand_repository_impl 핵심정보(set→부분update) ② master_menu_item_repository_impl.updateMasterMenuItemCore ③ menu_override_repository_impl.upsertOverrideCore(set merge 유지, 승인메타만 제거). 클라 수정만 — rules 재배포 불필요. 반영은 다음 앱 빌드.
 
 ### ⚠️ [검증됨 — 경미, 단순 1줄 아님] 7. Android 앱 등록 2개로 split
 실측: **firebase.json + firebase_options.dart = `...android:eaa7fba75a1895cc327102`**(Dart 런타임 경로) vs **google-services.json = `...android:1b45f24b099287e8327102`**(gradle/native/FCM 경로). 즉 Firebase 프로젝트에 Android 앱 등록이 2개로 갈려 있고, Dart(FirebaseOptions)와 네이티브(google-services)가 **서로 다른 앱을 가리킴**.

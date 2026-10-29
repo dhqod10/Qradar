@@ -147,17 +147,20 @@ class BrandRepositoryImpl implements BrandRepository {
         existingEntity.description != brand.description;
 
     if (coreChanged) {
-      // 핵심 필드 변경 → status=pending 회귀 + submittedBy/At 갱신 + approvedBy/At 보존
-      final updated = brand.copyWith(
-        id: brandId,
-        status: EntityApprovalStatus.pending,
-        submittedBy: uid,
-        submittedAt: now,
-        updatedAt: now,
-        // approvedBy / approvedAt 는 brand 에서 그대로 유지 (수정 대기 라벨 구분용)
-      );
-      final model = BrandModel.fromEntity(updated);
-      await _dataSource.set(brandId, model.toFirestore());
+      // 핵심 필드 변경 → status=pending 회귀 + submittedBy/At 갱신.
+      // 부분 update: 화이트리스트 필드만 보낸다. createdAt / approvedBy / approvedAt / brandKey / rejectedReason 은
+      // 보내지 않으므로 Firestore 에 그대로 보존되고, Rules(isBrandSelfUpdate) diff 금지 키에 걸리지 않는다.
+      await _dataSource.update(brandId, <String, dynamic>{
+        'name': brand.name,
+        'logoUrl': brand.logoUrl,
+        // 기존 set 동작과 동일: description 이 null 이면 필드 제거.
+        'description': brand.description ?? FieldValue.delete(),
+        'companyName': brand.companyName,
+        'status': EntityApprovalStatus.pending.asString,
+        'submittedBy': uid,
+        'submittedAt': Timestamp.fromDate(now),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     } else {
       // logoUrl 만 변경 → status / 승인 메타 / submittedBy/At 변경 없음
       await _dataSource.update(brandId, <String, dynamic>{

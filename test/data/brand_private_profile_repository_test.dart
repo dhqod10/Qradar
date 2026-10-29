@@ -235,9 +235,15 @@ void main() {
           const BrandEntity(id: 'b1', name: 'B2'),
           privateProfile: _pii,
         );
-        expect(ds.sets.single['status'], 'pending');
-        expect(ds.sets.single.containsKey('brandKey'), isFalse);
-        expect(ds.calls, ['set', 'private']);
+        final u = ds.updates.single;
+        expect(u['status'], 'pending');
+        expect(u.containsKey('brandKey'), isFalse);
+        // 보존 필드는 보내지 않는다 (Rules isBrandSelfUpdate diff 금지 키).
+        for (final k in ['createdAt', 'approvedAt', 'approvedBy', 'brandKey']) {
+          expect(u.containsKey(k), isFalse, reason: k);
+        }
+        expect(ds.sets, isEmpty);
+        expect(ds.calls, ['update', 'private']);
       },
     );
 

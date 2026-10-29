@@ -60,7 +60,10 @@ class MenuOverrideRepositoryImpl implements MenuOverrideRepository {
     final now = DateTime.now();
 
     final data = <String, dynamic>{
-      ...MenuOverrideModel.fromEntity(override).toFirestore(),
+      ...MenuOverrideModel.fromEntity(override).toFirestore()
+        // 승인 메타는 보내지 않는다 (set merge:true 이므로 기존 값 보존, Rules diff 비저촉).
+        ..remove('approvedBy')
+        ..remove('approvedAt'),
       'status': EntityApprovalStatus.pending.asString,
       'submittedBy': uid,
       'submittedAt': Timestamp.fromDate(now),

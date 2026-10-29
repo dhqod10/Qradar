@@ -96,7 +96,13 @@ class MasterMenuItemRepositoryImpl implements MasterMenuItemRepository {
     );
 
     final model = MenuItemModel.fromEntity(updated);
-    await _dataSource.update(brandId, item.id, model.toFirestore());
+    // 승인 메타·createdAt 는 보내지 않는다 — 안 건드리면 Firestore 에 그대로 보존되고,
+    // 직렬화 왕복(serverTimestamp ns -> DateTime us)으로 Rules diff 에 걸리지 않는다.
+    final payload = model.toFirestore()
+      ..remove('createdAt')
+      ..remove('approvedBy')
+      ..remove('approvedAt');
+    await _dataSource.update(brandId, item.id, payload);
   }
 
   @override
