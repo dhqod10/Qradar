@@ -850,12 +850,13 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
 - **견고한 수정(권고)**: 핵심필드 분기를 full `set` 대신 **부분 `update()`** 로 — 화이트리스트 필드(name/logoUrl/description/phone/address/businessHours/tags/companyName/status:pending/submittedBy/submittedAt/updatedAt)만 보내고 createdAt/approvedAt/brandKey 는 payload 에서 제외. 왕복 의존 제거. data 레이어 소규모. (logoUrl-only 분기는 이미 부분 update 라 안전 — 같은 패턴.)
 - **해결(+확장)**: `brand_update_partial_hardening`. 동일 class 가 **브랜드 write 3경로**에 있었고, 배포된 brand_self_approve_guard rules 아래 "이미 승인된 걸 수정" 거부 **라이브 회귀**였음(웹 세션 approvedAt 왕복 지적에서 발견). 3경로 전부 payload 에서 approvedBy/approvedAt/createdAt 제거: ① brand_repository_impl 핵심정보(set→부분update) ② master_menu_item_repository_impl.updateMasterMenuItemCore ③ menu_override_repository_impl.upsertOverrideCore(set merge 유지, 승인메타만 제거). 클라 수정만 — rules 재배포 불필요. 반영은 다음 앱 빌드.
 
-### ⚠️ [검증됨 — 경미, 단순 1줄 아님] 7. Android 앱 등록 2개로 split
-실측: **firebase.json + firebase_options.dart = `...android:eaa7fba75a1895cc327102`**(Dart 런타임 경로) vs **google-services.json = `...android:1b45f24b099287e8327102`**(gradle/native/FCM 경로). 즉 Firebase 프로젝트에 Android 앱 등록이 2개로 갈려 있고, Dart(FirebaseOptions)와 네이티브(google-services)가 **서로 다른 앱을 가리킴**.
-- **현재 영향 없음**: 둘 다 같은 프로젝트(835847199015)라 Firestore/Auth/FCM 공유 → 앱 정상 동작(FCM 토큰 등록·결제 확인됨). split 이어도 작동.
-- **웹 세션 전제 정정**: "google-services.json=진실, firebase.json만 틀림" 은 불완전 — firebase.json 은 firebase_options.dart 와 일치함. 어느 앱이 정본인지 먼저 결정해야 함.
-- **올바른 조치**: firebase.json 1줄 정정은 오히려 firebase.json↔firebase_options.dart 불일치를 만듦. **정본 앱 결정 → `flutterfire configure` 로 3파일(firebase.json·firebase_options.dart·google-services.json) 일괄 재생성**이 맞음. 비긴급(앱 동작 중). 앱 세션이 1줄 수정 시도했다가 이 사실 확인 후 되돌림.
-
+### ⚠️ [검증됨 — 경미/비긴급] 7. firebase_options 가 미등록(phantom) appId 를 가리킴
+`firebase apps:list --project order-app-5957e` 실측 — 실제 등록 앱은 **ANDROID `1b45f24b…`(Qradar) / IOS `7beb72e4…`(Radar) / WEB `d44f3e33…`(Admin Console, 웹세션 어제 추가)** 3개뿐.
+- **firebase.json + lib/firebase_options.dart 가 가리키는 appId 는 둘 다 미등록(phantom)**: android `eaa7fba…`, ios `619084d9…` — apps:list 에 없음. 과거 등록→삭제→재생성 흔적으로 추정. **google-services.json(android `1b45f24b…`)만 올바름.**
+- **"2개 split" 아님(앞선 메모 정정)**: 실재 Android 앱은 1개. 정본 결정 불필요 — 유일 실앱이 정본.
+- **현재 무영향 이유**: Firestore/Auth 는 projectId+apiKey 로 동작(appId 미사용), FCM 은 네이티브 google-services.json(맞는 값) 사용. → Dart 쪽 phantom appId 가 아직 안 드러남.
+- **올바른 조치**: `flutterfire configure` 1회 → firebase.json·firebase_options.dart·google-services.json 이 실앱(1b45f24b/7beb72e4)으로 수렴(선택지 없음, 재생성 결과 수용). 비긴급.
+- **주의**: appId 를 키로 쓰는 Analytics / Crashlytics / App Check 를 나중에 붙이면 그때 phantom appId 가 드러남 → 그 전에 flutterfire configure 권장. (웹세션 firebase apps:list 근거, 앱세션 재확인.)
 ### ℹ️ 웹 세션 변경 (참고 — lib/·functions/ 무관)
 Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order-app-5957e), `firebase.json` hosting 블록 추가(diff +30/-0, firestore/storage/functions/flutter/emulators 무변경), `landing/` 신규(토스 랜딩+관리자 콘솔, 미배포).
 
