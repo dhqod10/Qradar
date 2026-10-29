@@ -833,11 +833,13 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
 - **평가**: 명백한 권한 경계 구멍. 수정 저렴(브랜드 분기 필드 화이트리스트 추가). **우선순위 높음.**
 - **해결**: `brand_self_approve_guard` (커밋 b87b548, rules 배포 완료). 헬퍼 noSelfApproveOnCreate/OnUpdate 로 V1 brands/menuItems + V2 stores/menuOverrides + **V3 stores/menuItems(추가 발견)** 브랜드 분기 자가승인 차단. 점주 분기(D2)는 별도 분리 등재.
 
-### ⬜ [미검증 — 착수 시 확인] 3. cascadeDeleteOverrides no-op — `master_menu_item_remote_data_source.dart:146-154`
+### ✅ [해결됨 2026-10-29] 3. cascadeDeleteOverrides no-op — `master_menu_item_remote_data_source.dart`
 "menuOverrides 컬렉션이 아직 없다" 전제가 낡음 → 마스터 삭제해도 오버라이드 잔존, 같은 id 재생성 시 과거 가격·제외·품절이 되살아남.
 
-### ⬜ [미검증] 4. 점주 오버라이드 create에 masterMenuItemId 누락 — `menu_override_repository_impl.dart:162-178`
+### ✅ [해결됨 2026-10-29] 4. 점주 오버라이드 create에 masterMenuItemId 누락 — `menu_override_repository_impl.dart`
 브랜드 경로는 넣는데 점주 경로만 빠짐 → collectionGroup 쿼리가 점주 생성분 누락.
+- **해결**: `menu_override_integrity` (커밋 예정). #4 = 점주 W2 create 에 `masterMenuItemId: override.masterMenuItemId` 1줄 추가(핵심 기능 버그). #3 = **실은 프로덕션 DI 가 override repo 를 항상 주입해 이미 실제 cascade 가 돌고 있었고**(no-op 은 미주입 폴백), 죽은 no-op 제거 + `deleteWithCascade` 단일경로 수렴 + repo non-null 전환(조용한 폴백 제거). 기존 menuOverrides 0건이라 **백필 불필요**(D-1). Rules/CF/인덱스 무변경.
+- **후속 후보(별개)**: `countStoresUsingPriceOverride` 의 복합 [masterMenuItemId, status] 인덱스가 indexes.json 에 없음 — 기존 공백, menu_override_integrity 비범위. 실행 시 에러나면 인덱스 추가 task.
 
 ### ✅ [검증됨 — 문제 없음] 5. 품절 토글이 옵션 비활성을 덮어쓸 가능성 → 아님
 인라인 품절 토글(`owner_store_menu_list_page.dart _toggleSoldOut`)은 두 경로 모두 `item.copyWith(soldOut:)` / `override.copyWith(soldOut:)` 로 **현재 항목에서 복사** → disabled*(옵션 비활성) 보존. 리포지토리(`menu_override_repository_impl.dart:169-194`)가 soldOut+disabled* 3필드를 함께 쓰지만 호출부가 **빈 배열이 아닌 현재값**을 넘기므로 덮어쓰기 없음. (이론상 좁은 stale-read 레이스만 존재 — 토글이 옵션을 날리는 버그 아님.)

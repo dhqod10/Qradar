@@ -14,7 +14,7 @@ import 'package:qradar/domain/repositories/menu_override_repository.dart';
 /// - status 전이 (S3): create/update 시 pending 강제.
 class MasterMenuItemRepositoryImpl implements MasterMenuItemRepository {
   final MasterMenuItemRemoteDataSource _dataSource;
-  final MenuOverrideRepository? _menuOverrideRepository;
+  final MenuOverrideRepository _menuOverrideRepository;
   final String Function() _currentUidGetter;
   final String? Function() _currentBrandIdGetter;
 
@@ -22,7 +22,7 @@ class MasterMenuItemRepositoryImpl implements MasterMenuItemRepository {
     this._dataSource, {
     required String Function() currentUidGetter,
     required String? Function() currentBrandIdGetter,
-    MenuOverrideRepository? menuOverrideRepository,
+    required MenuOverrideRepository menuOverrideRepository,
   })  : _currentUidGetter = currentUidGetter,
         _currentBrandIdGetter = currentBrandIdGetter,
         _menuOverrideRepository = menuOverrideRepository;
@@ -118,12 +118,8 @@ class MasterMenuItemRepositoryImpl implements MasterMenuItemRepository {
   @override
   Future<void> deleteWithCascade(String brandId, String menuItemId) async {
     _assertOwnership(brandId);
-    // S9: cascade — MenuOverrideRepository 주입 시 실제 batch delete, 미주입 시 no-op.
-    if (_menuOverrideRepository != null) {
-      await _menuOverrideRepository.deleteAllForMaster(menuItemId);
-    } else {
-      await _dataSource.cascadeDeleteOverrides(menuItemId);
-    }
+    // S9: cascade — collectionGroup 기반 batch delete 단일 경로.
+    await _menuOverrideRepository.deleteAllForMaster(menuItemId);
     await _dataSource.delete(brandId, menuItemId);
   }
 

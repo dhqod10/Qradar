@@ -164,6 +164,7 @@ class MenuOverrideRepositoryImpl implements MenuOverrideRepository {
       final data = <String, dynamic>{
         'storeId': override.storeId,
         'brandId': override.brandId,
+        'masterMenuItemId': override.masterMenuItemId,
         'priceOverride': null,
         'excluded': false,
         'soldOut': override.soldOut,

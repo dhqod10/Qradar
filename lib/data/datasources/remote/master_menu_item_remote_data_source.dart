@@ -139,16 +139,4 @@ class MasterMenuItemRemoteDataSource {
     }
     await batch.commit();
   }
-
-  /// cascade: 모든 매장의 `menuOverrides/{masterMenuItemId}` batch delete (S9).
-  ///
-  /// 본 sub-phase: 대상 컬렉션(`menuOverrides`) 자체가 없으므로 항상 0건.
-  Future<void> cascadeDeleteOverrides(String masterMenuItemId) async {
-    // sub-phase 3 에서 menuOverrides 가 도입된 후 실제 동작.
-    // 현재는 no-op.
-    debugPrint(
-      '[MasterMenuItemRemoteDataSource] cascadeDeleteOverrides: '
-      'menuOverrides 컬렉션은 sub-phase 3 에서 활성화됩니다.',
-    );
-  }
 }

@@ -833,6 +833,7 @@ class _World {
     _masterDs,
     currentUidGetter: () => '',
     currentBrandIdGetter: () => null,
+    menuOverrideRepository: overrideRepo,
   );
   late final overrideRepo = MenuOverrideRepositoryImpl(_ovDs);
 
