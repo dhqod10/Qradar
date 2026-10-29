@@ -47,14 +47,14 @@
       "android": {
         "default": {
           "projectId": "order-app-5957e",
-          "appId": "1:835847199015:android:eaa7fba75a1895cc327102",
+          "appId": "1:835847199015:android:1b45f24b099287e8327102",
           "fileOutput": "android/app/google-services.json"
         }
       },
       "ios": {
         "default": {
           "projectId": "order-app-5957e",
-          "appId": "1:835847199015:ios:619084d9ebce6d66327102",
+          "appId": "1:835847199015:ios:7beb72e4c7d16d8f327102",
           "uploadDebugSymbols": false,
           "fileOutput": "ios/Runner/GoogleService-Info.plist"
         }
@@ -63,8 +63,8 @@
         "lib/firebase_options.dart": {
           "projectId": "order-app-5957e",
           "configurations": {
-            "android": "1:835847199015:android:eaa7fba75a1895cc327102",
-            "ios": "1:835847199015:ios:619084d9ebce6d66327102"
+            "android": "1:835847199015:android:1b45f24b099287e8327102",
+            "ios": "1:835847199015:ios:7beb72e4c7d16d8f327102"
           }
         }
       }

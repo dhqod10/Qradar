@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDttKz4MG3e4w-iP_JuVF9crIhhC9e9e_A',
-    appId: '1:835847199015:android:eaa7fba75a1895cc327102',
+    appId: '1:835847199015:android:1b45f24b099287e8327102',
     messagingSenderId: '835847199015',
     projectId: 'order-app-5957e',
     storageBucket: 'order-app-5957e.firebasestorage.app',
@@ -59,12 +59,13 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAKes98guUWCSuY9WFWgNIyOG1MmtoI73c',
-    appId: '1:835847199015:ios:619084d9ebce6d66327102',
+    appId: '1:835847199015:ios:7beb72e4c7d16d8f327102',
     messagingSenderId: '835847199015',
     projectId: 'order-app-5957e',
     storageBucket: 'order-app-5957e.firebasestorage.app',
-    iosClientId: '835847199015-kesc8f4mt4dbsjhfeojn05lnv0c89l60.apps.googleusercontent.com',
-    iosBundleId: 'com.orderapp.orderApp',
+    androidClientId: '835847199015-o1h78dmbjnnau99lhjj9mggpkbrkfd3f.apps.googleusercontent.com',
+    iosClientId: '835847199015-1sc2jd87q30c8bj26vdutpbt4n4umgj9.apps.googleusercontent.com',
+    iosBundleId: 'com.qradar.app',
   );
 
 }
