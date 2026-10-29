@@ -276,6 +276,10 @@ function viewOps(alive) {
             <div class="a-help">매일 같은 시간으로 저장돼요.</div><div class="a-field-err" id="op-hours-err" hidden></div></div>
           <div class="a-field a-sw-row"><span class="a-label">임시 휴무</span>${switchHtml('op-temp', st.temporaryClosed, '임시 휴무')}
             <div class="a-help">활성화 시 잠시 휴무 상태로 표시돼요. 주문 접수를 막는 기능은 아니에요.</div></div>
+            <!-- 🔴 배포 전 확인 (design U8): temporaryClosed 가 판매를 막지 않는 현재 동작을 전제로 한 문구다.
+                 앱 세션의 temporary_closed_gate(C안 — canSellNow 가 temporaryClosed 를 보게 함)가
+                 배포되면 이 문구는 거짓이 된다. 그때 "휴무 중에는 주문이 들어오지 않아요" 로 바꾼다.
+                 두 배포 모두 PG 심사 종료 후라 현재는 노출되지 않는다. -->
           <div class="a-field"><span class="a-label">휴무 날짜</span><div class="a-row"><label class="a-sr" for="op-date">휴무 날짜 선택</label><input class="a-input a-time" type="date" id="op-date"> <button type="button" class="a-btn sm" id="op-dadd">추가</button></div>
             <div class="a-field-err" id="op-date-err" hidden></div>
             <div class="a-datechips">${st.closedDates.length ? st.closedDates.map((d) => `<span class="a-datechip">${esc(d)} <button type="button" class="a-link" data-drm="${esc(d)}" aria-label="${esc(d)} 휴무 삭제">삭제</button></span>`).join('') : '<span class="a-cap">추가된 휴무 날짜가 없어요.</span>'}</div></div></div>
