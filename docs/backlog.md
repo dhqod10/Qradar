@@ -756,3 +756,15 @@ stores/{storeId}
 
 ### ⬜ 이미지 fit 정책 — 로고는 contain (일부 반영됨)
 `ImageUploadField` 에 `fit` 파라미터 추가 완료, 브랜드 로고 폼은 `BoxFit.contain` 적용(2026-10-28). 브랜드 로고를 **표시**하는 다른 화면(brand_info_page / admin 승인 상세 / 매장 카드 등)이 cover로 로고를 잘라 보이면 동일하게 contain 정렬 검토.
+
+## Qoin / 자기거래 (2026-10-29 테스트 중 질문에서 도출)
+
+### ⬜ Q2 — Qoin 사용(결제/할인) 기능 미구현
+현재 Qoin 은 **적립 전용(earn-only)**. 원장 `users/{uid}/qoinTransactions` 는 CF 전담 쓰기이고 관측 type 은 `earn`(+ 환불 회수/clawback). **`spend`/`use`/`redeem`/차감/할인 로직이 코드에 없다**(lib/·functions/src 전체 검색). 장바구니·결제 화면에 Qoin 사용 UI 없음, `qoinBalance` 는 조회만.
+- **왜:** 적립한 Qoin 을 쓸 경로가 없으면 적립의 효용이 반감. 운영 전/초기에 "Qoin 결제·부분할인" UX + 서버 차감(원장 `spend` 트랜잭션, 멱등, 잔액 음수 방지, 결제 게이트와 정합) 설계 필요.
+- **착수 시 주의:** 차감은 반드시 CF 전담(클라이언트 금액 신뢰 금지), 결제 금액 재계산 게이트(PPA)와 한 경로로 묶기.
+
+### ⬜ Q3 — 자기 매장 주문/접수 가드 없음 (self-dealing)
+`userId == store.ownerId` 를 막는 체크가 **order 생성(verifyTossPayment CF)·Firestore Rules 양쪽에 없다**. "고객 모드로 전환"은 role 을 실제 customer 로 다운그레이드(`downgradeToCustomerUseCase`)하지만 매장 `ownerId` 는 유지되므로, 점주가 **고객 모드 전환 → 자기 매장 주문·결제 → 점주 복귀 → 접수·완료**가 전부 가능하고 완료 시 **Qoin 자기적립**까지 된다. 리뷰도 `storeId_userId` 라 자기 매장 평가 가능.
+- **영향:** 실제 Toss 결제가 들어가 직접 금전 이득은 제한적이나, **매출·평가(등급) 조작**과 Qoin 파밍 수단. Qradar 등급 신뢰도의 근간을 흔든다.
+- **후보 조치:** ⓐ `verifyTossPayment` 에서 `userId == store.ownerId`(및 브랜드 보유자) 주문 거절. ⓑ 자기 매장 리뷰 차단(review create 가드). ⓒ Qoin 적립 시 self-order 제외. — 설계자 판단 후 범위 결정.
