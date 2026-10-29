@@ -30,6 +30,11 @@ class ImageUploadField extends StatefulWidget {
   /// 외부에서 주입하는 에러 메시지.
   final String? errorMessage;
 
+  /// 이미지 맞춤 방식. 사진(메뉴 등)은 [BoxFit.cover], 로고는 [BoxFit.contain]
+  /// 을 권장한다. contain 은 이미지 전체가 잘리지 않고 박스 안에 들어오도록
+  /// 비율을 유지하며, 생기는 여백은 [AppColors.surface] 로 채운다.
+  final BoxFit fit;
+
   const ImageUploadField({
     super.key,
     this.initialUrl,
@@ -38,6 +43,7 @@ class ImageUploadField extends StatefulWidget {
     required this.onFileChanged,
     this.uploadProgress,
     this.errorMessage,
+    this.fit = BoxFit.cover,
   });
 
   @override
@@ -97,6 +103,8 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
+                  // contain 여백(레터박스)이 투명/검정으로 보이지 않도록 배경을 깐다.
+                  const ColoredBox(color: AppColors.surface),
                   _buildImageContent(),
                   if (widget.uploadProgress != null) _buildUploadOverlay(),
                   if ((_localFile != null || widget.initialUrl != null) &&
@@ -127,10 +135,10 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
 
   Widget _buildImageContent() {
     if (_localFile != null) {
-      return Image.file(_localFile!, fit: BoxFit.cover);
+      return Image.file(_localFile!, fit: widget.fit);
     }
     if (widget.initialUrl != null && widget.initialUrl!.isNotEmpty) {
-      return Image.network(widget.initialUrl!, fit: BoxFit.cover);
+      return Image.network(widget.initialUrl!, fit: widget.fit);
     }
     return _buildPlaceholder();
   }

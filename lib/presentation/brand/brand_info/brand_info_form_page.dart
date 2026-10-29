@@ -500,6 +500,8 @@ class _BrandInfoFormPageState extends ConsumerState<_BrandInfoFormBody> {
                 initialUrl: _logoUrl,
                 height: 160,
                 placeholderIcon: Icons.storefront_rounded,
+                // 로고는 잘리지 않게 전체가 보이도록 contain.
+                fit: BoxFit.contain,
                 uploadProgress: _uploadProgress,
                 errorMessage: _imageError,
                 onFileChanged: (f) => setState(() => _logoFile = f),
