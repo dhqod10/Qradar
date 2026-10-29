@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>개인정보처리방침 — Qradar</title>
+<meta name="description" content="Qradar 개인정보처리방침. 수집 항목, 이용 목적, 보유 기간, 처리위탁 및 이용자 권리 안내.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main id="main" class="doc">
+<div class="wrap">
+
+  <h1>개인정보처리방침</h1>
+  <p class="meta">시행일: <span data-biz="privacyDate"></span> · <span data-biz="company"></span></p>
+
+  <p>
+    <span data-biz="company"></span>(이하 "회사")는 「개인정보 보호법」, 「정보통신망 이용촉진 및 정보보호 등에 관한 법률」,
+    「위치정보의 보호 및 이용 등에 관한 법률」 등 관련 법령을 준수하며,
+    이용자의 개인정보를 보호하기 위해 다음과 같이 개인정보처리방침을 수립 · 공개합니다.
+  </p>
+
+  <div class="toc">
+    <h2>목차</h2>
+    <ol>
+      <li><a href="#p1">수집하는 개인정보 항목 및 수집 방법</a></li>
+      <li><a href="#p2">개인정보의 처리 목적</a></li>
+      <li><a href="#p3">개인정보의 보유 및 이용 기간</a></li>
+      <li><a href="#p4">개인정보의 제3자 제공</a></li>
+      <li><a href="#p5">개인정보 처리의 위탁</a></li>
+      <li><a href="#p6">개인정보의 국외 이전</a></li>
+      <li><a href="#p7">위치정보의 처리</a></li>
+      <li><a href="#p8">개인정보의 파기</a></li>
+      <li><a href="#p9">이용자 및 법정대리인의 권리와 행사 방법</a></li>
+      <li><a href="#p10">개인정보의 안전성 확보 조치</a></li>
+      <li><a href="#p11">자동 수집 장치 및 광고식별자</a></li>
+      <li><a href="#p12">개인정보보호책임자 및 문의처</a></li>
+      <li><a href="#p13">권익침해 구제 방법</a></li>
+      <li><a href="#p14">개인정보처리방침의 변경</a></li>
+    </ol>
+  </div>
+
+  <h2 id="p1">1. 수집하는 개인정보 항목 및 수집 방법</h2>
+
+  <h3>가. 회원가입 시 (필수)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">가입 방법</th><th scope="col">수집 항목</th></tr></thead>
+      <tbody>
+        <tr><td>이메일 가입</td><td>이메일 주소, 비밀번호(암호화 저장), 닉네임</td></tr>
+        <tr><td>카카오 계정</td><td>카카오 회원번호, 이메일 주소, 프로필 닉네임</td></tr>
+        <tr><td>네이버 계정</td><td>네이버 고유 식별자, 이메일 주소, 이름 또는 닉네임</td></tr>
+        <tr><td>구글 계정</td><td>구글 고유 식별자, 이메일 주소, 이름, 프로필 이미지</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    소셜 로그인의 경우, 각 사업자의 동의 화면에서 이용자가 제공에 동의한 항목만 전달받습니다.
+  </p>
+
+  <h3>나. 서비스 이용 과정에서 수집되는 항목</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">구분</th><th scope="col">항목</th><th scope="col">필수 / 선택</th></tr></thead>
+      <tbody>
+        <tr><td>주문 · 결제</td><td>주문 내역(매장, 상품, 옵션, 수량, 금액), 결제 일시, 결제 수단 종류, 결제 승인번호, 주문 요청사항</td><td>필수</td></tr>
+        <tr><td>배달 주문</td><td>수령인 이름, 연락처, 배달 주소</td><td>배달 선택 시 필수</td></tr>
+        <tr><td>매장 탐색</td><td>단말기 위치정보(위도 · 경도)</td><td>선택 (미동의 시 지도 중심 좌표 기준으로 조회)</td></tr>
+        <tr><td>알림</td><td>푸시 알림 토큰(FCM 토큰), 알림 수신 설정</td><td>선택 (미동의 시 주문 상태 알림 미수신)</td></tr>
+        <tr><td>후기</td><td>후기 내용, 평점, 첨부 이미지</td><td>선택</td></tr>
+        <tr><td>Qoin</td><td>적립 · 회수 내역, 잔액</td><td>필수</td></tr>
+        <tr><td>문의 응대</td><td>문의 내용, 상담 이력, 연락처</td><td>문의 시 필수</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>다. 자동으로 생성 · 수집되는 항목</h3>
+  <p>
+    접속 일시, 접속 IP 주소, 단말기 모델명 및 운영체제 버전, 앱 버전, 서비스 이용 기록, 오류 로그.
+  </p>
+
+  <h3>라. 수집 방법</h3>
+  <ol>
+    <li>앱 내 회원가입 · 주문 · 후기 작성 · 문의 등 이용자가 직접 입력하는 경우</li>
+    <li>소셜 로그인 사업자로부터 이용자의 동의에 따라 전달받는 경우</li>
+    <li>서비스 이용 과정에서 자동으로 생성 · 수집되는 경우</li>
+  </ol>
+  <p class="note">
+    회사는 주민등록번호를 수집하지 않으며, 카드번호 · CVC · 계좌번호 등 결제 수단 정보를
+    직접 수집하거나 보관하지 않습니다. 해당 정보는 결제대행사(<span data-biz="pg"></span>)가 직접 처리합니다.
+  </p>
+
+  <h2 id="p2">2. 개인정보의 처리 목적</h2>
+  <ol>
+    <li><strong>회원 관리</strong> — 회원 식별 및 본인 확인, 중복 가입 방지, 부정 이용 방지, 이용 제한 조치, 문의 응대</li>
+    <li><strong>주문 및 결제</strong> — 주문 접수 및 매장 전달, 결제 처리, 결제 금액 검증, 상품 제공 및 수령 확인, 취소 · 환불 처리</li>
+    <li><strong>매장 탐색</strong> — 이용자 위치 주변의 제휴 매장 조회 및 거리순 정렬</li>
+    <li><strong>알림 제공</strong> — 주문 상태 변경(접수 · 제조중 · 준비 완료) 알림 발송</li>
+    <li><strong>적립 포인트 운영</strong> — Qoin 적립 · 회수 · 잔액 관리</li>
+    <li><strong>후기 운영</strong> — 매장 후기 및 평점의 게시 · 관리</li>
+    <li><strong>서비스 개선</strong> — 이용 통계 분석, 장애 원인 파악 및 품질 개선 (개인을 식별할 수 없는 형태로 처리)</li>
+    <li><strong>법령 준수</strong> — 전자상거래 관련 거래 기록 보존, 분쟁 처리 및 민원 대응</li>
+  </ol>
+
+  <h2 id="p3">3. 개인정보의 보유 및 이용 기간</h2>
+  <p>
+    회사는 개인정보 수집 · 이용 목적이 달성되면 지체 없이 파기합니다.
+    다만 다음의 경우에는 명시한 기간 동안 보관합니다.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">항목</th><th scope="col">보유 기간</th><th scope="col">근거</th></tr></thead>
+      <tbody>
+        <tr><td>회원 정보</td><td>회원 탈퇴 시까지</td><td>이용자 동의</td></tr>
+        <tr><td>계약 또는 청약철회 등에 관한 기록</td><td>5년</td><td>전자상거래 등에서의 소비자보호에 관한 법률</td></tr>
+        <tr><td>대금 결제 및 재화 공급에 관한 기록</td><td>5년</td><td>전자상거래 등에서의 소비자보호에 관한 법률</td></tr>
+        <tr><td>소비자 불만 또는 분쟁 처리에 관한 기록</td><td>3년</td><td>전자상거래 등에서의 소비자보호에 관한 법률</td></tr>
+        <tr><td>표시 · 광고에 관한 기록</td><td>6개월</td><td>전자상거래 등에서의 소비자보호에 관한 법률</td></tr>
+        <tr><td>전자금융거래에 관한 기록</td><td>5년</td><td>전자금융거래법</td></tr>
+        <tr><td>서비스 접속 기록(로그인 기록)</td><td>3개월</td><td>통신비밀보호법</td></tr>
+        <tr><td>부정 이용 기록</td><td>탈퇴 후 1년</td><td>부정 이용 방지 (이용자 동의)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    위 기간 동안 보관되는 정보는 해당 목적 범위 내에서만 이용되며, 다른 목적으로는 이용하지 않습니다.
+  </p>
+
+  <h2 id="p4">4. 개인정보의 제3자 제공</h2>
+  <p>
+    회사는 이용자의 개인정보를 제2조에서 명시한 목적 범위를 초과하여 이용하거나 제3자에게 제공하지 않습니다.
+    다만 다음의 경우는 예외로 합니다.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">제공받는 자</th><th scope="col">제공 목적</th><th scope="col">제공 항목</th><th scope="col">보유 기간</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>주문한 제휴 매장</td>
+          <td>주문 접수 및 상품 제조 · 제공, 수령 확인, 환불 처리</td>
+          <td>주문번호, 주문 상품 · 옵션 · 수량, 주문 요청사항, 주문자 닉네임, (배달 시) 수령인 이름 · 연락처 · 주소</td>
+          <td>주문 완료 후 관련 법령에 따른 보존 기간</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>그 밖에 다음 각 호의 경우에는 법령에 따라 제공할 수 있습니다.</p>
+  <ol>
+    <li>이용자가 사전에 제3자 제공에 동의한 경우</li>
+    <li>법령에 특별한 규정이 있거나, 수사기관이 법령에 정해진 절차와 방법에 따라 요구한 경우</li>
+  </ol>
+
+  <h2 id="p5">5. 개인정보 처리의 위탁</h2>
+  <p>회사는 서비스 제공을 위해 다음과 같이 개인정보 처리 업무를 위탁하고 있습니다.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">수탁자</th><th scope="col">위탁 업무</th><th scope="col">보유 · 이용 기간</th></tr></thead>
+      <tbody>
+        <tr><td>Google LLC<br>(Firebase)</td><td>회원 인증, 데이터베이스 저장 및 운영, 파일 저장, 푸시 알림 발송(FCM), 서버 기능 실행, 애플리케이션 호스팅</td><td rowspan="5">위탁 계약 종료 시 또는 회원 탈퇴 시까지</td></tr>
+        <tr><td><span data-biz="pg"></span></td><td>신용카드 · 간편결제 · 계좌이체 결제 처리 및 결제 취소 · 환불 처리</td></tr>
+        <tr><td>(주)카카오</td><td>카카오 계정 로그인 연동, 주소 검색 서비스</td></tr>
+        <tr><td>네이버(주)</td><td>네이버 계정 로그인 연동</td></tr>
+        <tr><td>Google LLC</td><td>구글 계정 로그인 연동</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    회사는 위탁계약 체결 시 개인정보의 기술적 · 관리적 보호조치, 재위탁 제한, 수탁자에 대한 관리 · 감독,
+    손해배상 등 책임에 관한 사항을 계약서에 명시하고, 수탁자가 개인정보를 안전하게 처리하는지 감독합니다.
+    위탁 업무의 내용이나 수탁자가 변경되는 경우 본 방침을 통해 지체 없이 공개합니다.
+  </p>
+
+  <h2 id="p6">6. 개인정보의 국외 이전</h2>
+  <p>회사는 서비스 운영을 위해 다음과 같이 개인정보를 국외로 이전하고 있습니다.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">이전받는 자</th>
+          <th scope="col">이전 국가</th>
+          <th scope="col">이전 항목</th>
+          <th scope="col">이전 방법 · 일시</th>
+          <th scope="col">이용 목적 및 보유 기간</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Google LLC<br>(개인정보 보호 문의: <a href="https://support.google.com/policies" target="_blank" rel="noopener noreferrer">support.google.com/policies</a>)</td>
+          <td>미국 등 Google Cloud 리전</td>
+          <td>제1조의 수집 항목 전부</td>
+          <td>서비스 이용 시점에 네트워크를 통한 암호화 전송</td>
+          <td>클라우드 인프라를 통한 데이터 저장 · 처리 및 푸시 알림 발송 / 회원 탈퇴 또는 위탁 계약 종료 시까지</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    이용자는 개인정보의 국외 이전을 거부할 수 있습니다. 다만 Firebase는 서비스 제공에 필수적인 인프라이므로,
+    국외 이전을 거부하는 경우 회원가입 및 주문 서비스 이용이 제한됩니다.
+    거부를 원하는 경우 제12조의 문의처로 연락해 주시기 바랍니다.
+  </p>
+
+  <h2 id="p7">7. 위치정보의 처리</h2>
+  <ol>
+    <li>회사는 지도 기반 매장 탐색 및 거리순 정렬을 위해 이용자 단말기의 위치정보를 수집합니다.</li>
+    <li>위치정보 수집은 <strong>선택 항목</strong>이며, 운영체제의 위치 권한 동의를 통해 이루어집니다. 동의하지 않는 경우에도 지도를 직접 이동하여 매장을 조회할 수 있습니다.</li>
+    <li>수집한 위치정보는 매장 조회 요청을 처리하는 동안에만 사용하며, <strong>개인별 위치 이력으로 저장하지 않습니다.</strong></li>
+    <li>이용자는 운영체제 설정(설정 → 앱 → Qradar → 권한 → 위치) 또는 앱 내 설정 화면에서 언제든지 위치 권한을 철회할 수 있습니다.</li>
+    <li>배달 주문 시 입력한 배달 주소는 위치정보와 별도로 제1조에 따라 주문 정보로 처리됩니다.</li>
+  </ol>
+
+  <h2 id="p8">8. 개인정보의 파기</h2>
+  <ol>
+    <li>회사는 보유 기간이 경과하거나 처리 목적이 달성된 경우 지체 없이(사유 발생일로부터 5일 이내) 해당 개인정보를 파기합니다.</li>
+    <li>전자적 파일 형태의 정보는 복구 · 재생이 불가능한 기술적 방법으로 영구 삭제하며, 종이 문서는 분쇄하거나 소각합니다.</li>
+    <li>법령에 따라 보존해야 하는 정보는 다른 개인정보와 분리하여 별도의 데이터베이스에 저장 · 관리합니다.</li>
+  </ol>
+
+  <h2 id="p9">9. 이용자 및 법정대리인의 권리와 행사 방법</h2>
+  <ol>
+    <li>이용자는 언제든지 자신의 개인정보에 대해 <strong>열람 · 정정 · 삭제 · 처리정지</strong>를 요구할 수 있습니다.</li>
+    <li>권리 행사는 다음 방법으로 할 수 있습니다.
+      <ul>
+        <li>앱 내: 내 정보 → 프로필 수정 / 회원 탈퇴</li>
+        <li>이메일: <span data-biz="privacyEmail"></span></li>
+        <li>전화: <span data-biz="tel"></span></li>
+      </ul>
+    </li>
+    <li>이용자가 개인정보의 오류에 대해 정정을 요청한 경우, 회사는 정정을 완료하기 전까지 해당 개인정보를 이용하거나 제공하지 않습니다.</li>
+    <li>법령에 따라 보존 의무가 있는 정보 또는 다른 사람의 생명 · 신체 · 재산을 부당하게 침해할 우려가 있는 경우에는 삭제 · 처리정지 요구가 제한될 수 있으며, 이 경우 그 사유를 지체 없이 알려드립니다.</li>
+    <li>만 14세 미만 아동의 개인정보는 법정대리인의 동의 없이 수집하지 않습니다. 법정대리인은 아동의 개인정보에 대해 열람 · 정정 · 삭제 · 처리정지를 요구할 수 있습니다.</li>
+    <li>이용자는 대리인을 통해 권리를 행사할 수 있으며, 이 경우 「개인정보 처리 방법에 관한 고시」 별지 제11호 서식에 따른 위임장을 제출해야 합니다.</li>
+  </ol>
+
+  <h2 id="p10">10. 개인정보의 안전성 확보 조치</h2>
+  <ol>
+    <li><strong>관리적 조치</strong> — 개인정보 취급 담당자를 최소한으로 지정 · 관리하며, 내부관리계획을 수립하여 정기적으로 교육을 실시합니다.</li>
+    <li><strong>기술적 조치</strong>
+      <ul>
+        <li>개인정보 전송 구간 전체에 TLS 암호화를 적용합니다.</li>
+        <li>비밀번호는 복호화가 불가능한 일방향 암호화 방식으로 저장합니다.</li>
+        <li>데이터베이스 접근 권한을 역할 기반으로 분리하고, 서버 측 보안 규칙으로 권한 없는 접근을 차단합니다.</li>
+        <li>결제 금액은 서버에서 재산정하여 검증하므로, 클라이언트 변조를 통한 부정 결제를 차단합니다.</li>
+        <li>접근 기록을 보관하고 위 · 변조를 방지합니다.</li>
+      </ul>
+    </li>
+    <li><strong>물리적 조치</strong> — 개인정보가 저장되는 서버는 수탁자(Google LLC)의 데이터센터에서 운영되며, 해당 시설의 물리적 접근 통제 체계를 적용받습니다.</li>
+  </ol>
+
+  <h2 id="p11">11. 자동 수집 장치 및 광고식별자</h2>
+  <ol>
+    <li>회사는 Qradar 앱에서 맞춤형 광고를 위한 광고식별자(ADID / IDFA)를 수집하지 않습니다.</li>
+    <li>회사 웹사이트는 서비스 소개 목적의 정적 페이지로 운영되며, 이용자를 식별하거나 추적하기 위한 쿠키를 사용하지 않습니다.</li>
+    <li>이용자는 운영체제 설정에서 광고식별자를 초기화하거나 맞춤형 광고를 제한할 수 있습니다.
+      <ul>
+        <li>Android: 설정 → Google → 광고 → 광고 ID 삭제</li>
+        <li>iOS: 설정 → 개인정보 보호 및 보안 → 추적 → 앱이 추적을 요청하도록 허용 해제</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h2 id="p12">12. 개인정보보호책임자 및 문의처</h2>
+  <p>
+    회사는 개인정보 처리에 관한 업무를 총괄하여 책임지고,
+    개인정보 처리와 관련한 이용자의 불만 처리 및 피해 구제를 위해 아래와 같이 개인정보보호책임자를 지정하고 있습니다.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">구분</th><th scope="col">내용</th></tr></thead>
+      <tbody>
+        <tr><td>개인정보보호책임자</td><td><span data-biz="privacyOfficer"></span> (<span data-biz="privacyOfficerTitle"></span>)</td></tr>
+        <tr><td>이메일</td><td><span data-biz="privacyEmail"></span></td></tr>
+        <tr><td>전화</td><td><span data-biz="tel"></span></td></tr>
+        <tr><td>운영시간</td><td><span data-biz="hours"></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    이용자는 서비스를 이용하면서 발생한 모든 개인정보 보호 관련 문의, 불만 처리, 피해 구제를
+    개인정보보호책임자에게 문의할 수 있으며, 회사는 지체 없이 답변 · 처리합니다.
+  </p>
+
+  <h2 id="p13">13. 권익침해 구제 방법</h2>
+  <p>
+    이용자는 개인정보 침해로 인한 피해를 구제받기 위해 아래 기관에 분쟁 해결이나 상담을 신청할 수 있습니다.
+  </p>
+  <ul>
+    <li>개인정보분쟁조정위원회 — 1833-6972 / <a href="https://www.kopico.go.kr" target="_blank" rel="noopener noreferrer">www.kopico.go.kr</a></li>
+    <li>개인정보침해 신고센터 (한국인터넷진흥원) — 118 / <a href="https://privacy.kisa.or.kr" target="_blank" rel="noopener noreferrer">privacy.kisa.or.kr</a></li>
+    <li>대검찰청 사이버수사과 — 1301 / <a href="https://www.spo.go.kr" target="_blank" rel="noopener noreferrer">www.spo.go.kr</a></li>
+    <li>경찰청 사이버수사국 — 182 / <a href="https://ecrm.police.go.kr" target="_blank" rel="noopener noreferrer">ecrm.police.go.kr</a></li>
+  </ul>
+  <p>
+    또한 개인정보 보호법 제35조(열람), 제36조(정정 · 삭제), 제37조(처리정지)에 따른 요구에 대해
+    회사가 조치를 취하지 않거나 거부한 경우, 개인정보 보호법 제62조에 따라
+    개인정보 보호위원회에 침해 사실을 신고할 수 있습니다.
+  </p>
+
+  <h2 id="p14">14. 개인정보처리방침의 변경</h2>
+  <ol>
+    <li>본 개인정보처리방침은 <span data-biz="privacyDate"></span>부터 시행합니다.</li>
+    <li>법령 · 정책 또는 보안 기술의 변경에 따라 내용을 추가 · 삭제 · 수정하는 경우, 변경 사항의 시행 <strong>7일 전부터</strong> 앱 내 공지사항 및 본 페이지를 통해 공고합니다.</li>
+    <li>이용자의 권리에 중대한 영향을 미치는 변경의 경우에는 시행 <strong>30일 전부터</strong> 공고하고, 필요한 경우 별도의 동의를 받습니다.</li>
+  </ol>
+
+</div>
+</main>
+
+<div id="site-footer"></div>
+<script src="assets/site.js"></script>
+</body>
+</html>

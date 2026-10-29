@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qradar — 고품질을 찾는 사람들의 레이더</title>
+<meta name="description" content="Qradar(큐레이더)는 지도에서 가까운 카페를 찾아 미리 주문하고 결제한 뒤 줄 서지 않고 받아가는 카페 주문 앱입니다. 픽업과 배달, 적립 포인트 Qoin을 지원합니다.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://order-app-5957e.web.app/">
+<meta property="og:title" content="Qradar — 고품질을 찾는 사람들의 레이더">
+<meta property="og:description" content="지도에서 찾고, 미리 주문하고, 줄 서지 않고 받아가는 카페 주문 앱.">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main id="main">
+
+  <!-- ══ 히어로 ═════════════════════════════════════════════════════════ -->
+  <div class="hero">
+    <div class="wrap">
+      <svg class="qlogo qlogo-xl" viewBox="0 0 100 100" aria-hidden="true">
+        <path d="M 73.09 79.55 A 37.5 37.5 0 1 1 87.5 50 L 75 50 A 25 25 0 1 0 65.39 69.70 Z" fill="currentColor"/>
+        <path d="M 69.09 60.61 L 97.73 89.24 L 80.75 89.24 L 52.12 60.61 Z" fill="currentColor"/>
+      </svg>
+      <h1>고품질을 찾는 사람들의 <em>레이더</em></h1>
+      <p class="lede">
+        Qradar는 지도에서 가까운 카페를 찾아 미리 주문·결제하고,
+        줄 서지 않고 받아가는 카페 주문 앱입니다.
+      </p>
+      <div class="badges">
+        <span class="badge">사이렌오더 픽업</span>
+        <span class="badge">배달 주문</span>
+        <span class="badge ghost">적립 포인트 Qoin</span>
+        <span class="badge ghost">실시간 주문 알림</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 서비스 소개 ════════════════════════════════════════════════════ -->
+  <section id="service">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Service</span>
+        <h2>무엇을 파는 서비스인가요</h2>
+        <p>
+          Qradar는 제휴 카페 매장의 <strong>음료 · 디저트 등 식음료 상품</strong>을
+          모바일 앱에서 주문·결제할 수 있게 하는 서비스입니다.
+          결제한 상품은 매장에서 직접 받거나(픽업), 배달로 받습니다.
+        </p>
+      </div>
+
+      <div class="grid c3">
+        <div class="card">
+          <div class="ico">Q</div>
+          <h3>지도 기반 매장 탐색</h3>
+          <p>현재 위치 주변의 제휴 매장을 지도에서 확인하고, 거리 · 브랜드 · 영업 여부로 필터링합니다.</p>
+        </div>
+        <div class="card">
+          <div class="ico">◎</div>
+          <h3>미리 주문 · 미리 결제</h3>
+          <p>매장에 도착하기 전에 메뉴와 옵션을 고르고 결제까지 끝냅니다. 매장에서는 받기만 합니다.</p>
+        </div>
+        <div class="card">
+          <div class="ico">↗</div>
+          <h3>주문 상태 실시간 알림</h3>
+          <p>접수 → 제조중 → 준비 완료 단계가 푸시 알림으로 전달됩니다.</p>
+        </div>
+        <div class="card">
+          <div class="ico">₩</div>
+          <h3>적립 포인트 Qoin</h3>
+          <p>결제 금액에 따라 Qoin이 적립됩니다. Qoin은 현금으로 환급되지 않는 무상 적립 포인트입니다.</p>
+        </div>
+        <div class="card">
+          <div class="ico">★</div>
+          <h3>후기와 평점</h3>
+          <p>실제로 주문한 Qrator만 매장 후기를 남길 수 있어, 평점이 실제 경험을 반영합니다.</p>
+        </div>
+        <div class="card">
+          <div class="ico">⏱</div>
+          <h3>영업시간 자동 반영</h3>
+          <p>매장 운영시간 외에는 주문이 자동으로 차단되어, 받을 수 없는 주문이 결제되지 않습니다.</p>
+        </div>
+      </div>
+
+      <h3 style="font-size:19px;margin:48px 0 16px;">앱에서 쓰는 용어</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Qradar 용어</th><th scope="col">일반 용어</th><th scope="col">설명</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Qoin</strong></td><td>적립 포인트</td><td>결제 시 적립되는 앱 내 무상 포인트. 현금 환급 불가.</td></tr>
+            <tr><td><strong>Qrator</strong></td><td>사용자 · 회원</td><td>좋은 것을 골라내는 사람이라는 뜻의 Qradar 회원 호칭.</td></tr>
+            <tr><td><strong>Log</strong></td><td>주문 내역</td><td>주문 · 결제 · 수령 기록을 모아 보는 화면.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 이용 방법 ══════════════════════════════════════════════════════ -->
+  <section id="howto">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">How to use</span>
+        <h2>주문부터 수령까지</h2>
+        <p>앱 설치 후 회원가입하면 바로 주문할 수 있습니다.</p>
+      </div>
+
+      <div class="grid c4">
+        <div class="card">
+          <span class="step-no">1</span>
+          <h3>회원가입 · 로그인</h3>
+          <p>카카오 · 네이버 · 구글 계정 또는 이메일 인증으로 가입합니다.</p>
+        </div>
+        <div class="card">
+          <span class="step-no">2</span>
+          <h3>매장과 메뉴 선택</h3>
+          <p>지도에서 매장을 고르고, 메뉴와 옵션(온도 · 샷 · 시럽 등)을 담습니다.</p>
+        </div>
+        <div class="card">
+          <span class="step-no">3</span>
+          <h3>결제</h3>
+          <p>최종 금액을 확인하고 카드 · 간편결제로 결제합니다. 결제 금액은 서버에서 다시 계산해 검증합니다.</p>
+        </div>
+        <div class="card">
+          <span class="step-no">4</span>
+          <h3>수령</h3>
+          <p>준비 완료 알림을 받고 매장에서 픽업하거나, 배달로 받습니다.</p>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:28px;">
+        <p>
+          <strong>결제 금액 검증</strong> — Qradar는 앱이 보낸 금액을 그대로 승인하지 않습니다.
+          서버가 매장의 메뉴 가격과 선택한 옵션 가격을 다시 계산해 결제 요청 금액과 일치하는지
+          확인한 뒤에만 결제를 승인하고 주문을 생성합니다.
+          가격이 바뀐 경우에는 결제가 거절되고, 변경된 금액을 다시 확인한 뒤 주문하게 됩니다.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 메뉴 · 가격 ════════════════════════════════════════════════════ -->
+  <section id="menu">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Price</span>
+        <h2>판매 상품 및 가격</h2>
+        <p>
+          아래는 Qradar 앱에서 판매되는 상품과 가격입니다.
+          모든 금액은 <strong>부가세가 포함된 최종 결제 금액(원)</strong>이며, 앱에 표시되는 금액과 동일합니다.
+        </p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Q브루어리 강남점 — 기본 메뉴 (매장별로 가격이 다를 수 있으며, 앱에서 매장 선택 시 해당 매장 가격이 표시됩니다)</caption>
+          <thead>
+            <tr>
+              <th scope="col">분류</th>
+              <th scope="col">상품명</th>
+              <th scope="col" class="num">판매가 (부가세 포함)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>콜드브루</td><td>시그니처 아메리카노</td><td class="num price">4,800원</td></tr>
+            <tr><td>에스프레소</td><td>아메리카노</td><td class="num price">4,500원</td></tr>
+            <tr><td>콜드브루</td><td>콜드브루</td><td class="num price">5,500원</td></tr>
+            <tr><td>라떼</td><td>하우스 라떼</td><td class="num price">5,800원</td></tr>
+            <tr><td>라떼</td><td>바닐라 라떼</td><td class="num price">6,000원</td></tr>
+            <tr><td>티</td><td>얼그레이 티</td><td class="num price">5,000원</td></tr>
+            <tr><td>스무디</td><td>딸기 스무디</td><td class="num price">6,500원</td></tr>
+            <tr><td>케이크</td><td>클래식 초콜릿 케이크</td><td class="num price">7,500원</td></tr>
+            <tr><td>빵</td><td>버터 크루아상</td><td class="num price">4,200원</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:19px;margin:40px 0 16px;">옵션 추가 금액</h3>
+      <div class="table-wrap">
+        <table>
+          <caption>상품 가격에 아래 옵션 금액이 더해져 최종 결제 금액이 산출됩니다.</caption>
+          <thead>
+            <tr>
+              <th scope="col">옵션 그룹</th>
+              <th scope="col">선택 항목</th>
+              <th scope="col" class="num">추가 금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>온도 (필수)</td><td>HOT / ICED</td><td class="num">0원</td></tr>
+            <tr><td>샷 추가</td><td>샷 1회 추가</td><td class="num price">+500원</td></tr>
+            <tr><td>샷 추가</td><td>디카페인 변경</td><td class="num price">+500원</td></tr>
+            <tr><td>시럽</td><td>바닐라 / 헤이즐넛 / 카라멜 시럽 (각)</td><td class="num price">+500원</td></tr>
+            <tr><td>텀블러 할인</td><td>텀블러 사용</td><td class="num price" style="color:var(--success)">-300원</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="note">
+        예) 아메리카노(4,500원) + 샷 1회 추가(500원) + 텀블러 사용(-300원) = <strong>4,700원</strong>
+      </p>
+      <p class="note">
+        상품 가격 및 옵션 금액은 원재료 가격 등 사정에 따라 변경될 수 있으며,
+        변경 시 앱 내 메뉴 화면에 즉시 반영됩니다. 결제는 항상 결제 직전 화면에 표시된 최종 금액으로만 이루어집니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ 결제수단 · 상품 제공 ═══════════════════════════════════════════ -->
+  <section id="payment">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Payment &amp; Delivery</span>
+        <h2>결제 수단과 상품 제공 방법</h2>
+      </div>
+
+      <h3 style="font-size:19px;margin:0 0 16px;">결제 수단</h3>
+      <ul class="pay-list">
+        <li>신용 · 체크카드</li>
+        <li>토스페이</li>
+        <li>카카오페이</li>
+        <li>네이버페이</li>
+        <li>계좌이체</li>
+      </ul>
+      <p class="note" style="margin-bottom:44px;">
+        결제는 <strong><span data-biz="pg">토스페이먼츠 주식회사</span></strong>의 전자결제 서비스를 통해 처리됩니다.
+        Qradar는 카드번호 등 결제 수단 정보를 직접 저장하거나 보관하지 않습니다.
+      </p>
+
+      <h3 style="font-size:19px;margin:0 0 16px;">상품 제공 (배송) 안내</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">수령 방법</th>
+              <th scope="col">제공 시점</th>
+              <th scope="col">비용</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>픽업 (사이렌오더)</strong></td>
+              <td>결제 완료 후 매장이 접수하면 즉시 제조. 통상 <strong>5~15분</strong> 내 준비 완료 알림 발송. 매장 영업시간 내에만 주문 가능.</td>
+              <td>무료</td>
+            </tr>
+            <tr>
+              <td><strong>배달</strong></td>
+              <td>결제 완료 후 제조 및 배차. 매장과 배달지 거리에 따라 통상 <strong>20~60분</strong> 소요.</td>
+              <td>주문 시 화면에 표시되는 배달비가 결제 금액에 포함됩니다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        식음료 상품의 특성상 당일 즉시 제조·제공되며, 별도 택배 배송은 제공하지 않습니다.
+        매장 사정(품절 · 기기 고장 · 영업 종료 등)으로 제공이 불가능한 경우 매장이 주문을 거절하며,
+        결제 금액은 <a href="refund.html">취소 · 환불 정책</a>에 따라 전액 환불됩니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ 환불 요약 ══════════════════════════════════════════════════════ -->
+  <section id="refund-summary">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Refund</span>
+        <h2>취소 · 환불 정책 요약</h2>
+        <p>전체 내용은 <a href="refund.html">취소 · 환불 정책</a> 문서에서 확인할 수 있습니다.</p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">시점</th>
+              <th scope="col">취소 가능 여부</th>
+              <th scope="col">환불 금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>결제 직후 ~ 매장 접수 전</td>
+              <td style="color:var(--success);font-weight:700;">앱에서 즉시 취소 가능</td>
+              <td>전액 환불</td>
+            </tr>
+            <tr>
+              <td>매장이 주문을 거절한 경우</td>
+              <td>자동 취소</td>
+              <td>전액 환불</td>
+            </tr>
+            <tr>
+              <td>제조 시작 후</td>
+              <td>앱에서 취소 불가 — 고객센터 접수</td>
+              <td>상품 하자 · 오제조 · 미수령 사유 확인 후 전액 또는 부분 환불</td>
+            </tr>
+            <tr>
+              <td>상품 수령 완료 후</td>
+              <td>고객센터 접수</td>
+              <td>상품 하자가 확인된 경우 전액 환불 또는 재제공</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        환불은 최초 결제한 수단으로 처리됩니다. 카드 결제는 카드사 영업일 기준 <strong>3~7영업일</strong>,
+        계좌이체 · 간편결제는 <strong>영업일 기준 3~5일</strong> 내에 확인할 수 있습니다.
+        적립된 Qoin은 환불 시 함께 회수됩니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ 고객센터 ═══════════════════════════════════════════════════════ -->
+  <section id="support">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Support</span>
+        <h2>고객센터</h2>
+        <p>주문 · 결제 · 환불 문의는 아래로 연락해 주세요.</p>
+      </div>
+
+      <div class="support-box">
+        <h3>문의 안내</h3>
+        <dl>
+          <dt>전화</dt>
+          <dd><span data-biz="tel"></span></dd>
+          <dt>이메일</dt>
+          <dd><span data-biz="email"></span></dd>
+          <dt>운영시간</dt>
+          <dd><span data-biz="hours"></span></dd>
+          <dt>앱 내 문의</dt>
+          <dd>Qradar 앱 → 내 정보 → 고객센터</dd>
+        </dl>
+      </div>
+
+      <p class="note">
+        운영시간 외에 접수된 문의는 다음 영업일에 순차적으로 답변드립니다.
+        환불 문의 시 <strong>주문번호</strong>를 함께 알려주시면 처리가 빠릅니다.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<div id="site-footer"></div>
+<script src="assets/site.js"></script>
+</body>
+</html>
