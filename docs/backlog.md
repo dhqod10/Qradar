@@ -816,3 +816,35 @@ FCM 토큰 등록은 **로그인 성공 시(auth_provider)** 와 **알림 설정
   - **제품 결정 필요**: 최소 N(예: 3건), 미달 시 표기(미평가/신규/숨김), 필터·정렬 처리.
 - **착수 경로**: /architect 부터 (N·표시방식·필터정렬 정책 확정) → designer(배지/빈상태) → developer → tester.
 - **선택적 defense-in-depth(부분적)**: reviews create Rules 에 `uid != store.ownerId`(및 브랜드 보유자) 자기리뷰 차단. Q3 주문 가드와 중복성 있고 부계정은 못 막음 — 우선순위 낮음.
+
+## 웹 세션 인계 — 앱 영역 보안·정합성 8건 (2026-10-29)
+
+전문: `docs/tasks/web_role_console/app_session_handoff.md` (줄번호는 firestore.rules 825줄 기준). 아래는 앱 세션(orderapp-1a) **검증 판정** 포함.
+
+### 🔴 [검증됨] 1. 카카오/네이버 토큰 audience(수신자) 미검증 — `functions/src/verifyKakaoToken.ts`, `verifyNaverToken.ts`
+accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/v1/nid/me`) 호출 후 돌아온 id를 그대로 믿고 `kakao_<id>`/`naver_<id>` 커스텀토큰 발급. **토큰이 우리 앱에서 발급된 것인지(app_id/audience) 미검증**(코드 확인).
+- **평가**: 실제 하드닝 갭. 단 카카오 user id는 앱별 스코프라 앱그룹 미공유 시 타 앱 토큰은 다른 uid로 매핑 → "특정 피해자 계정 직접 탈취"는 제한적. 네이버는 스코프 특성이 달라 더 노출 가능 → **제대로 된 보안 평가 필요**.
+- **해법(인계 제시, 타당)**: 카카오 `/v1/user/access_token_info`로 app_id 검증 / 네이버는 서버가 authorization code를 직접 교환하는 흐름으로 전환.
+- 수정 범위: CF 재설계(큼). 웹과 무관하게 앱 경로로 이미 열려 있음.
+
+### 🔴 [검증됨] 2. Rules 브랜드 자기승인 — `firestore.rules` (brands/{id}/menuItems ~609, stores/*/menuOverrides 브랜드 분기 ~490)
+`allow create,update,delete: if isAdmin() || isBrandHolder(brandId)` — **브랜드 분기에 필드 화이트리스트/onlyChangedFields 없음**. 브랜드 보유자가 `status='approved'` 직접 써서 자기 제출물 자가승인 가능. 승인 경계가 Rules 아닌 앱 리포지토리 `_assertAdminOnly`로만 집행(점주 분기만 onlyChangedFields로 좁음).
+- **평가**: 명백한 권한 경계 구멍. 수정 저렴(브랜드 분기 필드 화이트리스트 추가). **우선순위 높음.**
+
+### ⬜ [미검증 — 착수 시 확인] 3. cascadeDeleteOverrides no-op — `master_menu_item_remote_data_source.dart:146-154`
+"menuOverrides 컬렉션이 아직 없다" 전제가 낡음 → 마스터 삭제해도 오버라이드 잔존, 같은 id 재생성 시 과거 가격·제외·품절이 되살아남.
+
+### ⬜ [미검증] 4. 점주 오버라이드 create에 masterMenuItemId 누락 — `menu_override_repository_impl.dart:162-178`
+브랜드 경로는 넣는데 점주 경로만 빠짐 → collectionGroup 쿼리가 점주 생성분 누락.
+
+### ⬜ [미검증] 5. 품절 토글이 옵션 비활성을 덮어쓸 가능성
+리포지토리가 3필드를 함께 씀. 호출부(`lib/presentation/owner/store_menu/`) 확인 필요.
+
+### ⬜ [미검증] 6. 브랜드 정보 수정이 타임스탬프 왕복에 의존 — `firestore.rules:568-571`
+직렬화 건드리면 조용히 깨질 수 있음.
+
+### ⬜ [미검증] 7. firebase.json Android appId가 실제 등록 앱과 다름
+google-services.json이 빌드에 쓰여 당장 영향 없고 `flutterfire configure` 돌릴 때만 문제.
+
+### ℹ️ 웹 세션 변경 (참고 — lib/·functions/ 무관)
+Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order-app-5957e), `firebase.json` hosting 블록 추가(diff +30/-0, firestore/storage/functions/flutter/emulators 무변경), `landing/` 신규(토스 랜딩+관리자 콘솔, 미배포).
