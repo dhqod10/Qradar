@@ -821,11 +821,12 @@ FCM 토큰 등록은 **로그인 성공 시(auth_provider)** 와 **알림 설정
 
 전문: `docs/tasks/web_role_console/app_session_handoff.md` (줄번호는 firestore.rules 825줄 기준). 아래는 앱 세션(orderapp-1a) **검증 판정** 포함.
 
-### 🔴 [검증됨] 1. 카카오/네이버 토큰 audience(수신자) 미검증 — `functions/src/verifyKakaoToken.ts`, `verifyNaverToken.ts`
+### ⚠️ [검증됨·심각도 하향] 1. 카카오/네이버 토큰 audience(수신자) 미검증 — `functions/src/verifyKakaoToken.ts`, `verifyNaverToken.ts`
 accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/v1/nid/me`) 호출 후 돌아온 id를 그대로 믿고 `kakao_<id>`/`naver_<id>` 커스텀토큰 발급. **토큰이 우리 앱에서 발급된 것인지(app_id/audience) 미검증**(코드 확인).
 - **평가**: 실제 하드닝 갭. 단 카카오 user id는 앱별 스코프라 앱그룹 미공유 시 타 앱 토큰은 다른 uid로 매핑 → "특정 피해자 계정 직접 탈취"는 제한적. 네이버는 스코프 특성이 달라 더 노출 가능 → **제대로 된 보안 평가 필요**.
 - **해법(인계 제시, 타당)**: 카카오 `/v1/user/access_token_info`로 app_id 검증 / 네이버는 서버가 authorization code를 직접 교환하는 흐름으로 전환.
 - 수정 범위: CF 재설계(큼). 웹과 무관하게 앱 경로로 이미 열려 있음.
+- **심각도 정정(2026-10-29)**: 웹 세션이 당초 🔴 "피해자 계정 직접 탈취"로 서술했으나, 카카오 회원번호가 앱 단위 스코프라 타 앱 토큰은 `kakao_<다른 id>`로 매핑돼 직접 탈취는 성립 안 함 → 양측 합의로 **⚠️(표준 하드닝)로 하향**. 남는 위험 4개: ① 공격자 앱이 Qradar 카카오 앱과 **같은 앱 그룹**이면 회원번호 공유로 성립(앱그룹 구성 미확인) ② **네이버 스코프 특성 상이 가능**(확인 필요) ③ 임의 외부 토큰으로 Firebase 계정 생성 가능한 엔드포인트 → **남용·할당량** 위험 ④ audience 검증은 소셜 로그인 백엔드 표준 요건.
 
 ### 🔴 [검증됨] 2. Rules 브랜드 자기승인 — `firestore.rules` (brands/{id}/menuItems ~609, stores/*/menuOverrides 브랜드 분기 ~490)
 `allow create,update,delete: if isAdmin() || isBrandHolder(brandId)` — **브랜드 분기에 필드 화이트리스트/onlyChangedFields 없음**. 브랜드 보유자가 `status='approved'` 직접 써서 자기 제출물 자가승인 가능. 승인 경계가 Rules 아닌 앱 리포지토리 `_assertAdminOnly`로만 집행(점주 분기만 onlyChangedFields로 좁음).
@@ -837,8 +838,8 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
 ### ⬜ [미검증] 4. 점주 오버라이드 create에 masterMenuItemId 누락 — `menu_override_repository_impl.dart:162-178`
 브랜드 경로는 넣는데 점주 경로만 빠짐 → collectionGroup 쿼리가 점주 생성분 누락.
 
-### ⬜ [미검증] 5. 품절 토글이 옵션 비활성을 덮어쓸 가능성
-리포지토리가 3필드를 함께 씀. 호출부(`lib/presentation/owner/store_menu/`) 확인 필요.
+### ✅ [검증됨 — 문제 없음] 5. 품절 토글이 옵션 비활성을 덮어쓸 가능성 → 아님
+인라인 품절 토글(`owner_store_menu_list_page.dart _toggleSoldOut`)은 두 경로 모두 `item.copyWith(soldOut:)` / `override.copyWith(soldOut:)` 로 **현재 항목에서 복사** → disabled*(옵션 비활성) 보존. 리포지토리(`menu_override_repository_impl.dart:169-194`)가 soldOut+disabled* 3필드를 함께 쓰지만 호출부가 **빈 배열이 아닌 현재값**을 넘기므로 덮어쓰기 없음. (이론상 좁은 stale-read 레이스만 존재 — 토글이 옵션을 날리는 버그 아님.)
 
 ### ⬜ [미검증] 6. 브랜드 정보 수정이 타임스탬프 왕복에 의존 — `firestore.rules:568-571`
 직렬화 건드리면 조용히 깨질 수 있음.
