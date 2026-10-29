@@ -790,7 +790,7 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:rollback --project ord
 
 산출물: `docs/tasks/web_role_console/design.md`
 
-- **Q1~Q6 답을 받은 뒤 시작**한다. Q3(owner 매장 정보 수정)이 화면 개수를 바꾼다.
+- **Q1~Q6 전부 확정됨**(§18 결정 완료 블록). Q3 가 **포함**으로 뒤집혔으므로 owner 섹션에 매장 정보 수정 화면 **2개**(운영 필드 / 핵심 필드)가 추가된다.
 - **기존 `docs/tasks/web_admin_console/design.md` (1,073줄)를 출발점으로 쓴다.** admin 섹션은 **재디자인하지 않는다** — 셸이 역할 배지와 역할별 네비를 갖도록 확장하는 것까지만.
 - 설계할 것:
   - **역할별 네비 구조**(§8.2)와 **역할 배지**(UI4). 현재 어떤 권한으로 보고 있는지가 상시 보여야 한다.
@@ -991,6 +991,58 @@ admin 섹션(1차)은 Email/Google 로 충분하므로 **지금 당장 막히는
 ---
 
 ## 18. 사용자 확인이 필요한 결정사항
+
+> ### ✅ 결정 완료 (2026-10-29, 사용자 확인)
+>
+> | | 결정 | 비고 |
+> |---|---|---|
+> | **Q1** | **이관 완료** | `landing/admin/` → `landing/console/` **이미 수행**(커밋 `1a99664`). 내부 파일도 `console-*` 로 개명. 기능 변화 0 |
+> | **Q2** | **넣는다** | 오버라이드 create 에 `masterMenuItemId` 포함. 앱 수정(T6-ⓑ)이 없으면 앱 생성분은 계속 누락됨을 받아들인다 |
+> | **Q3** | **🔄 포함한다 (권고 뒤집힘)** | 아래 **Q3 정정** 참조. 운영/핵심 필드를 **분리한 두 폼**으로 제공 |
+> | **Q4** | **저장되게 한다** | 마스터 메뉴 운영 수정의 `disabledOption*` |
+> | **Q5** | **웹 소셜 로그인 = 고객 섹션의 전제조건** | 1차(admin)는 Email/Google 로 충분해 **지금 막히는 것 없음**. T15 참조 |
+> | **Q6** | **읽기 전용** | customer 섹션에 쓰기 없음 |
+>
+> ### ⚠️ Q3 정정 — "재심사 = 영업 중단" 은 사실이 아니다
+>
+> 최초 권고는 **(A) 비범위 유지**였고 근거는 "핵심 필드 수정이 `status='pending'` 회귀를 일으켜
+> **매장 재심사를 트리거**하므로 위험하다" 였다. **그 근거가 틀렸다.**
+>
+> `functions/src/storeSellability.ts` 의 판정식:
+>
+> ```
+> canSellNow = (status == 'approved') || (status == 'pending' && approvedAt != null)
+> ```
+>
+> 같은 파일 주석이 이 흐름을 **명시적으로 설계에 넣어 뒀다**:
+> *"영업 중 매장이 정보를 고치면 `status` 가 `pending` 으로 회귀하지만 `approvedAt` 이 남아 있으므로
+> 막히지 않는다 (R2 불변식)."*
+>
+> → **핵심 필드를 고쳐도 주문·결제는 계속된다.** 재심사는 승인 큐에 다시 올라간다는 뜻일 뿐이다.
+>
+> 게다가 점주가 자주 고치는 값은 **애초에 재심사 대상이 아니다** (`store_model.dart:286-323`):
+>
+> | 구분 | 필드 | `status` 회귀 |
+> |---|---|---|
+> | **운영 필드** (`toFirestoreForOperationUpdate`) | `phone` `description` `notice` `excludedMainCategories` `businessHours` `temporaryClosed` `closedDates` `imageUrls` `imageUrl` | **없음** |
+> | **핵심 필드** (`toFirestoreForCoreUpdate`) | `name` `address` `location` `menuCategories` `businessRegistrationNumber` | 있음 (`→ pending`) |
+>
+> **설계 요건 (중요)**
+> 1. **두 묶음을 한 폼에서 섞지 않는다.** 섞으면 전화번호만 고쳐도 핵심 payload 가 함께 나가
+>    불필요한 재심사가 걸린다. 앱은 이미 두 메서드로 나눠 두었다(W-O14 / W-O15).
+> 2. **운영 필드**: 안내 없이 저장. 재심사 없음.
+> 3. **핵심 필드**: 확인 단계에 안내 —
+>    *"상호명 · 주소 · 사업자등록번호를 바꾸면 관리자 재승인 대상이 됩니다.
+>    **영업과 주문은 그대로 계속됩니다.**"*
+> 4. 🔴 **`approvedAt` 을 절대 건드리지 않는다.** `store_repository_impl.dart:181` 의
+>    `isResubmit = (status == rejected)` 경로만 `approvedAt` 을 null 로 지운다.
+>    `approved`/`pending` 매장에서 그 경로를 타면 **그 순간 `canSellNow` 가 false 가 되어 영업이 멈춘다.**
+>    콘솔은 `rejected` 매장에서만 재제출 payload 를 쓰고, 그 외에는 승인 메타를 payload 에 넣지 않는다.
+> 5. §13-4-ⓑ 가 적은 "매장 운영 정보 변경은 이력에 남지 않는다"(`audit_trail` A2 공백)가
+>    **이제 웹 표면에도 적용된다.** Q3 를 범위로 들인 비용이며, 별 과제로 남긴다.
+>
+> 아래 표는 결정 근거의 기록으로 남긴다. Q3 행의 최초 권고는 위 정정으로 **대체되었다.**
+
 
 | # | 질문 | 분기 | 권고 |
 |---|---|---|---|
