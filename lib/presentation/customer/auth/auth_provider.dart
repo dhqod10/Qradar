@@ -54,6 +54,24 @@ final signUpWithEmailUseCaseProvider = Provider<SignUpWithEmailUseCase>((ref) {
 class AuthNotifier extends AsyncNotifier<UserEntity?> {
   @override
   Future<UserEntity?> build() async {
+    // FCM 토큰 재발급/로테이션 → 로그인 상태면 재등록. build 재호출 시에도
+    // onDispose 로 이전 구독이 정리되어 중복 구독되지 않는다.
+    final tokenRefreshSub =
+        ref.read(pushNotificationRepositoryProvider).onTokenRefresh().listen(
+      (_) async {
+        // uid 는 이벤트마다 읽는다 (캡처 금지) — 로그아웃/로딩 중이면 무시.
+        final uid = state.asData?.value?.uid;
+        if (uid == null) return;
+        try {
+          await ref.read(registerFcmTokenUseCaseProvider).call(uid);
+        } catch (_) {
+          // silent — 토큰 등록 실패가 앱 동작에 영향 주지 않는다.
+        }
+      },
+      onError: (_) {},
+    );
+    ref.onDispose(tokenRefreshSub.cancel);
+
     // Auth 세션 확인. Naver/Kakao 로그인도 Custom Token 으로 Firebase Auth
     // 세션에 통합되므로 currentUser 하나로 모든 provider 를 확인할 수 있다.
     return ref.read(authRepositoryProvider).currentUser;
