@@ -830,6 +830,10 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
   - **네이버 = authorization-code-exchange 로 전환 확정.** 클라(앱·웹)는 access token 대신 **인증 코드**를 CF 에 전달, CF 가 server-side 로 client_secret 교환(코드가 우리 앱 전용이라 audience 자연 보장). verifyNaverToken 입력 계약이 {accessToken} → {code(+state/redirect)} 로 바뀜. **웹 콘솔은 이 계약 위에 네이버 로그인을 구현**(재작업 방지). 
   - **카카오 = 계약 불변**. 클라는 access token 그대로, 서버가 `/v1/user/access_token_info` 로 **app_id 검증만 추가**(웹 영향 0).
   - **구현은 런칭 전**. 지금은 계약/방향만 확정.
+  - **구현 시 메모 (웹 세션 피드백 반영)**:
+    - ⚠️ **계정 동일성(되돌리기 어려움)**: uid=`naver_<id>`/`kakao_<id>` 를 앱/웹이 공유하려면 **기존 카카오 앱·네이버 애플리케이션에 '웹 플랫폼'을 추가**해야 함. **새 앱을 만들면 회원번호가 달라져 계정이 쪼개짐.** 개발자 콘솔 작업 시 반드시 기존 앱에 웹 추가.
+    - **redirect_uri 화이트리스트**: 네이버 콘솔에 콘솔 주소(해시: `/console/index.html`, rewrite 후: `/console`) + 개발용 `localhost` 등록. **CF 는 클라가 보낸 redirect_uri 를 그대로 믿지 말고 서버 화이트리스트와 대조**(오픈 리다이렉트 방지).
+    - **웹 측 방어(웹 세션 spec 기록)**: state 저장·대조(CSRF), code 1회용→소비 즉시 URL 제거, 로그인 실패 fail-closed. 카카오는 계약 불변이라 웹도 access token 그대로.
 - **심각도 정정(2026-10-29)**: 웹 세션이 당초 🔴 "피해자 계정 직접 탈취"로 서술했으나, 카카오 회원번호가 앱 단위 스코프라 타 앱 토큰은 `kakao_<다른 id>`로 매핑돼 직접 탈취는 성립 안 함 → 양측 합의로 **⚠️(표준 하드닝)로 하향**. 남는 위험 4개: ① 공격자 앱이 Qradar 카카오 앱과 **같은 앱 그룹**이면 회원번호 공유로 성립(앱그룹 구성 미확인) ② **네이버 스코프 특성 상이 가능**(확인 필요) ③ 임의 외부 토큰으로 Firebase 계정 생성 가능한 엔드포인트 → **남용·할당량** 위험 ④ audience 검증은 소셜 로그인 백엔드 표준 요건.
 
 ### ✅ [해결됨·배포 2026-10-29] 2. Rules 브랜드 자기승인 — `firestore.rules` (brands/{id}/menuItems ~609, stores/*/menuOverrides 브랜드 분기 ~490)
