@@ -1,5 +1,5 @@
 /* ============================================================================
-   Qradar 관리자 콘솔 스타일
+   Qradar 콘솔 스타일 (admin · brand · owner · customer 공통)
    - ../../assets/style.css (landing) 의 :root 변수를 상속한다. 이 파일에는 색상 리터럴이 없다.
      색은 전부 var(--…) 이고, 연한 배경은 color-mix 로 변수끼리만 섞는다 (design §2-4).
    - style.css 자체는 수정하지 않는다 (랜딩 회귀 방지). style.css 의 전역 요소 규칙
@@ -321,4 +321,108 @@
   .a-kv { grid-template-columns: 1fr; gap: 2px 0; }
   .a-kv dd { margin-bottom: 10px; }
   .a-gate-card { padding: 24px; }
+}
+
+/* ============================================================================
+   역할별 콘솔 확장 (web_role_console) — 신규 색상값 없음. 전부 var(--…) 와 color-mix(변수끼리).
+   ========================================================================== */
+
+/* ── 셸: 역할 칩 · 컨텍스트 블록 ─────────────────────────────────────────── */
+.a-role-chip { color: var(--text-heading); font-weight: 600; min-height: 24px; }
+.a-chip-strong { color: var(--text-heading); font-weight: 600; }
+.a-ctx { margin: 0 8px 8px; padding-top: 4px; }
+.a-ctx-name { font-size: 14px; font-weight: 700; color: var(--text-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
+.a-nav-group .a-chip { margin-left: 6px; }
+.a-in-main { margin: 24px auto; text-align: center; }
+.a-in-main h2 { text-align: center; }
+
+/* ── 폼 ─────────────────────────────────────────────────────────────────── */
+.a-counter { float: right; font-size: 13px; font-weight: 400; color: var(--text-muted); }
+.a-help { margin-top: 6px; font-size: 13px; color: var(--text-muted); }
+.a-readonly { padding: 8px 12px; background: var(--surface); border-radius: 10px; font-size: 15px; color: var(--text-body); overflow-wrap: anywhere; }
+.a-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.a-time { width: auto; min-width: 140px; }
+.a-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--text-body); cursor: pointer; }
+.a-check input { width: 18px; height: 18px; accent-color: var(--primary); }
+.a-checklist { display: grid; gap: 8px; }
+.a-clamp { max-width: 420px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.a-actions { white-space: nowrap; }
+.a-actions a, .a-actions .a-link { margin-right: 10px; font-size: 14px; }
+.a-sub-h { font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin: 8px 0 6px; }
+.a-why { margin-top: 4px; font-size: 13px; color: var(--text-muted); }
+.a-why summary { cursor: pointer; }
+
+/* ── 스위치 (N3) — 켜짐/꺼짐 글자를 항상 병기 (색만으로 구분하지 않는다) ───── */
+.a-switch { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 4px 0; cursor: pointer; font: inherit; color: var(--text-heading); }
+.a-sw-track { width: 40px; height: 24px; border-radius: 999px; background: var(--border); position: relative; flex: none; transition: background .15s; }
+.a-sw-knob { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-elevated); transition: transform .15s; }
+.a-switch[aria-checked="true"] .a-sw-track { background: var(--primary); }
+.a-switch[aria-checked="true"] .a-sw-knob { transform: translateX(16px); }
+.a-switch:focus-visible { outline: 2px solid var(--primary-bright); outline-offset: 2px; border-radius: 8px; }
+.a-switch:disabled { cursor: not-allowed; opacity: .7; }
+.a-switch.busy .a-sw-knob { border: 2px solid var(--border); border-top-color: var(--primary-bright); animation: a-rot .8s linear infinite; background: transparent; }
+.a-sw-text { font-size: 13.5px; font-weight: 600; min-width: 32px; }
+.a-sw-err { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--error); }
+.a-sw-row { vertical-align: middle; }
+
+/* ── 고정 저장 바 (N5) ───────────────────────────────────────────────────── */
+.a-savebar {
+  position: sticky; bottom: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin-top: 24px; padding: 12px 0; background: var(--surface-elevated); border-top: 1px solid var(--border);
+}
+.a-sb-left { display: flex; align-items: center; gap: 12px; min-width: 0; font-size: 13.5px; color: var(--text-muted); }
+.a-sb-dirty.on { color: var(--text-heading); font-weight: 600; }
+.a-sb-dirty.on::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--primary-bright); margin-right: 6px; vertical-align: middle; }
+.a-sb-target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.a-sb-right { display: flex; gap: 8px; }
+
+/* ── 변경 요약 (N6) · U6 비교 ─────────────────────────────────────────────── */
+.a-changes { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.a-changes li { display: grid; grid-template-columns: 110px 1fr auto 1fr; gap: 8px; align-items: baseline; font-size: 14px; }
+.a-ch-k { font-weight: 700; color: var(--text-heading); }
+.a-ch-a { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.a-ch-b { font-weight: 600; color: var(--text-heading); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.a-u6 { display: flex; align-items: center; gap: 16px; padding: 12px 16px; margin: 0 0 12px; background: var(--surface); border-radius: 10px; }
+.a-u6 > div { display: grid; gap: 2px; }
+.a-u6 strong { font-size: 18px; color: var(--text-heading); }
+.a-modal.wide { width: 640px; }
+.a-modal .a-banner { margin-bottom: 12px; font-size: 14px; }
+
+/* ── 탭 (N2) ─────────────────────────────────────────────────────────────── */
+.a-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-top: 8px; }
+.a-tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; font-size: 14.5px; font-weight: 600; color: var(--text-body); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.a-tabs a[aria-current="page"] { color: var(--text-heading); border-bottom-color: var(--primary); }
+.a-tabs a:hover { text-decoration: none; background: var(--surface); }
+
+/* ── 이미지 선택 · 그리드 (N7) · 날짜 칩 (N8) ─────────────────────────────── */
+.a-imgpick { display: flex; align-items: center; gap: 16px; }
+.a-imggrid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.a-gimg { position: relative; display: grid; gap: 4px; justify-items: start; }
+.a-gimg img { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; background: var(--surface); }
+.a-gimg .a-chip { position: absolute; top: 4px; left: 4px; }
+.a-gadd { width: 96px; height: 96px; display: grid; place-items: center; border: 1px dashed var(--border); border-radius: 8px; }
+.a-datechips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.a-datechip { display: inline-flex; align-items: center; gap: 8px; padding: 2px 10px; border-radius: 999px; background: var(--surface); font-size: 13.5px; }
+.a-catsw { display: grid; gap: 4px; }
+.a-catsw .a-sw-row { display: flex; align-items: center; justify-content: space-between; max-width: 360px; }
+
+/* ── 옵션 비활성 / 편집 모달 ──────────────────────────────────────────────── */
+.a-optgrp { border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px 12px; margin: 0 0 12px; }
+.a-optgrp legend { padding: 0 6px; font-size: 14px; }
+.a-optitems { display: grid; gap: 6px; }
+.a-itemrow { display: grid; grid-template-columns: 1fr 140px auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+
+/* ── customer: 프로필 · 준비 중 카드 (N11 — 링크·호버·포커스 효과 없음) ──────── */
+.a-profile-head { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.a-profile-name { font-size: 20px; font-weight: 700; color: var(--text-heading); }
+.a-soon { list-style: none; margin: 0; padding: 0; }
+.a-soon-card { padding: 20px; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
+.a-soon-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.a-soon-card h3 { font-size: 16px; font-weight: 700; margin: 0; }
+.a-soon-card p { margin: 0; font-size: 14px; color: var(--text-body); }
+
+@media (max-width: 880px) {
+  .a-changes li { grid-template-columns: 1fr; }
+  .a-itemrow { grid-template-columns: 1fr; }
+  .a-savebar { flex-direction: column; align-items: stretch; }
 }
