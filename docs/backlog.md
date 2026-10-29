@@ -828,9 +828,10 @@ accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/
 - 수정 범위: CF 재설계(큼). 웹과 무관하게 앱 경로로 이미 열려 있음.
 - **심각도 정정(2026-10-29)**: 웹 세션이 당초 🔴 "피해자 계정 직접 탈취"로 서술했으나, 카카오 회원번호가 앱 단위 스코프라 타 앱 토큰은 `kakao_<다른 id>`로 매핑돼 직접 탈취는 성립 안 함 → 양측 합의로 **⚠️(표준 하드닝)로 하향**. 남는 위험 4개: ① 공격자 앱이 Qradar 카카오 앱과 **같은 앱 그룹**이면 회원번호 공유로 성립(앱그룹 구성 미확인) ② **네이버 스코프 특성 상이 가능**(확인 필요) ③ 임의 외부 토큰으로 Firebase 계정 생성 가능한 엔드포인트 → **남용·할당량** 위험 ④ audience 검증은 소셜 로그인 백엔드 표준 요건.
 
-### 🔴 [검증됨] 2. Rules 브랜드 자기승인 — `firestore.rules` (brands/{id}/menuItems ~609, stores/*/menuOverrides 브랜드 분기 ~490)
+### ✅ [해결됨·배포 2026-10-29] 2. Rules 브랜드 자기승인 — `firestore.rules` (brands/{id}/menuItems ~609, stores/*/menuOverrides 브랜드 분기 ~490)
 `allow create,update,delete: if isAdmin() || isBrandHolder(brandId)` — **브랜드 분기에 필드 화이트리스트/onlyChangedFields 없음**. 브랜드 보유자가 `status='approved'` 직접 써서 자기 제출물 자가승인 가능. 승인 경계가 Rules 아닌 앱 리포지토리 `_assertAdminOnly`로만 집행(점주 분기만 onlyChangedFields로 좁음).
 - **평가**: 명백한 권한 경계 구멍. 수정 저렴(브랜드 분기 필드 화이트리스트 추가). **우선순위 높음.**
+- **해결**: `brand_self_approve_guard` (커밋 b87b548, rules 배포 완료). 헬퍼 noSelfApproveOnCreate/OnUpdate 로 V1 brands/menuItems + V2 stores/menuOverrides + **V3 stores/menuItems(추가 발견)** 브랜드 분기 자가승인 차단. 점주 분기(D2)는 별도 분리 등재.
 
 ### ⬜ [미검증 — 착수 시 확인] 3. cascadeDeleteOverrides no-op — `master_menu_item_remote_data_source.dart:146-154`
 "menuOverrides 컬렉션이 아직 없다" 전제가 낡음 → 마스터 삭제해도 오버라이드 잔존, 같은 id 재생성 시 과거 가격·제외·품절이 되살아남.
