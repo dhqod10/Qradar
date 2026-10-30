@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
@@ -73,9 +74,16 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   @override
   Future<UserModel> signInWithKakao() async {
-    // KakaoTalk 설치 여부에 따라 로그인 방식 분기
+    // KakaoTalk 설치 여부에 따라 로그인 방식 분기.
+    // 카톡 앱 경로가 실패하면(계정 미연결 NotSupportError 등) 카카오계정(웹) 로그인으로 폴백한다.
+    // 단 사용자가 명시적으로 취소(CANCELED)한 경우는 폴백하지 않고 그대로 전파한다. (카카오 공식 권장 패턴)
     if (await kakao.isKakaoTalkInstalled()) {
-      await kakao.UserApi.instance.loginWithKakaoTalk();
+      try {
+        await kakao.UserApi.instance.loginWithKakaoTalk();
+      } catch (e) {
+        if (e is PlatformException && e.code == 'CANCELED') rethrow;
+        await kakao.UserApi.instance.loginWithKakaoAccount();
+      }
     } else {
       await kakao.UserApi.instance.loginWithKakaoAccount();
     }

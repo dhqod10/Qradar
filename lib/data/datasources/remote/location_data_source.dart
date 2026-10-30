@@ -16,9 +16,12 @@ class LocationDataSource {
     }
 
     try {
+      // timeLimit 필수 — 없으면 GPS 고정이 안 잡히는 환경(에뮬레이터·실내 등)에서
+      // 무한 대기 → 호출부(홈 주변매장) 로드가 끝나지 않아 ANR 발생. 초과 시 TimeoutException → null 폴백.
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8),
         ),
       );
     } catch (_) {

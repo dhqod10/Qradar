@@ -92,9 +92,11 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
         return await ref
             .read(signInWithKakaoUseCaseProvider)
             .call()
-            .timeout(const Duration(seconds: 60));
+            .timeout(const Duration(seconds: 180));
       } on TimeoutException {
-        // 60초 timeout — 카톡 강제 종료 등 SDK 응답 누락 안전망 (C안의 A)
+        // 180초 timeout — 카톡 강제 종료 등 SDK 응답 누락 안전망 (C안의 A).
+        // 최초 로그인의 SMS 인증(전화번호→코드 수신·입력) 등 사용자 인터랙션을 포함하므로
+        // 짧으면(구 60초) 정상 로그인 중에 오탐 → 세션은 생성됐는데 실패로 표시되는 문제.
         throw Exception('카카오 로그인이 취소되었습니다. (timeout)');
       }
     });
@@ -117,9 +119,9 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
         return await ref
             .read(signInWithNaverUseCaseProvider)
             .call()
-            .timeout(const Duration(seconds: 120));
+            .timeout(const Duration(seconds: 180));
       } on TimeoutException {
-        // 웹 인증 시트 응답 누락 안전망 (카카오와 동일 패턴)
+        // 180초 timeout — 웹 인증 시트 응답 누락 안전망 (카카오와 동일 패턴).
         throw Exception('네이버 로그인이 취소되었습니다. (timeout)');
       }
     });
