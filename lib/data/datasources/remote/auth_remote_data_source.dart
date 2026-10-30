@@ -1,7 +1,9 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_naver_login/flutter_naver_login.dart';
-import 'package:flutter_naver_login/interface/types/naver_login_status.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import 'package:qradar/data/models/user_model.dart';
@@ -111,34 +113,62 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   // ── Naver ─────────────────────────────────────────────────────────────────
 
+  // env.json (--dart-define-from-file) 로 주입. 코드 하드코딩 금지.
+  static const String _naverClientId = String.fromEnvironment('NAVER_CLIENT_ID');
+
+  // 네이버 콘솔 Callback URL(https 중계 페이지, landing/auth/naver.html).
+  // 서버 NAVER_ALLOWED_REDIRECT_URIS 화이트리스트와 정확히 일치해야 한다.
+  static const String _naverRedirectUri =
+      'https://order-app-5957e.web.app/auth/naver.html';
+
+  /// 암호학적 난수 state (CSRF 방지, 1회용).
+  static String _generateState() {
+    final rng = Random.secure();
+    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
   @override
   Future<UserModel> signInWithNaver() async {
-    // Naver SDK 의 잔존 OAuth state 정리 (state mismatch 회피).
-    // 이미 로그아웃 상태면 no-op.
-    try {
-      await FlutterNaverLogin.logOut();
-    } catch (_) {}
-
-    final result = await FlutterNaverLogin.logIn();
-    if (result.status != NaverLoginStatus.loggedIn) {
-      throw Exception('네이버 로그인이 취소되었습니다.');
+    if (_naverClientId.isEmpty) {
+      throw Exception('NAVER_CLIENT_ID 가 주입되지 않았습니다. (env.json)');
     }
 
-    final account = result.account;
-    if (account == null) throw Exception('네이버 계정 정보를 가져올 수 없습니다.');
+    final state = _generateState();
+    final authorizeUrl = Uri.https('nid.naver.com', '/oauth2.0/authorize', {
+      'response_type': 'code',
+      'client_id': _naverClientId,
+      'redirect_uri': _naverRedirectUri,
+      'state': state,
+    });
 
-    // flutter_naver_login plugin Android 측은 logIn() 결과의 accessToken 자리에
-    // 항상 null 을 넘긴다. token 은 별도 getCurrentAccessToken() 으로 가져옴.
-    final naverToken = await FlutterNaverLogin.getCurrentAccessToken();
-    if (naverToken.accessToken.isEmpty) {
-      throw Exception('Naver access token을 가져올 수 없습니다.');
+    // OS 웹 인증 시트. 중계 페이지가 qradar://auth/naver?code&state 로 bounce.
+    // 사용자가 취소하면 PlatformException(CANCELED) 이 던져진다.
+    final callback = await FlutterWebAuth2.authenticate(
+      url: authorizeUrl.toString(),
+      callbackUrlScheme: 'qradar',
+    );
+    final params = Uri.parse(callback).queryParameters;
+
+    if (params['error'] != null) {
+      throw Exception('네이버 로그인이 취소되었거나 실패했습니다.');
+    }
+    // CSRF: 돌아온 state 가 보낸 state 와 같아야 한다.
+    if (params['state'] != state) {
+      throw Exception('네이버 로그인 state 가 일치하지 않습니다.');
+    }
+    final code = params['code'];
+    if (code == null || code.isEmpty) {
+      throw Exception('네이버 인증 코드를 가져올 수 없습니다.');
     }
 
-    // Cloud Function 으로 custom token 발급
+    // Cloud Function 에서 code → token 교환(client_secret 서버 전용) → custom token
     final callable = FirebaseFunctions.instanceFor(region: 'asia-northeast3')
         .httpsCallable('verifyNaverToken');
     final response = await callable.call<Map<String, dynamic>>({
-      'accessToken': naverToken.accessToken,
+      'code': code,
+      'state': state,
+      'redirect_uri': _naverRedirectUri,
     });
     final customToken = response.data['customToken'] as String;
 
@@ -146,11 +176,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     final credential = await _firebaseAuth.signInWithCustomToken(customToken);
     final user = credential.user!;
 
+    // 프로필(email/name/image)은 커스텀 토큰 세션에 없다. 기존 Firebase 값(없으면 null)을 사용.
     return UserModel(
       uid: user.uid,
-      email: account.email,
-      displayName: account.name,
-      photoUrl: account.profileImage,
+      email: user.email,
+      displayName: user.displayName,
+      photoUrl: user.photoURL,
       provider: 'naver',
     );
   }
@@ -195,7 +226,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<void> signOut() async {
     await _firebaseAuth.signOut();
     try { await kakao.UserApi.instance.logout(); } catch (_) {}
-    try { await FlutterNaverLogin.logOut(); } catch (_) {}
   }
 
   // ── Auth State ────────────────────────────────────────────────────────────

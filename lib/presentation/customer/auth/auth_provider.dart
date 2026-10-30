@@ -112,9 +112,17 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
 
   Future<void> signInWithNaver() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(
-      () => ref.read(signInWithNaverUseCaseProvider).call(),
-    );
+    state = await AsyncValue.guard(() async {
+      try {
+        return await ref
+            .read(signInWithNaverUseCaseProvider)
+            .call()
+            .timeout(const Duration(seconds: 120));
+      } on TimeoutException {
+        // 웹 인증 시트 응답 누락 안전망 (카카오와 동일 패턴)
+        throw Exception('네이버 로그인이 취소되었습니다. (timeout)');
+      }
+    });
     await _onSignInSuccess();
   }
 

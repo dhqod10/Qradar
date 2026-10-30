@@ -21,8 +21,8 @@
 
 ## 🟢 지금 준비 가능 (해두면 런칭 때 TOSS만 남음)
 
-- [ ] **#1 소셜로그인 audience 구현** — 카카오 서버 app_id 검증 + 네이버 양쪽 code-exchange. (`docs/tasks/social_login_audience/` — 진행 중)
-- [ ] **네이버 client_secret + redirect_uri 등록** — #1 테스트에 필요. 콘솔에서 복사/등록 (상세는 social_login_audience spec의 외부 셋업 체크리스트).
+- [x] **#1 소셜로그인 audience 구현** — 카카오 서버 app_id 검증 + 네이버 code-exchange(플랜 B: https 중계페이지). (`docs/tasks/social_login_audience/`) **구현+iOS 실기기 검증 완료(2026-10-30), Android 검증 중.** 후속: 프로필 null(backlog SL-1).
+- [x] **네이버 client_secret + redirect_uri 등록** — 콘솔 등록 완료(PC웹 환경, `…/auth/naver.html`), secret 재발급+주입(secrets:set) 완료. 실값은 gitignored env 에만.
 - [ ] **APNs 키 등록 (iOS 푸시)** — 지금 하면 iOS 푸시 활성 + backlog **N5 보류 4건(T9/T13/T-B11/F22)** 해소. (`docs/tasks/ios_apns_setup/spec.md`)
 - [ ] **App Check 설정** — 현재 **미설정**. callable(verifyTossPayment/verifyKakaoToken/verifyNaverToken)을 봇·남용에서 보호. #1 audience 보안과 결이 같아 함께 권장.
 - [ ] **release 서명 키 생성** — Android keystore / iOS 배포 인증서·프로비저닝.

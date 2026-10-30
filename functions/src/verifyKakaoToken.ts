@@ -3,14 +3,19 @@
  *
  * 흐름:
  *   1. 입력값 검증 (accessToken 필수)
- *   2. Kakao 프로필 API 호출해서 uid 확인
- *   3. Firebase Admin SDK createCustomToken('kakao_' + kakaoUid)
- *   4. 반환 { customToken }
+ *   2. [보안] access_token_info 로 토큰의 app_id(audience) 가 우리 앱(KAKAO_APP_ID)인지 대조
+ *   3. Kakao 프로필 API 호출해서 uid 확인
+ *   4. Firebase Admin SDK createCustomToken('kakao_' + kakaoUid)
+ *   5. 반환 { customToken }
  */
 
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineString } from "firebase-functions/params";
 import axios from "axios";
+
+// 카카오 콘솔의 숫자형 "앱 ID" (네이티브 키 아님). functions .env 로 주입 — 하드코딩 금지.
+const kakaoAppId = defineString("KAKAO_APP_ID");
 
 // ── 입력 타입 ─────────────────────────────────────────────────────────────────
 
@@ -27,6 +32,12 @@ interface KakaoProfileResponse {
       profile_image_url?: string;
     };
   };
+}
+
+interface KakaoAccessTokenInfo {
+  id: number;
+  expires_in?: number;
+  app_id: number;
 }
 
 // ── 함수 ─────────────────────────────────────────────────────────────────────
@@ -47,7 +58,37 @@ export const verifyKakaoToken = onCall(
       );
     }
 
-    // 2. Kakao 프로필 API 호출
+    // 2. [보안] 토큰 audience(app_id) 검증 — 타앱용 토큰으로 세션 획득 차단
+    const expectedAppId = kakaoAppId.value();
+    if (!expectedAppId) {
+      console.error("[verifyKakaoToken] KAKAO_APP_ID 미설정");
+      throw new HttpsError("internal", "서버 설정 오류입니다.");
+    }
+    try {
+      const infoRes = await axios.get<KakaoAccessTokenInfo>(
+        "https://kapi.kakao.com/v1/user/access_token_info",
+        { headers: { Authorization: `Bearer ${data.accessToken}` } }
+      );
+      if (String(infoRes.data.app_id) !== String(expectedAppId).trim()) {
+        console.error(
+          "[verifyKakaoToken] REJECTED audience mismatch app_id:",
+          infoRes.data.app_id
+        );
+        throw new HttpsError(
+          "unauthenticated",
+          "유효하지 않은 Kakao 토큰입니다."
+        );
+      }
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      console.error("[verifyKakaoToken] access_token_info 실패");
+      throw new HttpsError(
+        "unauthenticated",
+        "Kakao 토큰 검증에 실패했습니다."
+      );
+    }
+
+    // 3. Kakao 프로필 API 호출
     let kakaoUid: number;
     try {
       const profileRes = await axios.get<KakaoProfileResponse>(
@@ -78,7 +119,7 @@ export const verifyKakaoToken = onCall(
       );
     }
 
-    // 3. Firebase Custom Token 발급
+    // 4. Firebase Custom Token 발급
     const uid = `kakao_${kakaoUid}`;
     const customToken = await admin.auth().createCustomToken(uid, {
       provider: "kakao",
@@ -86,7 +127,7 @@ export const verifyKakaoToken = onCall(
 
     console.log("[verifyKakaoToken] customToken issued for uid:", uid);
 
-    // 4. 반환
+    // 5. 반환
     return { customToken };
   }
 );

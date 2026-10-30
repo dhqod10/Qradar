@@ -821,7 +821,8 @@ FCM 토큰 등록은 **로그인 성공 시(auth_provider)** 와 **알림 설정
 
 전문: `docs/tasks/web_role_console/app_session_handoff.md` (줄번호는 firestore.rules 825줄 기준). 아래는 앱 세션(orderapp-1a) **검증 판정** 포함.
 
-### ⚠️ [검증됨·심각도 하향] 1. 카카오/네이버 토큰 audience(수신자) 미검증 — `functions/src/verifyKakaoToken.ts`, `verifyNaverToken.ts`
+### ✅ [해결됨·구현+iOS검증 2026-10-30] 1. 카카오/네이버 토큰 audience(수신자) 미검증 — `functions/src/verifyKakaoToken.ts`, `verifyNaverToken.ts`
+**→ `docs/tasks/social_login_audience/` 로 구현 완료.** 카카오=`access_token_info` app_id 대조(KAKAO_APP_ID), 네이버=code-exchange(플랜 B: `https://order-app-5957e.web.app/auth/naver.html` 중계페이지 → `qradar://auth/naver` bounce, 서버 client_secret 교환 + redirect_uri 화이트리스트). 앱 네이버 흐름 `flutter_naver_login`→`flutter_web_auth_2` 교체, client_secret 평문(strings.xml/Info.plist) 제거. **iOS 실기기 카카오·네이버 로그인 + 결제 딥링크 복귀 검증 완료. Android 검증 진행 중.** 운영수정: 네이버 secret 중복 입력(secrets:set 시 값이 두 번 이어붙어 저장됨) 재설정, iOS SceneDelegate `NidThirdPartyLogin` 잔여 import 제거. 아래는 원 분석(이력 보존):
 accessToken으로 프로필 API(`kapi.kakao.com/v2/user/me`, `openapi.naver.com/v1/nid/me`) 호출 후 돌아온 id를 그대로 믿고 `kakao_<id>`/`naver_<id>` 커스텀토큰 발급. **토큰이 우리 앱에서 발급된 것인지(app_id/audience) 미검증**(코드 확인).
 - **평가**: 실제 하드닝 갭. 단 카카오 user id는 앱별 스코프라 앱그룹 미공유 시 타 앱 토큰은 다른 uid로 매핑 → "특정 피해자 계정 직접 탈취"는 제한적. 네이버는 스코프 특성이 달라 더 노출 가능 → **제대로 된 보안 평가 필요**.
 - **해법(인계 제시, 타당)**: 카카오 `/v1/user/access_token_info`로 app_id 검증 / 네이버는 서버가 authorization code를 직접 교환하는 흐름으로 전환.
@@ -873,3 +874,13 @@ Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order
 - **왜 brand_self_approve_guard(D1)와 분리했나**: 점주에겐 **정당한 status:'approved' 쓰기**가 섞여 있고(menuOverrides 점주 운영 upsert 주석 참고, rules:472), **독립 매장(brandId 없음) vs 브랜드 가맹 매장**을 `get(stores).brandId` 로 구분해야 하는 다른 성격의 설계. 블런트 차단은 정당 독립매장 플로우를 깰 수 있음.
 - **착수 시**: get(stores).brandId 분기 + 점주가 승인권을 갖는 케이스 정의(독립매장 자동/점주 승인 vs 가맹매장 admin 승인). entity_lifecycle.md §5.4 참조.
 - D1(V1 brands/menuItems, V2 stores/menuOverrides 브랜드, V3 stores/menuItems 브랜드)에서 **브랜드 분기는 모두 닫힘** — 남은 건 이 점주 분기 1개.
+
+## 소셜로그인 후속 (2026-10-30, social_login_audience 구현/테스트 중 발견)
+
+### ⬜ SL-1 — 카카오/네이버 로그인 후 프로필(email/name/image) null
+커스텀 토큰 세션엔 프로필이 없고, 현재 CF(verifyKakaoToken/verifyNaverToken)가 프로필을 반환하지 않아 `UserModel` 의 email/displayName/photoURL 이 비어 홈 인사말·Firebase Auth 식별자 칸이 `-` 로 보인다. 로그인·uid 연속성엔 지장 없음.
+- **해법 후보**: CF 응답에 프로필(email/nickname/image) 포함 → 앱이 최초 1회 users 문서에 반영. (기존에도 provider 별 displayName 소스가 달랐으므로 설계 판단 필요.)
+
+### ⬜ SL-2 — `order_item_row.dart` 이미지 플레이스홀더 비일관
+주문상세의 주문내역 라인(`lib/presentation/customer/order/widgets/order_item_row.dart`)만 raw `Image.network` + `Icons.image_not_supported`(투박한 깨진-이미지 아이콘)를 쓴다. 메뉴카드/장바구니 등 나머지는 `CachedNetworkImage` + 공통 플레이스홀더라, 같은 이미지 로드 실패여도 주문상세만 "깨진" 느낌으로 보인다(2026-10-30 iOS 실기기, 옛 주문의 스냅샷 imageUrl 미로드 시 노출).
+- **해법**: order_item_row 을 `CachedNetworkImage` + 동일 플레이스홀더로 통일(캐싱/폴백 정합). UI polish, 소규모. **소셜로그인과 무관**(테스트 중 우연 발견).

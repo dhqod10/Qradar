@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Qradar</title>
+</head>
+<body>
+<p>Qradar 앱으로 돌아가는 중입니다...</p>
+<script>
+  // 네이버가 보낸 ?code&state(또는 ?error) 를 앱 커스텀 스킴으로 그대로 전달한다.
+  // 이 페이지는 값을 저장/로깅/외부 전송하지 않는다.
+  (function () {
+    var q = window.location.search || '';
+    window.location.replace('qradar://auth/naver' + q);
+  })();
+</script>
+</body>
+</html>

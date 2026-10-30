@@ -1,7 +1,6 @@
 import Flutter
 import UIKit
 import GoogleSignIn
-import NidThirdPartyLogin
 
 class SceneDelegate: FlutterSceneDelegate {
   override func scene(
@@ -11,10 +10,9 @@ class SceneDelegate: FlutterSceneDelegate {
     for context in URLContexts {
       let url = context.url
 
-      // Naver 로그인 callback (NidThirdPartyLogin SDK 직접 처리)
-      if NidOAuth.shared.handleURL(url) {
-        continue
-      }
+      // Naver 로그인은 flutter_web_auth_2(ASWebAuthenticationSession)가
+      // 콜백(qradar://auth/naver)을 세션 내부에서 자체 처리하므로
+      // 여기서 별도 forwarding 이 필요 없다. (구 NidThirdPartyLogin SDK 제거됨)
 
       // Google 로그인 callback (GoogleSignIn SDK 직접 처리)
       if GIDSignIn.sharedInstance.handle(url) {
