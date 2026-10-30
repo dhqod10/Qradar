@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
@@ -29,12 +30,13 @@ class OrderItemRow extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: item.imageUrl.isNotEmpty
-              ? Image.network(
-                  item.imageUrl,
+              ? CachedNetworkImage(
+                  imageUrl: item.imageUrl,
                   width: 48,
                   height: 48,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => _imagePlaceholder(),
+                  placeholder: (_, _) => _imagePlaceholder(),
+                  errorWidget: (_, _, _) => _imagePlaceholder(),
                 )
               : _imagePlaceholder(),
         ),
@@ -125,7 +127,7 @@ class OrderItemRow extends StatelessWidget {
       height: 48,
       color: AppColors.surface,
       child: const Icon(
-        Icons.image_not_supported,
+        Icons.local_cafe_outlined,
         color: AppColors.textMuted,
         size: 20,
       ),
