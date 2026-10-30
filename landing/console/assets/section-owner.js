@@ -281,9 +281,12 @@ function viewOps(alive) {
                  canSellNow / storeGateReason 이 temporaryClosed 를 보고, paymentGate 가 서버에서
                  STORE_TEMPORARILY_CLOSED(failed-precondition) 로 거절한다. 그래서 위 문구가 참이다.
 
-                 🔴 콘솔 배포 전 확인 2가지
-                   ① C 의 functions 재배포가 실제로 끝났는지. 안 끝났으면 이 문구가 거짓이다.
-                   ② (완료 2026-10-30) 진행중 주문 가드 — guardInflight 참조. -->
+                 배포 전 확인 2가지 — 둘 다 완료
+                   ① C 의 functions 재배포: 완료 확인 2026-10-30.
+                      verifyTossPayment updateTime 2026-10-29T11:44:05Z (= KST 20:44:05),
+                      커밋 2066f5c(KST 20:00:28) 보다 43분 뒤. 34개 함수 전체가 한 묶음으로 배포됐다.
+                      재확인: firebase functions:list --project order-app-5957e --debug 의 updateTime
+                   ② 진행중 주문 가드: 완료 2026-10-30 — guardInflight 참조. -->
             <!-- 진행중 주문 가드는 doSave → guardInflight 에 구현돼 있다 (2026-10-30). -->
           <div class="a-field"><span class="a-label">휴무 날짜</span><div class="a-row"><label class="a-sr" for="op-date">휴무 날짜 선택</label><input class="a-input a-time" type="date" id="op-date"> <button type="button" class="a-btn sm" id="op-dadd">추가</button></div>
             <div class="a-field-err" id="op-date-err" hidden></div>
