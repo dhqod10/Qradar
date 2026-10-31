@@ -28,6 +28,18 @@
 - 독립매장 점주 앱 UI 에서 점포한정 메뉴 approved 즉시 등록(회귀 ①).
 - 일반 고객 주문/리뷰/적립 무영향(회귀 ②), 환불 clawback 불변.
 
+## prod 배포 후 검증 (2026-10-31, 오케스트레이터 adb E2E)
+> 사용자가 secret(SIGNAL_HASH_SALT) → rules → functions(verifyTossPayment/onOrderQoinSettled/verifyNaverToken) → 앱 재빌드까지 배포 완료 후 실기기(emulator-5554) 자동화로 검증.
+- **정상주문 해피패스 (회귀 ②) PASS** — 일반 고객이 강남점 아메리카노 주문 → 토스 테스트결제(퀵계좌이체·000000) → `결제 완료`, 주문 `4eaebd3a-7df…` 생성. **배포된 verifyTossPayment 의 자기거래 가드가 정상주문을 막지 않음**(가드 통과 → Toss confirm → 주문 커밋). orderSignals best-effort write 가 주문 흐름을 깨지 않음(주문 성공).
+- **주문상세 썸네일 (imageUrl 회귀) PASS** — 주문 상세에 Q-로고 썸네일 표시, 금액 전 구간 4,500원 일관.
+- Rules 하네스 **463/463 PASS** (아래 stale 테스트 1건 교정 후 전건 green).
+- **stale 테스트 교정**: `test_rules/rules.test.mjs` PPA-3g 를 `allow`→`deny` 로 수정. 이전 세션 `b87b548`(brand_self_approve_guard V2)가 브랜드 자가승인(menuOverrides status→approved + 승인메타)을 차단하면서 기대값을 뒤집지 않아 실패해 있었다(보안묶음과 무관, menuOverrides 미변경 확인). rules 의도(브랜드는 제출만·승인은 admin 전담)가 맞고 테스트가 틀렸다.
+
+## 사용자 확인 필요 (배포 후, 자격증명/콘솔/계정 의존 — 오케스트레이터 불가)
+- **자기거래 차단(핵심 half) 미검증** — 점주/브랜드 계정으로 자기 매장 주문 → 거절 + `paymentGateRejections.reason='SELF_DEALING'` 기록. owner/brand 테스트 계정 자격증명 필요.
+- **orderSignals 문서 내용 미검증** — `orderSignals/{4eaebd3a…}` 가 64hex 해시·마스킹형이고 점주/고객 read 불가인지. prod Firestore/콘솔 read 필요.
+- **SL-1 이름 표시 미검증** — 현재 로그인 세션이 SL-1 배포 이전 계정이라 홈 인사말이 `Qrator`(폴백). 새로 소셜 로그인(naver/kakao)해야 실명 표시 확인됨. 사용자 자격증명 필요.
+
 ## 미구현/후속
 - Layer2 탐지·플래그·admin UI(의도적 비범위).
 - `docs/processes/{data_ownership,entity_lifecycle}.md` 갱신(orderSignals 추가, §2.6 해소) — architect 후속.

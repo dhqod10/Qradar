@@ -1183,7 +1183,9 @@ await run('PPA-3f 회귀: 브랜드 보유자 update (핵심 필드 변경 + pen
   await ovSeed('ppa3f', { storeId: S_BR, brandId: B_A, status: 'approved', priceOverride: 3000, approvedBy: ADMIN });
   return updateDoc(ovRef(asBrand, 'ppa3f'), { priceOverride: 3300, status: 'pending', submittedBy: BRAND_U });
 });
-await run('PPA-3g 회귀: 브랜드 보유자의 승인 쓰기 (spec: brandHolder 승인 쓰기 유지)', 'allow', async () => {
+// b87b548 brand_self_approve_guard V2 이후: 브랜드 보유자는 제출(pending)만, 승인(status→approved + 메타)은 admin 전담.
+// 가드 도입 때 이 케이스 기대를 allow→deny 로 뒤집지 않아 stale 이었다 (noSelfApproveOnUpdate 가 status=='pending' 만 허용).
+await run('PPA-3g: 브랜드 보유자의 자가승인 쓰기 차단 (brand_self_approve_guard V2 — 승인은 admin 전담)', 'deny', async () => {
   await pendingOv('ppa3g');
   return updateDoc(ovRef(asBrand, 'ppa3g'), { status: 'approved', approvedBy: BRAND_U, approvedAt: NOW() });
 });
