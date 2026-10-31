@@ -179,17 +179,24 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       'redirect_uri': _naverRedirectUri,
     });
     final customToken = response.data['customToken'] as String;
+    // CF 가 nid/me 에서 가져온 프로필 (구버전 CF 응답이면 부재 → 빈 값).
+    final profile = response.data['profile'];
+    final profileMap = profile is Map ? profile : const <dynamic, dynamic>{};
+    String? str(String key) {
+      final v = profileMap[key];
+      return v is String && v.isNotEmpty ? v : null;
+    }
 
     // Firebase Auth 세션 생성
     final credential = await _firebaseAuth.signInWithCustomToken(customToken);
     final user = credential.user!;
 
-    // 프로필(email/name/image)은 커스텀 토큰 세션에 없다. 기존 Firebase 값(없으면 null)을 사용.
+    // 커스텀 토큰 세션에는 프로필이 없으므로 CF 응답 프로필을 우선 사용한다.
     return UserModel(
       uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      photoUrl: user.photoURL,
+      email: str('email') ?? user.email,
+      displayName: str('name') ?? user.displayName,
+      photoUrl: str('imageUrl') ?? user.photoURL,
       provider: 'naver',
     );
   }

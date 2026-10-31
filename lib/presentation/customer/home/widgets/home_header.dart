@@ -4,6 +4,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/presentation/common/q_logo.dart';
 import 'package:qradar/presentation/common/scaffold_with_nav.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/search/search_page.dart';
 
 /// 홈 헤더의 세 가지 상태:
@@ -23,11 +24,17 @@ class HomeHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final statusBarHeight = MediaQuery.of(context).padding.top;
     final authState = ref.watch(authProvider);
+    // 앱 재시작 후 auth 세션(커스텀 토큰)에는 프로필이 없으므로 users/{uid} 프로필을 우선 사용.
+    final profile = ref.watch(currentUserProfileProvider).asData?.value;
     final name = authState.maybeWhen(
       data: (user) {
         if (user == null) return 'Qrator';
+        final profileName = profile?.displayName ?? '';
+        if (profileName.isNotEmpty) return profileName;
         if ((user.displayName ?? '').isNotEmpty) return user.displayName!;
-        final email = user.email ?? '';
+        final email = (user.email ?? '').isNotEmpty
+            ? user.email!
+            : (profile?.email ?? '');
         if (email.contains('@')) return email.split('@').first;
         return 'Qrator';
       },

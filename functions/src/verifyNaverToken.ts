@@ -11,7 +11,9 @@
  *   3. nid.naver.com/oauth2.0/token 으로 code 교환 (client_secret 서버 전용)
  *   4. Naver 프로필 API 로 id 확인
  *   5. Firebase Admin SDK createCustomToken('naver_' + id)
- *   6. 반환 { customToken }
+ *   6. 반환 { customToken, profile: { email?, name?, imageUrl? } }
+ *      profile 은 nid/me 응답 그대로(값이 없으면 키 생략). 앱은 code-flow 라 naver access token 이 없어
+ *      스스로 프로필을 못 가져오므로 CF 가 돌려준다.
  */
 
 import * as admin from "firebase-admin";
@@ -122,6 +124,7 @@ export const verifyNaverToken = onCall(
 
     // 4. Naver 프로필 API 호출 (id 확인)
     let naverUid: string;
+    const profile: { email?: string; name?: string; imageUrl?: string } = {};
     try {
       const profileRes = await axios.get<NaverProfileResponse>(
         "https://openapi.naver.com/v1/nid/me",
@@ -138,6 +141,10 @@ export const verifyNaverToken = onCall(
       }
 
       naverUid = profileData.response.id;
+      const r = profileData.response;
+      if (r.email) profile.email = r.email;
+      if (r.name) profile.name = r.name;
+      if (r.profile_image) profile.imageUrl = r.profile_image;
     } catch (err) {
       if (err instanceof HttpsError) throw err;
       throw new HttpsError(
@@ -155,6 +162,6 @@ export const verifyNaverToken = onCall(
     console.log("[verifyNaverToken] customToken issued for uid:", uid);
 
     // 6. 반환
-    return { customToken };
+    return { customToken, profile };
   }
 );

@@ -14,13 +14,37 @@ class UserRepositoryImpl implements UserRepository {
   @override
   Future<UserEntity> getOrCreateUserProfile(UserEntity authUser) async {
     final existing = await _dataSource.fetch(authUser.uid);
-    if (existing != null) return existing.toEntity();
+    if (existing != null) {
+      // 프로필 없이 만들어진 기존 문서 보강: 문서 값이 비어 있고 로그인 응답에 값이 있을 때만
+      // displayName/photoUrl 을 채운다 (이미 값이 있으면 덮지 않음, role/brandId 등 불변).
+      final fillName = _isBlank(existing.displayName) && !_isBlank(authUser.displayName)
+          ? authUser.displayName
+          : null;
+      final fillPhoto = _isBlank(existing.photoUrl) && !_isBlank(authUser.photoUrl)
+          ? authUser.photoUrl
+          : null;
+      if (fillName == null && fillPhoto == null) return existing.toEntity();
+      try {
+        await _dataSource.fillProfile(
+          uid: authUser.uid,
+          displayName: fillName,
+          photoUrl: fillPhoto,
+        );
+        final reloaded = await _dataSource.fetch(authUser.uid);
+        return (reloaded ?? existing).toEntity();
+      } catch (_) {
+        // 프로필 보강 실패가 로그인/프로필 로딩을 막지 않는다.
+        return existing.toEntity();
+      }
+    }
 
     final model = UserModelFactory.fromEntity(authUser);
     await _dataSource.createIfAbsent(model);
     final reloaded = await _dataSource.fetch(authUser.uid);
     return (reloaded ?? model).toEntity();
   }
+
+  static bool _isBlank(String? v) => v == null || v.isEmpty;
 
   @override
   Future<void> updateRole({required String uid, required UserRole role}) {

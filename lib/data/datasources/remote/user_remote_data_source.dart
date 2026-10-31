@@ -27,6 +27,23 @@ class UserRemoteDataSource {
     );
   }
 
+  /// 소셜 로그인 프로필 보강. `displayName` / `photoUrl` 중 전달된 키만 갱신한다.
+  /// 허용 필드: `displayName`, `photoUrl`, `updatedAt` (Rules isSelfProfileUpdate 화이트리스트).
+  /// `email` 은 Rules 화이트리스트 밖이라 update 불가 (create 시에만 기록).
+  Future<void> fillProfile({
+    required String uid,
+    String? displayName,
+    String? photoUrl,
+  }) async {
+    final data = <String, dynamic>{
+      'displayName': ?displayName,
+      'photoUrl': ?photoUrl,
+    };
+    if (data.isEmpty) return;
+    data['updatedAt'] = FieldValue.serverTimestamp();
+    await _doc(uid).update(data);
+  }
+
   Future<void> updateRole({required String uid, required String role}) async {
     await _doc(uid).update({'role': role});
   }
