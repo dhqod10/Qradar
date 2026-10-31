@@ -125,16 +125,16 @@ admin / brand / owner / customer 섹션이 갈린다. 작업 문서는 `docs/tas
 
 | 항목 | `BIZ` 키 | 상태 |
 |---|---|---|
-| 상호명 | `company` | ⬜ **TODO** — 서류 전달 대기 |
-| 대표자명 | `ceo` | ⬜ **TODO** — 서류 전달 대기 |
-| 사업자등록번호 | `bizNo` | ⬜ **TODO** |
-| 통신판매업 신고번호 | `mailOrderNo` | ⬜ **TODO** |
-| 사업장 주소 (우편번호 포함) | `address` | ⬜ **TODO** |
-| 고객센터 전화번호 | `tel` | ⬜ **TODO** |
-| 고객센터 이메일 | `email` | ⬜ **TODO** |
-| 개인정보보호책임자 성명 | `privacyOfficer` | ⬜ **TODO** |
-| 개인정보보호책임자 직위 | `privacyOfficerTitle` | ⬜ **TODO** |
-| 개인정보 문의 이메일 | `privacyEmail` | ⬜ **TODO** |
+| 상호명 | `company` | ✅ 티엠아이 |
+| 대표자명 | `ceo` | ✅ 김현우 |
+| 사업자등록번호 | `bizNo` | ✅ 283-22-00820 |
+| 통신판매업 신고번호 | `mailOrderNo` | ✅ 제2026-서울성북-1340호 |
+| 사업장 주소 (우편번호 포함) | `address` | ✅ 서울특별시 성북구 정릉로38바길 22 (02816) |
+| 고객센터 전화번호 | `tel` | ✅ 010-9535-5886 |
+| 고객센터 이메일 | `email` | ✅ tmibourne@gmail.com |
+| 개인정보보호책임자 성명 | `privacyOfficer` | ✅ 김현우 (대표 겸임) |
+| 개인정보보호책임자 직위 | `privacyOfficerTitle` | ✅ 대표 |
+| 개인정보 문의 이메일 | `privacyEmail` | ✅ tmibourne@gmail.com |
 | 고객센터 운영시간 | `hours` | ✅ 기본값 입력됨 (평일 10:00~18:00) — 실제와 다르면 수정 |
 | 호스팅서비스 제공자 | `hosting` | ✅ Google Cloud Platform (Firebase Hosting) |
 | 결제대행사 | `pg` | ✅ 토스페이먼츠 주식회사 |

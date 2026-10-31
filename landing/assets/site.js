@@ -10,7 +10,7 @@
 const BIZ = {
   // ── 사업자등록증 기재사항 (서류와 100% 일치) ──────────────────────────────
   company:      '티엠아이',
-  ceo:          '{{대표자명}}',
+  ceo:          '김현우',
   bizNo:        '283-22-00820',            // 사업자등록번호
   mailOrderNo:  '제2026-서울성북-1340호',   // 통신판매업 신고번호
   address:      '서울특별시 성북구 정릉로38바길 22 (02816)', // 사업장 주소 (우편번호 포함)
@@ -21,9 +21,9 @@ const BIZ = {
   hours:        '평일 10:00 ~ 18:00 (주말·공휴일 휴무, 점심 12:00 ~ 13:00)',
 
   // ── 개인정보 ─────────────────────────────────────────────────────────────
-  privacyOfficer:      '{{개인정보보호책임자 성명}}',
-  privacyOfficerTitle: '{{직위}}',
-  privacyEmail:        '{{privacy@example.com}}',
+  privacyOfficer:      '김현우',
+  privacyOfficerTitle: '대표',
+  privacyEmail:        'tmibourne@gmail.com',
 
   // ── 고정값 (변경 불필요) ─────────────────────────────────────────────────
   hosting:      'Google Cloud Platform (Firebase Hosting)',
