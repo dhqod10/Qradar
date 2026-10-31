@@ -162,9 +162,10 @@ test('T2 cart 입력 계약: TS 가 소비하는 키 집합 = test_fixtures/qoin
 test('T2-b item 레벨 입력 계약 (payment_price_authority §1-5): items[] 와 selectedOptions[] 키 집합 = 골든 (Dart 가 보내는 키와 같은 파일)', () => {
   assert.deepEqual([...CONSUMED_ITEM_KEYS].sort(), [...cartContract.itemKeys].sort());
   assert.deepEqual([...CONSUMED_OPTION_KEYS].sort(), [...cartContract.selectedOptionKeys].sort());
-  // 거짓 타입 재발 방지: 옵션 키는 groupId/itemId 다 (optionGroupId/optionId 가 아니다), imageUrl 은 보내지 않는다.
+  // 거짓 타입 재발 방지: 옵션 키는 groupId/itemId 다 (optionGroupId/optionId 가 아니다).
   assert.ok(!CONSUMED_OPTION_KEYS.includes('optionGroupId') && !CONSUMED_OPTION_KEYS.includes('optionId'));
-  assert.ok(!CONSUMED_ITEM_KEYS.includes('imageUrl'));
+  // imageUrl 은 주문상세 썸네일용으로 보낸다(order_flow_phase1 UI 캐싱 의도 복원).
+  assert.ok(CONSUMED_ITEM_KEYS.includes('imageUrl'));
 });
 
 test('T2 buildOrderData 가 cart 에서 읽는 키는 CONSUMED_CART_KEYS 와 일치 (Proxy 로 접근 키 수집)', () => {

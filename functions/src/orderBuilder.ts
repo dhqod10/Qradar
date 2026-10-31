@@ -12,7 +12,7 @@
 
 /**
  * 클라이언트가 실제로 보내는 item 형태 (payment_price_authority §1-5 — 이전 선언은 런타임과 달랐다).
- * 옵션 키는 `groupId / groupName / itemId / label / priceDelta` 이며 `imageUrl` 은 보내지 않는다.
+ * 옵션 키는 `groupId / groupName / itemId / label / priceDelta` 다. `imageUrl` 은 주문상세 썸네일용으로 보낸다(order_flow_phase1 "UI 캐싱" 의도 복원 — 이름·라벨과 같은 표시 스냅샷).
  * 키 집합은 `test_fixtures/qoin_cart_contract.json` (itemKeys / selectedOptionKeys) 이 Dart 와 양방향으로 고정한다.
  */
 export interface OrderItem {
@@ -49,6 +49,7 @@ export const CONSUMED_CART_KEYS = ["discount", "items", "storeId", "storeName", 
 
 /** `data.cart.items[]` 에서 소비하는 키 집합 — Dart `cartToMap` 의 item 키와 골든으로 고정된다 (§1-5 재발 방지). */
 export const CONSUMED_ITEM_KEYS = [
+  "imageUrl",
   "lineTotal",
   "menuItemId",
   "menuItemName",

@@ -193,6 +193,7 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
     return <String, dynamic>{
       'menuItemId': item.menuItemId,
       'menuItemName': item.menuItemName,
+      'imageUrl': item.imageUrl,
       'quantity': item.quantity,
       'unitPriceWithOptions': item.unitPriceWithOptions,
       'lineTotal': item.lineTotal,

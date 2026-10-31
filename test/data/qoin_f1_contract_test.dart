@@ -87,7 +87,8 @@ void main() {
     // 서버 타입이 한때 선언했던 거짓 키 (§1-5) — 앱은 보낸 적이 없다.
     expect(opt.containsKey('optionGroupId'), isFalse);
     expect(opt.containsKey('optionId'), isFalse);
-    expect(item.containsKey('imageUrl'), isFalse);
+    // imageUrl 은 이제 보낸다 (주문상세 썸네일용, order_flow_phase1 'UI 캐싱' 의도 복원).
+    expect(item.containsKey('imageUrl'), isTrue);
   });
 
   test('CartEntity 에는 brandId 필드가 없다 (추가하면 "앱이 보내는 브랜드" 라는 거짓 권위가 생긴다)', () {
