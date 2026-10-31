@@ -28,7 +28,9 @@ export type GateReason =
   | "MENU_NOT_FOUND"
   | "PRICE_MISMATCH"
   | "OPTION_UNAVAILABLE"
-  | "READ_FAILED";
+  | "READ_FAILED"
+  // [prelaunch_security_bundle] 자기거래 가드 (selfDealing.ts) — 게이트 판정이 아니라 별도 가드지만 거절 기록·토큰 문법을 공유한다.
+  | "SELF_DEALING";
 
 /**
  * 게이트 모드 (spec §17.0) — `PAYMENT_GATE_MODE` 파라미터 값.
@@ -49,7 +51,7 @@ export function resolveGateMode(raw: unknown): GateMode {
 }
 
 /** spec §15 사유 ↔ HttpsError code. */
-export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-found" | "unavailable"> = {
+export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-found" | "unavailable" | "permission-denied"> = {
   STORE_NOT_SELLABLE: "failed-precondition",
   STORE_TEMPORARILY_CLOSED: "failed-precondition",
   STORE_NOT_FOUND: "not-found",
@@ -59,6 +61,7 @@ export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-fo
   PRICE_MISMATCH: "failed-precondition",
   OPTION_UNAVAILABLE: "failed-precondition",
   READ_FAILED: "unavailable",
+  SELF_DEALING: "permission-denied",
 };
 
 /** 사람용 문장 (디버깅·구 앱용). 신 앱 화면은 이 문자열을 그리지 않는다 — 코드 안 상수만 그린다 (spec §15.1). */
@@ -72,6 +75,7 @@ const GATE_TEXT: Record<GateReason, string> = {
   PRICE_MISMATCH: "메뉴 가격이 바뀌었어요. 최신 가격으로 다시 담아주세요",
   OPTION_UNAVAILABLE: "선택한 옵션이 바뀌었어요. 카트에서 옵션을 다시 골라주세요",
   READ_FAILED: "일시적인 오류예요. 잠시 후 다시 시도해주세요",
+  SELF_DEALING: "본인 매장은 주문할 수 없어요",
 };
 
 /** 토큰에 menuItemId 를 싣는 사유 (메뉴 사유 3종 + 금액 사유 2종 — payment_price_authority R11). */

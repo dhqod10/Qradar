@@ -40,6 +40,7 @@ import {
   resolveEffectiveRate,
 } from "./qoinRate";
 import { describeRaw } from "./qoinAdmin";
+import { findSelfDealing } from "./selfDealing";
 
 const LOG = "[onOrderQoinSettled]";
 
@@ -231,6 +232,17 @@ export const onOrderQoinSettled = onDocumentUpdated(
           orderId, userId, storeId, brandId: null, reason: "invalid_store", scope: null, values: {}, totalPrice: total,
         });
         return;
+      }
+
+      // ── 자기적립 제외 (prelaunch_security_bundle Layer1-C, 잠정 D-2: 브랜드 보유자 포함). 이미 읽은 매장 문서로 판정 (추가 read 0,
+      //    브랜드 소속 매장일 때만 users/{uid} +1). **적립만** 막는다 — 회수(clawback)는 이 분기를 지나지 않아 불변.
+      //    의도된 정책이라 qoinSettlementIssues 에 기록하지 않는다 (skipped_accrual_disabled 와 동일, Cloud Logging 만).
+      if (storeSnap.exists) {
+        const selfMatch = await findSelfDealing(db, userId, storeSnap.data() ?? {}); // 실패 시 throw -> 재시도
+        if (selfMatch !== null) {
+          console.info(`${LOG} skipped_self_dealing. orderId:`, orderId, { storeId, matchedBy: selfMatch });
+          return;
+        }
       }
 
       // ── 브랜드의 유일한 신뢰원: stores/{storeId}.brandId (F1). 주문·cart 의 brandId 는 보지 않는다.

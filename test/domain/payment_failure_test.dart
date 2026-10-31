@@ -130,7 +130,7 @@ void main() {
       }
     });
 
-    test('ⓑ 알려진 9개 사유 각각이 design §3.1 의 헤드라인·주 버튼을 가진다', () {
+    test('ⓑ 알려진 10개 사유 각각이 design §3.1 의 헤드라인·주 버튼을 가진다', () {
       const expectedHeadline = {
         PaymentFailureReason.menuSoldOut: '품절된 메뉴가 있어요',
         PaymentFailureReason.menuExcluded: '판매가 중단된 메뉴가 있어요',
@@ -141,6 +141,7 @@ void main() {
         PaymentFailureReason.storeTemporarilyClosed: '지금은 임시 휴업중인 매장이에요',
         PaymentFailureReason.storeNotFound: '매장 정보를 찾을 수 없어요',
         PaymentFailureReason.readFailed: '일시적인 오류가 생겼어요',
+        PaymentFailureReason.selfDealing: '본인 매장은 주문할 수 없어요',
       };
       const expectedPrimary = {
         PaymentFailureReason.menuSoldOut: '카트에서 확인하기',
@@ -152,6 +153,7 @@ void main() {
         PaymentFailureReason.storeTemporarilyClosed: '카트로 돌아가기',
         PaymentFailureReason.storeNotFound: '카트 비우고 메뉴 보러가기',
         PaymentFailureReason.readFailed: '카트로 돌아가기',
+        PaymentFailureReason.selfDealing: '카트 비우고 메뉴 보러가기',
       };
       final known = PaymentFailureReason.values.where(
         (r) => r != PaymentFailureReason.unknown,

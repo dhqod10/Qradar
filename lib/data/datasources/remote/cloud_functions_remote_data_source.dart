@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_app_installations/firebase_app_installations.dart';
 import 'package:qradar/core/constants/app_client_level.dart';
 import 'package:qradar/core/errors/verify_payment_failure.dart';
 
@@ -13,9 +14,28 @@ import 'package:qradar/core/errors/verify_payment_failure.dart';
 class CloudFunctionsRemoteDataSource {
   final FirebaseFunctions _functions;
 
-  CloudFunctionsRemoteDataSource({FirebaseFunctions? functions})
-    : _functions =
-          functions ?? FirebaseFunctions.instanceFor(region: 'asia-northeast3');
+  /// 설치 식별자 공급자 (prelaunch_security_bundle Layer2). 기본은 Firebase Installations ID.
+  /// 테스트에서 주입한다. 실패/미지원이면 null — 서버는 `deviceIdHash: null` 로 저장하고 결제는 정상 진행한다.
+  /// 잠정(사용자 검토 대기): D-3 deviceId 소스 = Firebase Installations ID.
+  final Future<String?> Function() _deviceIdProvider;
+
+  CloudFunctionsRemoteDataSource({
+    FirebaseFunctions? functions,
+    Future<String?> Function()? deviceIdProvider,
+  }) : _functions =
+           functions ?? FirebaseFunctions.instanceFor(region: 'asia-northeast3'),
+       _deviceIdProvider = deviceIdProvider ?? _installationId;
+
+  static Future<String?> _installationId() async {
+    try {
+      // 결제 경로를 막지 않도록 짧게 기다린다. 신호용일 뿐 판정에 쓰이지 않는다.
+      return await FirebaseInstallations.instance.getId().timeout(
+        const Duration(seconds: 3),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<Map<String, dynamic>> verifyTossPayment({
     required String paymentKey,
@@ -26,6 +46,7 @@ class CloudFunctionsRemoteDataSource {
     required String paymentMethod,
   }) async {
     try {
+      final deviceId = await _deviceIdProvider();
       final callable = _functions.httpsCallable('verifyTossPayment');
       final result = await callable.call<Object?>({
         'paymentKey': paymentKey,
@@ -36,6 +57,8 @@ class CloudFunctionsRemoteDataSource {
         'paymentMethod': paymentMethod,
         // 이 빌드가 금액 재가격(payment_price_authority R9)을 가진 수준이다. 서버는 거절 기록에 남겨 구버전 비율을 잰다.
         'clientLevel': kPaymentClientLevel,
+        // Layer2 신호 (서버가 salt 와 해시해 orderSignals 에만 저장). 판정에 쓰지 않는다. 구버전·실패 시 키 없음.
+        if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
       });
       final data = result.data;
       if (data is Map) {

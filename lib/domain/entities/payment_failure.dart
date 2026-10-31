@@ -12,7 +12,7 @@ enum PaymentFailureFamily {
   unknown,
 }
 
-/// 서버 게이트가 보내는 알려진 거절 사유 9개 (payment_server_authority spec §15.1 의 6개 +
+/// 서버 게이트가 보내는 알려진 거절 사유 10개 (payment_server_authority spec §15.1 의 6개 +
 /// payment_price_authority §9-1 의 금액 사유 2개). 목록 밖은 [unknown] → 갈래 C.
 enum PaymentFailureReason {
   storeNotSellable('STORE_NOT_SELLABLE'),
@@ -24,6 +24,8 @@ enum PaymentFailureReason {
   priceMismatch('PRICE_MISMATCH'),
   optionUnavailable('OPTION_UNAVAILABLE'),
   readFailed('READ_FAILED'),
+  // prelaunch_security_bundle: 본인(점주/브랜드 보유자) 매장 결제 거절. Toss confirm 전이라 돈이 안 나갔다.
+  selfDealing('SELF_DEALING'),
   unknown('');
 
   const PaymentFailureReason(this.token);
@@ -90,7 +92,7 @@ class PaymentFailure {
   /// `verifyAndCreateOrder` 등에서 잡은 예외 → 갈래 B/C.
   ///
   /// 입력은 [VerifyPaymentFailure.message] (또는 임의 객체의 `toString()`) 이며 **끝의 토큰만** 읽는다.
-  /// 알려진 9개 → 갈래 B. 그 밖(토큰 없음·모르는 토큰·파싱 불가)은 모두 갈래 C — 돈이 안 나갔다고 잘못 말하느니
+  /// 알려진 10개 → 갈래 B. 그 밖(토큰 없음·모르는 토큰·파싱 불가)은 모두 갈래 C — 돈이 안 나갔다고 잘못 말하느니
   /// 확인을 시킨다 (design D4).
   factory PaymentFailure.from(Object error) {
     final text = error is VerifyPaymentFailure

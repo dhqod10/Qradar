@@ -198,6 +198,15 @@ GateFailureCopy gateFailureCopy(
         primaryLabel: '카트로 돌아가기',
         primaryAction: PaymentFailureAction.popToCart,
       );
+    case PaymentFailureReason.selfDealing:
+      return const GateFailureCopy(
+        headline: '본인 매장은 주문할 수 없어요',
+        body: '내가 운영하는 매장에서는 주문할 수 없어요. 결제는 진행되지 않았어요. 카트를 비우고 다른 매장에서 담아 주세요.',
+        primaryLabel: '카트 비우고 메뉴 보러가기',
+        primaryAction: PaymentFailureAction.clearCartAndBrowse,
+        secondaryLabel: '닫기',
+        secondaryAction: PaymentFailureAction.popToCart,
+      );
     case PaymentFailureReason.unknown:
       // 갈래 B 에 들어올 수 없다 (PaymentFailure.from 이 갈래 C 로 보낸다). 방어적으로 갈래 C 와 같은 안전 방향.
       return gateFailureCopy(PaymentFailureReason.readFailed, hasNames: false);

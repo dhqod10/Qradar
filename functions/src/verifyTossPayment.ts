@@ -27,8 +27,12 @@ import { buildRejectionMessage, evaluatePaymentGate, GATE_HTTPS_CODE, GateReader
 import { evaluatePriceAuthority, resolveMenusForPricing, resolvePriceMode, storeUnreadableResult } from "./priceGate";
 import { MergedMenu } from "./menuVisibility";
 import { makeFirestoreGateReader, recordGateRejection } from "./paymentGateReader";
+import { findSelfDealing, validBrandId } from "./selfDealing";
+import { writeOrderSignal } from "./orderSignals";
 
 const tossSecretKey = defineSecret("TOSS_SECRET_KEY");
+/** Layer2 신호 해시 salt (prelaunch_security_bundle). 값은 `firebase functions:secrets:set SIGNAL_HASH_SALT` 로 주입 — 코드엔 선언만. */
+const signalHashSalt = defineSecret("SIGNAL_HASH_SALT");
 
 /**
  * 결제 게이트 모드 (payment_server_authority spec §17.0): off | shadow | enforce.
@@ -56,6 +60,8 @@ interface VerifyPaymentInput {
   paymentMethod: string;
   /** 앱이 싣는 결제 클라이언트 수준 (lib/core/constants/app_client_level.dart). 구버전은 이 키가 없다. 거절 기록에만 쓴다 — 권위가 아니다. */
   clientLevel?: unknown;
+  /** Layer2 신호용 설치 식별자(Firebase Installations ID). 구버전은 없다. 판정에 쓰지 않는다 — 해시해 orderSignals 에만 저장. */
+  deviceId?: unknown;
 }
 
 // ── 함수 ─────────────────────────────────────────────────────────────────────
@@ -75,12 +81,14 @@ export interface VerifyDeps {
   gateMode?: () => unknown;
   /** 금액 게이트 모드 원시 값 thunk (payment_price_authority §8). 생략하면 `off` — 옵션 그룹을 읽지 않는다. */
   priceMode?: () => unknown;
+  /** Layer2 해시 salt thunk. 없거나 비어 있으면 신호 저장을 생략한다 (주문은 정상). */
+  signalSalt?: () => string | undefined;
 }
 
 export const verifyTossPayment = onCall(
   {
     region: "asia-northeast3",
-    secrets: [tossSecretKey],
+    secrets: [tossSecretKey, signalHashSalt],
   },
   (request) =>
     handleVerifyTossPayment(
@@ -91,6 +99,7 @@ export const verifyTossPayment = onCall(
         cancel: cancelPayment,
         gateMode: () => paymentGateMode.value(),
         priceMode: () => paymentPriceMode.value(),
+        signalSalt: () => signalHashSalt.value(),
       },
       request
     )
@@ -98,7 +107,7 @@ export const verifyTossPayment = onCall(
 
 export async function handleVerifyTossPayment(
   deps: VerifyDeps,
-  request: { auth?: { uid: string } | null; data: unknown }
+  request: { auth?: { uid: string } | null; data: unknown; rawRequest?: { ip?: unknown } | null }
 ) {
     console.log("[verifyTossPayment] START");
     try {
@@ -175,6 +184,42 @@ export async function handleVerifyTossPayment(
         "internal",
         "동일 주문 키로 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요."
       );
+    }
+
+    // 2-a. 자기거래 가드 (prelaunch_security_bundle Layer1-A) — Toss confirm 전. 거절하면 돈이 움직이지 않는다.
+    //   잠정(사용자 검토 대기) D-1: 모드 스위치 없이 **상시 enforce** — ownerId 동일성 비교라 정상 손님 오탐이 구조적으로 없다.
+    //   신뢰원은 stores/{id}.ownerId/.brandId 뿐 (cart 값 미사용). 매장 문서가 없으면 건너뛴다 (STORE_NOT_FOUND 는 2-b 의 몫 — 기존 동작 유지).
+    //   store 는 Layer2 신호(storeOwnerId/storeBrandId 박제)에도 쓴다.
+    let signalStore: { ownerId: string | null; brandId: string | null } | null = null;
+    if (typeof data.cart.storeId === "string" && data.cart.storeId.length > 0) {
+      let storeData: Record<string, unknown> | undefined;
+      let matchedBy: "owner" | "brandHolder" | null;
+      try {
+        const storeSnap = await db.collection("stores").doc(data.cart.storeId).get();
+        storeData = storeSnap.exists ? (storeSnap.data() as Record<string, unknown>) : undefined;
+        matchedBy = storeData ? await findSelfDealing(db, uid, storeData) : null;
+      } catch (e) {
+        // 판정을 못 하면 통과시키지 않는다 (confirm 전이라 돈은 안 움직인다) — 일시 장애는 재시도 가능한 unavailable.
+        console.error("[verifyTossPayment] self-dealing check read failed", e);
+        throw new HttpsError("unavailable", buildRejectionMessage("READ_FAILED"));
+      }
+      if (storeData) {
+        signalStore = {
+          ownerId: typeof storeData.ownerId === "string" ? storeData.ownerId : null,
+          brandId: validBrandId(storeData.brandId),
+        };
+      }
+      if (matchedBy !== null) {
+        await recordGateRejection(db, {
+          uid,
+          storeId: data.cart.storeId,
+          reason: "SELF_DEALING",
+          detail: { storeOwnerId: signalStore?.ownerId ?? null, matchedBy },
+          amount: data.amount,
+        });
+        console.warn("[verifyTossPayment] SELF_DEALING REJECT", matchedBy);
+        throw new HttpsError(GATE_HTTPS_CODE.SELF_DEALING, buildRejectionMessage("SELF_DEALING"), { reason: "SELF_DEALING" });
+      }
     }
 
     // 2-b. 결제 게이트 (G1 + G2) — Toss confirm 전. 거절하면 confirm 을 호출하지 않는다 (R5).
@@ -373,6 +418,18 @@ export async function handleVerifyTossPayment(
     batch.set(orderDoc, orderData);
     batch.set(logDoc, logData);
     await batch.commit();
+
+    // Layer2 신호 (best-effort, D-6) — 주문 커밋 **후** 별도 write. 실패해도 주문 성공을 뒤집지 않는다 (writeOrderSignal 이 삼킨다).
+    await writeOrderSignal(db, deps.signalSalt?.(), {
+      orderId,
+      userId: uid,
+      storeId: String(data.cart.storeId ?? ""),
+      storeOwnerId: signalStore?.ownerId ?? null,
+      storeBrandId: signalStore?.brandId ?? null,
+      deviceId: data.deviceId,
+      card: tossResponse.card,
+      ip: request.rawRequest?.ip,
+    });
 
     // 7. 반환
     console.log("[verifyTossPayment] SUCCESS orderId:", orderId);

@@ -477,16 +477,38 @@ service cloud.firestore {
 
       // ── stores/{storeId}/menuItems/{id} ───────────────────────────────────
       // 점포 한정 메뉴. status='pending' 포함 read 허용 (클라이언트가 approved 필터링).
+      // 점주 분기 가드 (D2). 독립매장: 승인 메타(approvedBy/approvedAt)는 부재 또는 null (§5.3 이 null 로 쓴다) / status 는 자유.
+      // 가맹매장: create=noSelfApproveOnCreate, update=noSelfApproveOnUpdate. 독립 update 의 메타 검사는 변경분 기준(diff) —
+      // 이미 admin 이 승인한 문서의 운영 update(soldOut 등)는 메타를 건드리지 않으므로 통과한다.
+      // ⚠️ 독립매장은 stores 문서에 `brandId: null` 이 **명시적으로** 있다 (store_model.toFirestore) — `get('brandId','') == ''` 만 보면
+      //    null 이 가맹으로 오분류돼 독립매장 approved 등록이 깨진다. 그래서 "비어있지 않은 문자열" 일 때만 가맹으로 본다.
+      function ownerStoreMenuOk(storeId, onUpdate) {
+        let bid = get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', '');
+        return (bid is string && bid != '')
+          ? (onUpdate ? noSelfApproveOnUpdate() : noSelfApproveOnCreate())
+          : (onUpdate
+              ? ((!request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedBy'])
+                  || request.resource.data.get('approvedBy', null) == null)
+                 && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvedAt'])
+                  || request.resource.data.get('approvedAt', null) == null))
+              : (request.resource.data.get('approvedBy', null) == null
+                 && request.resource.data.get('approvedAt', null) == null));
+      }
+
       match /menuItems/{menuItemId} {
         allow read: if isSignedIn();
-        // [brand_self_approve_guard V3] 브랜드 분기만 자가승인 차단. 점주(isStoreOwner) 분기는 별도 task (D2) 로 현행 유지.
+        // [brand_self_approve_guard V3] 브랜드 분기 자가승인 차단.
+        // [prelaunch_security_bundle D2] 점주 분기도 매장의 brandId 로 갈라 닫는다 (ownerStoreMenuOk):
+        //   독립매장(brandId 없음) 점주 = approved 즉시 등록 보존 (entity_lifecycle §5.3) — 단 승인 메타 자가설정만 차단.
+        //   가맹매장(brandId 유효) 점주 = D1 헬퍼 재사용 (pending 만, 메타 null) → 승인/반려는 admin 전담.
+        // delete 는 승인과 무관 → 현행 유지.
         allow create:
           if isAdmin()
-          || isStoreOwner(storeId)
+          || (isStoreOwner(storeId) && ownerStoreMenuOk(storeId, false))
           || (isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', '')) && noSelfApproveOnCreate());
         allow update:
           if isAdmin()
-          || isStoreOwner(storeId)
+          || (isStoreOwner(storeId) && ownerStoreMenuOk(storeId, true))
           || (isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', '')) && noSelfApproveOnUpdate());
         allow delete:
           if isAdmin()
@@ -671,6 +693,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // orderSignals/{orderId} — Layer2 신호수집 (prelaunch_security_bundle). 해시·마스킹형 기기/카드/IP 신호.
+    // verifyTossPayment CF(Admin SDK) 전담 write, admin read 전용. 점주/고객은 못 읽는다 (점주가 고객 기기/IP 를 보는 프라이버시 역진 방지).
+    match /orderSignals/{orderId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // priceHistory/{id} — 가격 변경 이력 (payment_price_authority R16). onMenuPriceWritten 트리거(Admin SDK) 전담 write, admin read.
     // 쓰기 경로를 막거나 강제하지 않는다 — 가격을 쓰는 클라이언트는 그대로이고 이력은 트리거가 사후에 남긴다.
@@ -747,6 +776,15 @@ service cloud.firestore {
           && o.storeId == d.storeId;
       }
 
+      // [prelaunch_security_bundle Layer1-B] 자기 매장 리뷰 차단 (defense-in-depth — 결제 가드 이전의 completed 자기주문 대비).
+      // 신뢰원은 stores/{storeId}.ownerId/.brandId (selfDealing.ts 와 같은 규칙). 브랜드 보유자 포함은 잠정(D-2).
+      function notSelfStore(d) {
+        let st = get(/databases/$(database)/documents/stores/$(d.storeId)).data;
+        return st.get('ownerId', '') != uid()
+          && !isBrandHolder(st.get('brandId', ''));
+        // (매장 문서가 없으면 get() 이 실패해 거부된다 — reviewOrderEligible 이 같은 storeId 의 completed 주문을 요구하므로 정상 경로엔 항상 있다)
+      }
+
       // read: 인증된 사용자
       allow read: if isSignedIn();
 
@@ -759,7 +797,8 @@ service cloud.firestore {
                          ['storeId', 'userId', 'orderId', 'grade', 'score', 'createdAt'])
                     && reviewGradeOk(request.resource.data)
                     && request.resource.data.createdAt == request.time
-                    && reviewOrderEligible(request.resource.data);
+                    && reviewOrderEligible(request.resource.data)
+                    && notSelfStore(request.resource.data);
 
       // update: 본인만. storeId / userId / createdAt immutable.
       allow update: if isSignedIn()
@@ -769,7 +808,8 @@ service cloud.firestore {
                          ['storeId', 'userId', 'orderId', 'grade', 'score', 'comment', 'createdAt', 'updatedAt'])
                     && reviewGradeOk(request.resource.data)
                     && request.resource.data.updatedAt == request.time
-                    && reviewOrderEligible(request.resource.data);
+                    && reviewOrderEligible(request.resource.data)
+                    && notSelfStore(request.resource.data);
 
       // delete: 본인 또는 admin (1차 UI 없음. 집계는 CF 가 보정)
       allow delete: if isAdmin()

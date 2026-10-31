@@ -460,8 +460,9 @@ test('off 는 읽지 않는다 — stores·메뉴 reader 호출 0, paymentGateRe
   deps.gateReader = undefined; // 기본 어댑터(makeFirestoreGateReader(db))가 만들어질 상황
   await handleVerifyTossPayment(deps, req([item('m1')]));
   assert.equal(spy.confirm, 1);
-  // 멱등 가드의 orders 조회와 최종 batch 외에 Firestore 컬렉션 접근이 없어야 한다 (stores / brands / paymentGateRejections 0)
-  assert.deepEqual([...new Set(db.state.touched)].sort(), ['orders', 'users']);
+  // 멱등 가드의 orders 조회와 최종 batch 외에 게이트 목적의 접근이 없어야 한다 (brands / paymentGateRejections 0, 게이트 reader 0).
+  // [prelaunch_security_bundle] stores 1회는 모드와 무관하게 상시 동작하는 자기거래 가드(D-1)의 read 다 — 게이트 비용이 아니다.
+  assert.deepEqual([...new Set(db.state.touched)].sort(), ['orders', 'stores', 'users']);
   assert.equal(reader.calls.getStore + reader.calls.getMenuDocs, 0);
 });
 
