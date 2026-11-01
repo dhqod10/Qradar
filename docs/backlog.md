@@ -884,3 +884,14 @@ Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order
 ### ⬜ SL-2 — `order_item_row.dart` 이미지 플레이스홀더 비일관
 주문상세의 주문내역 라인(`lib/presentation/customer/order/widgets/order_item_row.dart`)만 raw `Image.network` + `Icons.image_not_supported`(투박한 깨진-이미지 아이콘)를 쓴다. 메뉴카드/장바구니 등 나머지는 `CachedNetworkImage` + 공통 플레이스홀더라, 같은 이미지 로드 실패여도 주문상세만 "깨진" 느낌으로 보인다(2026-10-30 iOS 실기기, 옛 주문의 스냅샷 imageUrl 미로드 시 노출).
 - **해법**: order_item_row 을 `CachedNetworkImage` + 동일 플레이스홀더로 통일(캐싱/폴백 정합). UI polish, 소규모. **소셜로그인과 무관**(테스트 중 우연 발견).
+
+## 추가 기능 요청 (사용자, 2026-11-01)
+
+### ⬜ 점주 정기(반복) 휴업 지정
+현재 휴업은 `temporaryClosed`(단발성 임시휴업)뿐이다. 점주가 **반복 휴무일**(예: 매주 월요일 휴무)을 미리 지정해 자동으로 판매가 차단되도록 하는 기능이 필요.
+- 기존 `temporaryClosed`(임시휴업)와 **공존** — 정기휴무는 스케줄, 임시휴업은 즉시성.
+- 관련: 선행 백로그의 "매장 운영시간 자동 차단"(영업시간 기반)과 성격이 겹치므로 설계 시 함께 검토.
+- 착수 시 결정: 요일 단위만? 특정 날짜(공휴일)도? 영업시간과 통합할지 별도 필드(`recurringClosedDays` 등)로 둘지. entity_lifecycle.md store status 전이 영향 확인.
+
+### 🤔 배달 기능 (검토중 — 확정 전)
+현재 픽업 전용. 배달 도입 여부/범위 **미결정**. 범위가 크다(배달비 정책·배달원/대행 연동·배송지 주소·거리 계산·배달 상태 추적·환불 영향 등). **할지/어떻게 할지 결정 후** D 로 편입.
