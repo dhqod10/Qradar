@@ -35,10 +35,11 @@
 - Rules 하네스 **463/463 PASS** (아래 stale 테스트 1건 교정 후 전건 green).
 - **stale 테스트 교정**: `test_rules/rules.test.mjs` PPA-3g 를 `allow`→`deny` 로 수정. 이전 세션 `b87b548`(brand_self_approve_guard V2)가 브랜드 자가승인(menuOverrides status→approved + 승인메타)을 차단하면서 기대값을 뒤집지 않아 실패해 있었다(보안묶음과 무관, menuOverrides 미변경 확인). rules 의도(브랜드는 제출만·승인은 admin 전담)가 맞고 테스트가 틀렸다.
 
-## 사용자 확인 필요 (배포 후, 자격증명/콘솔/계정 의존 — 오케스트레이터 불가)
-- **자기거래 차단(핵심 half) 미검증** — 점주/브랜드 계정으로 자기 매장 주문 → 거절 + `paymentGateRejections.reason='SELF_DEALING'` 기록. owner/brand 테스트 계정 자격증명 필요.
-- **orderSignals 문서 내용 미검증** — `orderSignals/{4eaebd3a…}` 가 64hex 해시·마스킹형이고 점주/고객 read 불가인지. prod Firestore/콘솔 read 필요.
-- **SL-1 이름 표시 미검증** — 현재 로그인 세션이 SL-1 배포 이전 계정이라 홈 인사말이 `Qrator`(폴백). 새로 소셜 로그인(naver/kakao)해야 실명 표시 확인됨. 사용자 자격증명 필요.
+## 사용자 협조 검증 완료 (2026-11-01, 사용자 계정/콘솔 제공 + 오케스트레이터 adb)
+- **자기거래 *차단* PASS** ✅ — 점주 계정(`qradar_owner@…`, 큐라다커피 강남점 owner)으로 고객모드 전환 → 자기 매장(강남점) 주문 → 토스 인증 완료 후 **`본인 매장은 주문할 수 없어요`**(결제 미진행·요금 미청구). verifyTossPayment 가드가 Toss confirm 전에 거절 → 주문 미생성·금액 미이동. 보안 핵심의 나머지 절반 확인.
+- **orderSignals 문서 내용 PASS** ✅ — `orderSignals/{4eaebd3a…}` 콘솔 확인: `deviceIdHash`/`ipHash` 긴 해시값, `cardCompany`/`cardFingerprint` null(계좌이체), **원본 IP·기기ID·카드번호 평문 없음**. (admin 콘솔에서만 열람.)
+- **SL-1 이름 표시 PASS** ✅ — 카카오 재로그인 후 홈 인사말 `Qrator`(폴백) → **실명 `Byunguk`** 표시. CF 프로필(name) 반영 확인.
+- (선택) `paymentGateRejections.reason='SELF_DEALING'` 기록 1건은 콘솔에서 추가 확인 가능 — UI 거절+결제 미진행으로 가드 발화는 이미 입증됨.
 
 ## 미구현/후속
 - Layer2 탐지·플래그·admin UI(의도적 비범위).
