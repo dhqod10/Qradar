@@ -393,6 +393,9 @@ service cloud.firestore {
             'isOpen', 'updatedAt', 'notice', 'tags',
             'temporaryClosed', 'closedDates', 'imageUrls',
             'excludedMainCategories',
+            // [store_list_pagination] geo 조회 인덱스 {geohash, geopoint} — location 에서 파생(조회 전용, 권한/금액 아님).
+            // 핵심 필드 수정(location 변경) 시 앱이 함께 쓴다. 화이트리스트에 없으면 점주 매장 수정 전체가 silent fail 한다.
+            'position',
             // 핵심 필드 수정 시 승인 메타 회귀
             'status', 'submittedBy', 'submittedAt',
             'businessRegistrationNumber',
@@ -431,6 +434,7 @@ service cloud.firestore {
             'isOpen', 'updatedAt', 'notice', 'tags',
             'temporaryClosed', 'closedDates', 'imageUrls',
             'excludedMainCategories',
+            'position',
             'status', 'submittedBy', 'submittedAt',
             'businessRegistrationNumber',
             'approvedBy', 'approvedAt', 'rejectedAt', 'rejectedReason'

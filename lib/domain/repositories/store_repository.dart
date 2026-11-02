@@ -1,4 +1,5 @@
 import 'package:qradar/domain/entities/store_entity.dart';
+import 'package:qradar/domain/entities/store_page.dart';
 import 'package:qradar/domain/entities/user_location.dart';
 
 /// 매장 Repository 인터페이스.
@@ -20,6 +21,13 @@ abstract class StoreRepository {
   Future<List<StoreEntity>> getApprovedStores({
     required UserLocation location,
     int limit = 100,
+  });
+
+  /// 주변매장 전체보기용 — [center] 기준 반경 [radiusKm] 이내 승인 매장 전부를 가까운 순으로 (geohash 근접 쿼리).
+  /// 반경이 페이지 경계다 (store_list_pagination). 홈 스냅샷(`getApprovedStores`)과 독립.
+  Future<StorePage> getNearbyStoresPaged({
+    required UserLocation center,
+    required double radiusKm,
   });
 
   /// 선택된 카테고리에 해당하는 매장 조회 (status=approved 필터 적용, T7).

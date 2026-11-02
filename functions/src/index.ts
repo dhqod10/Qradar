@@ -62,3 +62,9 @@ export {
 } from "./onAvailableCategoriesWritten";
 // 임시 자산 아님 — 트리거 누락 치유/신규 시드용 상시 정합 재조정 도구 (admin, dryRun 기본, migrationHistory 1건).
 export { backfillAvailableMainCategories } from "./backfillAvailableMainCategories";
+
+// qoin_accrual_backfill Phase 1 — 빠진 Qoin 적립 소급 도구 (admin, dryRun 기본, qoinBackfillHistory 1건). 라이브 onOrderQoinSettled 는 수정하지 않는다.
+export { backfillQoinAccrual } from "./backfillQoinAccrual";
+
+// store_list_pagination — stores.position(geohash) 1회 백필 (admin, dryRun 기본, migrationHistory 1건). 멱등.
+export { backfillStoreGeohash } from "./backfillStoreGeohash";

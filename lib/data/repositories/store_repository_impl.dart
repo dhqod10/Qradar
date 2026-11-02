@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseException;
+import 'package:qradar/core/constants/grade_thresholds.dart';
 import 'package:qradar/core/errors/permission_denied_exception.dart';
 import 'package:qradar/core/utils/distance_calculator.dart';
 import 'package:qradar/data/datasources/remote/store_remote_data_source.dart';
 import 'package:qradar/data/models/store_model.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
+import 'package:qradar/domain/entities/store_page.dart';
 import 'package:qradar/domain/entities/user_location.dart';
 import 'package:qradar/domain/repositories/store_repository.dart';
 
@@ -73,6 +75,42 @@ class StoreRepositoryImpl implements StoreRepository {
     return withDistance
         .map((pair) => pair.$1.toEntity(distanceKm: pair.$2))
         .toList(growable: false);
+  }
+
+  @override
+  Future<StorePage> getNearbyStoresPaged({
+    required UserLocation center,
+    required double radiusKm,
+  }) async {
+    final atMax = radiusKm >= GradeThresholds.nearbyPagedMaxRadiusKm;
+    List<StoreModel> models;
+    try {
+      models = await _dataSource.fetchNearby(
+        lat: center.latitude,
+        lng: center.longitude,
+        radiusKm: radiusKm,
+      );
+      // 안전장치: geo 쿼리가 최대 반경에서도 0건이면 `position` 백필 전 legacy 일 수 있다.
+      // 기존 점수순 상위 100 경로로 한 번 폴백한다 (읽기 100, 빈 지역 한정). 백필 완료 후엔 사실상 도달하지 않는다.
+      if (models.isEmpty && atMax) {
+        models = await _dataSource.fetchAll(limit: 100);
+      }
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') throw const PermissionDeniedException();
+      rethrow;
+    }
+    // 반경 경계는 Repository 가 결정한다 (라이브러리 strictMode 는 2% 버퍼를 둔다) — 링 사이 중복/누락 방지.
+    final withDistance = _attachDistance(_filterApproved(models), center)
+        .where((pair) => pair.$2 <= radiusKm)
+        .toList();
+    withDistance.sort((a, b) => a.$2.compareTo(b.$2));
+    return StorePage(
+      items: withDistance
+          .map((pair) => pair.$1.toEntity(distanceKm: pair.$2))
+          .toList(growable: false),
+      loadedRadiusKm: radiusKm,
+      exhausted: atMax,
+    );
   }
 
   @override

@@ -141,3 +141,241 @@ class RecommendedEmptyState extends StatelessWidget {
     );
   }
 }
+
+// ── 무한 스크롤 목록 상태 (store_list_pagination) — 문구는 모두 파라미터 ──────────
+
+/// 추가 로딩 footer — 리스트 끝 스피너 (20x20, primary).
+class StoreListLoadingFooter extends StatelessWidget {
+  const StoreListLoadingFooter({
+    super.key,
+    this.semanticsLabel = '매장을 더 불러오는 중',
+  });
+
+  final String semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: semanticsLabel,
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 26),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 추가 로드 실패 footer — 기존 목록은 그대로 두고 텍스트 버튼으로만 재시도한다.
+class StoreListRetryFooter extends StatelessWidget {
+  const StoreListRetryFooter({
+    super.key,
+    required this.onRetry,
+    this.message = '매장을 더 불러오지 못했어요',
+    this.actionLabel = '다시 시도',
+  });
+
+  final VoidCallback onRetry;
+  final String message;
+  final String actionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 18, color: AppColors.error),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              foregroundColor: AppColors.primaryBright,
+            ),
+            child: Text(
+              actionLabel,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primaryBright,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 소진 footer — 더 이상 불러올 매장이 없음. 반경(km) 수치를 노출하지 않는다.
+class StoreListEndFooter extends StatelessWidget {
+  const StoreListEndFooter({
+    super.key,
+    this.message = '주변에 더 이상 매장이 없어요',
+  });
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 주변 매장 없음 빈 상태 (최대 반경까지 확장한 뒤에만 노출).
+class NearbyEmptyState extends StatelessWidget {
+  const NearbyEmptyState({
+    super.key,
+    this.title = '주변에 매장이 없어요',
+    this.subtitle = '위치를 바꾸거나 나중에 다시 확인해 주세요',
+  });
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Center(
+        child: Column(
+          children: [
+            const Icon(
+              Icons.storefront_outlined,
+              size: 40,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textBody,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 위치 폴백 배너 — 거리순 기준이 사용자 위치가 아님을 고지. [onAction] 이 있을 때만 우측 액션 노출.
+class LocationFallbackBanner extends StatelessWidget {
+  const LocationFallbackBanner({
+    super.key,
+    this.title = '내 위치를 확인할 수 없어요',
+    this.description = '서울시청 기준 가까운 순으로 보여드려요',
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final String description;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.location_off_outlined,
+            size: 20,
+            color: AppColors.textMuted,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textHeading,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (actionLabel != null && onAction != null)
+            TextButton(
+              onPressed: onAction,
+              child: Text(
+                actionLabel!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primaryBright,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

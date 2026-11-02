@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
+import 'package:qradar/presentation/customer/home/nearby_stores_page.dart';
 import 'package:qradar/presentation/customer/home/providers/home_providers.dart';
 import 'package:qradar/presentation/customer/home/widgets/section_title.dart';
 import 'package:qradar/presentation/customer/home/widgets/store_card.dart';
@@ -18,7 +19,32 @@ class NearbyStoresSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionTitle(title: '주변매장'),
+        SectionTitle(
+          title: '주변매장',
+          trailing: InkWell(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const NearbyStoresPage()),
+            ),
+            borderRadius: BorderRadius.circular(8),
+            child: const SizedBox(
+              height: 44,
+              child: Center(
+                widthFactor: 1,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    '전체보기',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.info,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
         SizedBox(
           height: 200,
           child: stores.when(

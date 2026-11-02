@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geoflutterfire_plus/geoflutterfire_plus.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/core/utils/grade_calculator.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
@@ -257,12 +258,19 @@ class StoreModel {
     );
   }
 
+  /// geo 조회 인덱스 필드 `position = {geohash, geopoint}` (store_list_pagination).
+  /// `location` 과 **같은 위경도에서 파생**한다 — 둘이 어긋나지 않도록 쓰기 경로는 항상 이 헬퍼를 쓴다.
+  /// 조회 전용 파생 값이며 정책/권한/금액이 아니다.
+  Map<String, dynamic> get positionField =>
+      GeoFirePoint(GeoPoint(latitude, longitude)).data;
+
   /// 신규 매장 생성용 (점주 등록 — status=pending, brandId=null 강제).
   Map<String, dynamic> toFirestoreForCreate() => <String, dynamic>{
         'ownerId': ownerId,
         'name': name,
         'imageUrl': imageUrl,
         'location': GeoPoint(latitude, longitude),
+        'position': positionField,
         'phone': phone,
         'address': address,
         'description': description,
@@ -289,6 +297,7 @@ class StoreModel {
         'name': name,
         'address': address,
         'location': GeoPoint(latitude, longitude),
+        'position': positionField,
         'menuCategories': menuCategories,
         'businessRegistrationNumber': businessRegistrationNumber,
         'status': EntityApprovalStatus.pending.asString,
@@ -327,6 +336,7 @@ class StoreModel {
         'name': name,
         'imageUrl': imageUrl,
         'location': GeoPoint(latitude, longitude),
+        'position': positionField,
         'phone': phone,
         'address': address,
         'description': description,

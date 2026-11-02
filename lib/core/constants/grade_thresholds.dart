@@ -26,6 +26,21 @@ class GradeThresholds {
   // 주변 매장 조회 반경 (km)
   static const double nearbyRadiusKm = 20.0;
 
+  // ── 주변매장 전체보기 페이지네이션 (docs/tasks/store_list_pagination) ──────
+  // geohash 반경 조회 + 무한 스크롤. 반경 5 -> 10 -> 20 -> 40km 로 확장한다 (상수는 이 한 곳에만).
+
+  /// 한 번에 노출(reveal)하는 매장 수.
+  static const int nearbyPageSize = 20;
+
+  /// 페이지네이션 시작 반경 (km).
+  static const double nearbyPagedStartRadiusKm = 5.0;
+
+  /// 반경 확장 배수 (5 -> 10 -> 20 -> 40).
+  static const double nearbyPagedRadiusFactor = 2.0;
+
+  /// 최대 반경 (km). 여기까지 읽고 더 없으면 소진 처리.
+  static const double nearbyPagedMaxRadiusKm = 40.0;
+
   // 주문 화면 매장 조회 반경 + 개수 상한
   static const double orderRadiusKm = 10.0;
   static const int orderStoresLimit = 50;

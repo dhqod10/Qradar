@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geoflutterfire_plus/geoflutterfire_plus.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/data/models/store_model.dart';
 
@@ -25,6 +26,33 @@ class StoreRemoteDataSource {
         .limit(limit)
         .get();
     return snapshot.docs.map(StoreModel.fromFirestore).toList(growable: false);
+  }
+
+  /// 중심 [lat],[lng] 반경 [radiusKm] 이내 승인 매장 (geohash 근접 쿼리, store_list_pagination).
+  ///
+  /// `status == approved` 를 서버에서 걸고 `position.geohash` 범위 쿼리를 9개 fan-out 한다
+  /// (복합 인덱스 `status ASC, position.geohash ASC` 필요). 거리 필터/정렬은 Repository 책임.
+  /// `position` 이 없는 legacy 문서는 결과에서 빠진다 (백필 전 — implementation.md 배포 게이트).
+  Future<List<StoreModel>> fetchNearby({
+    required double lat,
+    required double lng,
+    required double radiusKm,
+  }) async {
+    final geo = GeoCollectionReference<Map<String, dynamic>>(_stores);
+    final docs = await geo.fetchWithin(
+      center: GeoFirePoint(GeoPoint(lat, lng)),
+      radiusInKm: radiusKm,
+      field: 'position',
+      geohashField: 'geohash',
+      geopointFrom: (data) =>
+          (data['position'] as Map<String, dynamic>)['geopoint'] as GeoPoint,
+      queryBuilder: (q) => q.where('status', isEqualTo: 'approved'),
+      strictMode: true,
+    );
+    return docs
+        .where((d) => d.exists)
+        .map(StoreModel.fromFirestore)
+        .toList(growable: false);
   }
 
   /// 모든 매장 실시간 스트림 (status 무관 — admin 전용).
