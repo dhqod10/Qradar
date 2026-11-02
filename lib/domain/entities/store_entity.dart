@@ -81,6 +81,10 @@ abstract class StoreEntity with _$StoreEntity {
     /// 노출 메뉴의 mainCategory ∩ active − excluded. 부재 = 빈 목록.
     @Default([]) List<String> availableMainCategories,
 
+    /// 검색 키워드 파생 배열 (Cloud Function 전담, 읽기 전용). 매장명+브랜드명+카테고리 토큰.
+    /// groundwork — 현재 질의 경로는 사용하지 않는다. 부재 = 빈 목록.
+    @Default([]) List<String> searchKeywords,
+
     /// 최종 수정 시점.
     DateTime? updatedAt,
 

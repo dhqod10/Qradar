@@ -51,6 +51,8 @@ class StoreModel {
   final List<String> excludedMainCategories;
   /// CF 전담 파생 필드(읽기 전용). 어떤 toFirestore* 맵에도 넣지 않는다.
   final List<String> availableMainCategories;
+  /// CF 전담 파생 검색 키워드(읽기 전용, groundwork). 어떤 toFirestore* 맵에도 넣지 않는다.
+  final List<String> searchKeywords;
   final DateTime? updatedAt;
 
   /// Qoin 적립률 개별 설정 — **읽기 전용 필드.** 어떤 `toFirestore*` 맵에도 넣지 않는다
@@ -91,6 +93,7 @@ class StoreModel {
     this.notice,
     this.excludedMainCategories = const [],
     this.availableMainCategories = const [],
+    this.searchKeywords = const [],
     this.updatedAt,
     this.qoinAccrualRate = QoinRateSetting.absent,
     this.qoinAccrualEnabled = QoinSwitchSetting.enabled,
@@ -167,6 +170,11 @@ class StoreModel {
               ?.whereType<String>()
               .toList(growable: false) ??
           const <String>[],
+      searchKeywords:
+          (data['searchKeywords'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          const <String>[],
       updatedAt: tsField('updatedAt'),
       qoinAccrualRate: QoinRateSetting.fromRaw(
         data[FirestorePaths.qoinAccrualRateField],
@@ -213,6 +221,7 @@ class StoreModel {
       notice: entity.notice,
       excludedMainCategories: entity.excludedMainCategories,
       availableMainCategories: entity.availableMainCategories,
+      searchKeywords: entity.searchKeywords,
       updatedAt: entity.updatedAt,
       qoinAccrualRate: entity.qoinAccrualRate,
       qoinAccrualEnabled: entity.qoinAccrualEnabled,
@@ -252,6 +261,7 @@ class StoreModel {
       notice: notice,
       excludedMainCategories: excludedMainCategories,
       availableMainCategories: availableMainCategories,
+      searchKeywords: searchKeywords,
       updatedAt: updatedAt,
       qoinAccrualRate: qoinAccrualRate,
       qoinAccrualEnabled: qoinAccrualEnabled,

@@ -1,0 +1,122 @@
+{
+  "_comment": "search_keyword_enhancement cross-golden. Dart(search_keyword_tokenizer) 와 TS(functions/src/searchKeywords.ts) 가 같은 입력에 같은 출력을 내야 한다.",
+  "maxKeywords": 300,
+  "build": [
+    {
+      "name": "단일 단어",
+      "sources": [
+        "강남점"
+      ],
+      "expect": [
+        "강",
+        "강남",
+        "강남점"
+      ]
+    },
+    {
+      "name": "공백 분할 + 공백제거 full",
+      "sources": [
+        "아이스 아메리카노"
+      ],
+      "expect": [
+        "아",
+        "아이",
+        "아이스",
+        "아메",
+        "아메리",
+        "아메리카",
+        "아메리카노",
+        "아이스아",
+        "아이스아메",
+        "아이스아메리",
+        "아이스아메리카",
+        "아이스아메리카노"
+      ]
+    },
+    {
+      "name": "소문자 + trim",
+      "sources": [
+        "  Cafe  "
+      ],
+      "expect": [
+        "c",
+        "ca",
+        "caf",
+        "cafe"
+      ]
+    },
+    {
+      "name": "다중 source 중복 제거",
+      "sources": [
+        "스타벅스",
+        "스타벅스 강남"
+      ],
+      "expect": [
+        "스",
+        "스타",
+        "스타벅",
+        "스타벅스",
+        "강",
+        "강남",
+        "스타벅스강",
+        "스타벅스강남"
+      ]
+    },
+    {
+      "name": "빈/공백 source 무시",
+      "sources": [
+        "",
+        "   "
+      ],
+      "expect": []
+    }
+  ],
+  "buildCap": {
+    "sources": [
+      "abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz"
+    ],
+    "max": 5,
+    "expect": [
+      "a",
+      "ab",
+      "abc",
+      "abcd",
+      "abcde"
+    ]
+  },
+  "query": [
+    {
+      "raw": "  아이스  Americano ",
+      "expect": [
+        "아이스",
+        "americano"
+      ]
+    },
+    {
+      "raw": "",
+      "expect": []
+    },
+    {
+      "raw": "a a b",
+      "expect": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "raw": "a b c d e f g h i j k l",
+      "expect": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j"
+      ]
+    }
+  ]
+}

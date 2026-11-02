@@ -1283,6 +1283,35 @@ await run('QS-R6b admin 이 spendRefund 원장 create', 'deny', () =>
 await run('QS-R7 고객이 qoinSettlementIssues 직접 create (롤백 실패 기록 위조)', 'deny', () =>
   setDoc(doc(asCustomer, 'qoinSettlementIssues', 'o_forge'), { reason: 'spend_rollback_failed' }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// search_keyword_enhancement — stores.searchKeywords 는 CF 전담 파생 필드 (키워드 스터핑 차단).
+// create 가드 + update 화이트리스트 제외 + 정상 payload 회귀 (audit_trail §4-7).
+// ═══════════════════════════════════════════════════════════════════════════
+await run('SK-1 owner 매장 create 에 searchKeywords 포함', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'sk_1'), { ownerId: OWNER, name: 'N', status: 'pending', searchKeywords: ['경쟁사'] }));
+await run('SK-1b owner 매장 create 에 searchKeywords 빈 배열도 거부 (키 존재 자체 차단)', 'deny', () =>
+  setDoc(doc(asOwner, 'stores', 'sk_1b'), { ownerId: OWNER, name: 'N', status: 'pending', searchKeywords: [] }));
+await run('SK-2 owner 가 자기 매장 update 로 searchKeywords 주입', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { searchKeywords: ['스타벅스'] }));
+await run('SK-2b owner 정상 필드와 searchKeywords 동시 update', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { notice: 'x', searchKeywords: ['스타벅스'] }));
+// admin 전권 분기는 availableMainCategories 와 동일하게 파생 필드를 막지 않는다 (현행 보호 수준 문서화 — 변경 시 별도 결정).
+await run('SK-3 admin update 는 전권 분기로 허용 (availableMainCategories 와 동일 보호 수준, 문서화)', 'allow', () =>
+  updateDoc(doc(asAdmin, 'stores', S_A), { searchKeywords: ['x'] }));
+await run('SK-4 회귀: owner 매장 create 정상 payload (searchKeywords 없음)', 'allow', () =>
+  setDoc(doc(asOwner, 'stores', 'sk_4'), {
+    ownerId: OWNER, name: '신규 매장', description: '', phone: '010', address: '서울', location: { lat: 1, lng: 2 },
+    imageUrl: '', imageUrls: [], menuCategories: ['coffee'], isOpen: false, status: 'pending',
+    businessRegistrationNumber: '123-45-67890', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    submittedBy: OWNER, submittedAt: serverTimestamp(),
+  }));
+await run('SK-5 회귀: owner 운영 필드 update 는 계속 통과', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { notice: '공지', updatedAt: serverTimestamp() }));
+await run('SK-6 회귀: 읽기(searchKeywords 가 있는 문서)는 인증 사용자 허용', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'stores', 'sk_read'), { ownerId: OWNER, name: 'N', status: 'approved', searchKeywords: ['n'] }));
+  return getDoc(doc(asCustomer, 'stores', 'sk_read'));
+});
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {

@@ -68,3 +68,8 @@ export { backfillQoinAccrual } from "./backfillQoinAccrual";
 
 // store_list_pagination — stores.position(geohash) 1회 백필 (admin, dryRun 기본, migrationHistory 1건). 멱등.
 export { backfillStoreGeohash } from "./backfillStoreGeohash";
+
+// search_keyword_enhancement (groundwork) — stores.searchKeywords 파생 (CF 전담). 질의 경로는 아직 사용하지 않는다.
+export { onStoreSearchSourceWritten, onBrandSearchNameWritten } from "./onSearchKeywordsSourceWritten";
+// 상시 정합 도구 (admin, dryRun 기본, migrationHistory 1건). 멱등.
+export { backfillStoreSearchKeywords } from "./backfillStoreSearchKeywords";
