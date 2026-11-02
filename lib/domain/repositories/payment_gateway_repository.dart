@@ -47,6 +47,10 @@ abstract class PaymentGatewayRepository {
     required CartEntity cartSnapshot,
     required String uid,
     required PaymentMethod paymentMethod,
+
+    /// 사용할 Qoin (1 Qoin = 1원, qoin_spend). **요청**이다 — 서버(`verifyTossPayment`)가 잔액·정책·서버가 다시 만든 소계로
+    /// 검증하고 최종 청구액을 재계산한다. [amount] 는 `cartSnapshot.subtotal - qoinToUse`. 0 이면 기존 결제 흐름과 동일.
+    int qoinToUse = 0,
   });
 
   /// Cloud Functions `cancelTossPayment` 호출.

@@ -367,6 +367,8 @@ class _PriceSection extends StatelessWidget {
       child: PriceSummary(
         subtotal: order.subtotal,
         discount: order.discount ?? 0,
+        // 주문의 discount 는 Qoin 사용분뿐이다 (qoin_spend). 라벨만 바꾼다 — 0 이면 행이 없어 화면은 이전과 같다.
+        discountLabel: 'Qoin 사용',
         total: order.totalPrice,
       ),
     );

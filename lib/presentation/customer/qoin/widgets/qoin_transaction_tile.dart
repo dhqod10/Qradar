@@ -21,22 +21,29 @@ String qoinReasonText(QoinTransactionEntity tx) {
           '${QoinPolicy.formatRatePercent(rate)}';
     case QoinTransactionType.clawback:
       return '환불로 회수';
+    case QoinTransactionType.spend:
+      // 결제수단을 특정하지 않는다 (design §8.1). orderTotalPrice = 거래 당시 현금 결제액 (박제값).
+      final cash = tx.orderTotalPrice;
+      if (cash == null || cash <= 0) return '결제에 사용';
+      return '결제에 사용 · 현금 결제 ${PriceFormatter.formatKrw(cash)}';
+    case QoinTransactionType.spendRefund:
+      return '주문 취소·환불로 사용한 Qoin 복원';
     case null:
       return 'Qoin 조정';
   }
 }
 
-/// 스크린리더 문구. 음수 하이픈 대신 `적립`/`회수` 동사로 조립한다.
+/// 스크린리더 문구. 음수 하이픈 대신 `적립`/`회수`/`사용`/`복원` 동사로 조립한다.
 String qoinSpokenText(QoinTransactionEntity tx) {
   final amount = tx.amount;
   final abs = QoinFormatters.number(amount.abs());
   final store = tx.storeName.isEmpty ? 'Qoin 내역' : tx.storeName;
   final verb = amount > 0
-      ? '$abs Q ${tx.type == QoinTransactionType.earn ? '적립' : '증가'}'
+      ? '$abs Q ${_increaseVerb(tx.type)}'
       : amount < 0
-      ? '$abs Q ${tx.type == QoinTransactionType.clawback ? '회수' : '감소'}'
+      ? '$abs Q ${_decreaseVerb(tx.type)}'
       : '0 Q';
-  final after = amount >= 0 ? '적립 후' : '회수 후';
+  final after = _afterPrefix(tx.type, amount);
   final date = tx.createdAt == null
       ? ''
       : ', ${QoinFormatters.dateTimeSpoken(tx.createdAt!)}';
@@ -44,6 +51,28 @@ String qoinSpokenText(QoinTransactionEntity tx) {
       '$after 잔액 ${QoinFormatters.balanceSpoken(tx.balanceAfter)}'
       '${tx.orderId.isEmpty ? '' : '. 탭하면 주문 상세'}';
 }
+
+String _increaseVerb(QoinTransactionType? t) => switch (t) {
+  QoinTransactionType.earn => '적립',
+  QoinTransactionType.spendRefund => '복원',
+  _ => '증가',
+};
+
+String _decreaseVerb(QoinTransactionType? t) => switch (t) {
+  QoinTransactionType.clawback => '회수',
+  QoinTransactionType.spend => '사용',
+  _ => '감소',
+};
+
+/// `… 후 잔액` 접두사. **타입별**로 고른다 — 예전의 부호 2갈래(`적립 후`/`회수 후`)는 사용(spend)을 "회수 후" 로 읽었다.
+/// 미지 타입은 부호로 폴백 (전방 호환).
+String _afterPrefix(QoinTransactionType? t, int amount) => switch (t) {
+  QoinTransactionType.earn => '적립 후',
+  QoinTransactionType.clawback => '회수 후',
+  QoinTransactionType.spend => '사용 후',
+  QoinTransactionType.spendRefund => '복원 후',
+  null => amount >= 0 ? '적립 후' : '회수 후',
+};
 
 /// 원장 1행. 적립 `+` / 회수 `-` 판정은 amount 부호로. 회수에 error 색·취소선·dim 금지.
 class QoinTransactionTile extends StatelessWidget {
@@ -60,14 +89,14 @@ class QoinTransactionTile extends StatelessWidget {
     final isLoss = amount < 0;
     final store = tx.storeName.isEmpty ? 'Qoin 내역' : tx.storeName;
 
-    final IconData icon;
-    if (tx.type == QoinTransactionType.earn) {
-      icon = Icons.add_rounded;
-    } else if (tx.type == QoinTransactionType.clawback) {
-      icon = Icons.undo_rounded;
-    } else {
-      icon = Icons.swap_vert_rounded;
-    }
+    // 아이콘 모양만 타입으로 고른다. 배경/전경/값 색은 amount 부호 (isLoss) 로 — 사용은 정상 거래라 error 색 금지.
+    final IconData icon = switch (tx.type) {
+      QoinTransactionType.earn => Icons.add_rounded,
+      QoinTransactionType.clawback => Icons.undo_rounded,
+      QoinTransactionType.spend => Icons.shopping_bag_outlined,
+      QoinTransactionType.spendRefund => Icons.replay_rounded,
+      null => Icons.swap_vert_rounded,
+    };
     final Color iconBg = isLoss
         ? AppColors.textMuted.withValues(alpha: 0.15)
         : AppColors.primaryBright.withValues(alpha: 0.15);

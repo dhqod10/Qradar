@@ -24,6 +24,8 @@ export { onReviewWritten } from "./onReviewWritten";
 export { onOrderQoinSettled } from "./onOrderQoinSettled";
 export { setQoinAccrualRate } from "./setQoinAccrualRate";
 export { setQoinAccrualEnabled } from "./setQoinAccrualEnabled";
+// qoin_spend — 전역 사용 정책 (admin callable, 변경 이력 동시 기록)
+export { setQoinSpendPolicy } from "./setQoinSpendPolicy";
 export { applyBrandQoinRate } from "./applyBrandQoinRate";
 export { onQoinConfigWritten } from "./onQoinConfigWritten";
 export { claimSubmittedBrand } from "./claimSubmittedBrand";

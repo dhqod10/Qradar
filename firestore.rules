@@ -854,10 +854,19 @@ service cloud.firestore {
     // 트리거는 `enabledChangedAt` 이 갱신됐으면 그 uid 를 행위자로 이력에 남긴다 (source 'app_direct').
     // delete 도 막는다 (삭제 = accrualRate 소멸 = 적립률 쓰기 경로).
     // ─────────────────────────────────────────────────────────────────────────
+    //
+    // **Qoin 사용 정책(qoin_spend)** — `spendEnabled` / `minSpendUnit` / `minCashFloor` 도 `accrualRate` 와 같은 CF 전담 (setQoinSpendPolicy):
+    // create·update 양쪽에서 admin 의 SDK 직접 쓰기를 거부한다 (이력 누락 방지). Console 편집은 Rules 를 우회하므로 onQoinConfigWritten 이 이력으로 남긴다.
+    // 필드 목록은 qoinSpendPolicyFields() 1곳 — 새 정책 필드는 여기에만 추가한다.
+    // ─────────────────────────────────────────────────────────────────────────
+    function qoinSpendPolicyFields() {
+      return ['spendEnabled', 'minSpendUnit', 'minCashFloor'];
+    }
     match /config/{docId} {
       allow read: if isSignedIn();
       allow create: if isAdmin()
                     && !('accrualRate' in request.resource.data)
+                    && !request.resource.data.keys().hasAny(qoinSpendPolicyFields())
                     && (!('enabled' in request.resource.data)
                         || (request.resource.data.get('enabledChangedBy', '') == uid()
                             && request.resource.data.get('enabledChangedAt', null) == request.time));
@@ -865,6 +874,7 @@ service cloud.firestore {
       // 생략을 허용하면 행위자(enabledChangedBy)가 지워진 채 Console 편집과 구별되지 않는 이력이 남는다 (audit_trail §4-4).
       allow update: if isAdmin()
                     && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['accrualRate'])
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(qoinSpendPolicyFields())
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['enabled', 'enabledChangedBy'])
                         || request.resource.data.get('enabledChangedBy', '') == uid())
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['enabled'])

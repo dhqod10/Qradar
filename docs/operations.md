@@ -255,3 +255,20 @@ Console → Firestore → `paymentGateRejections`. 거절이 **"악용 차단"**
   전환하는 시점에 거절 1건을 실제로 일으켜 **카드사 알림·토스 결제 내역에 아무것도 남지 않는지**
   확인한다. 남으면 그 문구는 거짓이므로 `아직 결제가 완료되지 않았어요` 로 즉시 바꾼다.
   (`payment_server_authority/deploy_runbook.md` ⑩-c)
+
+### 6.7 Qoin 사용(qoin_spend) 운영
+
+Qoin 사용은 `PAYMENT_GATE_MODE` / `PAYMENT_PRICE_MODE` 와 **독립**이며, 켜고 끄는 값은 `config/qoin` 문서에 있다 (재배포 불필요).
+
+| 필드 | 의미 | 부재 시 |
+|---|---|---|
+| `spendEnabled` | 사용 kill switch. `false` → **신규 사용만** 차단 (환불·취소 복원은 통과) | **꺼짐 (fail-closed)** |
+| `minCashFloor` | 결제수단 무관 단일 최소 현금 결제액. 초기 **300원** (토스 수단별 최소금액 중 최대치 — 머천트 계약별로 다를 수 있으니 토스 콘솔값 확인) | 사용 차단 |
+| `minSpendUnit` | 최소 사용 단위 (기본 1) | 1 |
+| `enabled` (기존) | 전역 비상정지 — 적립·회수·**사용·복원** 전부 멈춘다 (복원이 멈추면 `qoinSettlementIssues` 에 `spend_restore_skipped_disabled` 로 남는다) | 차단 |
+
+- **값 변경 수단**: callable `setQoinSpendPolicy` (admin, 변경 이력 동시 기록). Console 직접 편집도 되지만 Rules 를 우회하므로 `onQoinConfigWritten` 이 사후 이력(`source:'direct'`)만 남긴다.
+- **켜는 순서**: `minCashFloor` 확인 → (선택) `minSpendUnit` → `spendEnabled: true`. `PAYMENT_PRICE_MODE` 와 무관하게 Qoin 주문은 서버가 소계를 다시 만들어 enforce 한다.
+- **비상 정지**: `spendEnabled = false` 한 필드. 앱은 다음 정책 스트림 갱신에서 Qoin 섹션을 숨기고 기존 결제로 폴백한다. 이미 진행 중인 요청은 서버가 거절(`QOIN_SPEND_DISABLED`, confirm 전)한다.
+- **일일 점검**: `paymentGateRejections` 의 `reason` 이 `QOIN_*` 인 건수 — `QOIN_BELOW_CASH_FLOOR` 가 반복되면 토스 최소금액과 `minCashFloor` 가 어긋난 것일 수 있다. `qoinSettlementIssues` 의 `reason: spend_rollback_failed` / `spend_restore_skipped_disabled` 는 **고객 Qoin 이 걸려 있는 수동 복구 대상**이다.
+- **고아 예약 점검**: `users/*/qoinTransactions/spend_*` 중 `orders/{orderId}` 가 없고 `spendRefund_{orderId}` 도 없는 것은 서버가 차감 직후 죽은 잔재다 (현재 자동 청소 없음 — `docs/tasks/qoin_spend/implementation.md` 보류 항목).

@@ -12,8 +12,8 @@ enum PaymentFailureFamily {
   unknown,
 }
 
-/// 서버 게이트가 보내는 알려진 거절 사유 10개 (payment_server_authority spec §15.1 의 6개 +
-/// payment_price_authority §9-1 의 금액 사유 2개). 목록 밖은 [unknown] → 갈래 C.
+/// 서버 게이트가 보내는 알려진 거절 사유 (payment_server_authority spec §15.1 의 6개 +
+/// payment_price_authority §9-1 의 금액 사유 2개 + 자기거래 1개 + Qoin 사용(qoin_spend) 4개). 목록 밖은 [unknown] → 갈래 C.
 enum PaymentFailureReason {
   storeNotSellable('STORE_NOT_SELLABLE'),
   storeTemporarilyClosed('STORE_TEMPORARILY_CLOSED'),
@@ -26,6 +26,14 @@ enum PaymentFailureReason {
   readFailed('READ_FAILED'),
   // prelaunch_security_bundle: 본인(점주/브랜드 보유자) 매장 결제 거절. Toss confirm 전이라 돈이 안 나갔다.
   selfDealing('SELF_DEALING'),
+  // qoin_spend: Qoin 사용 거절. 모두 Toss confirm 전이라 돈도 Qoin 도 안 움직였다 (갈래 B). 메뉴 id 를 싣지 않는다.
+  qoinInsufficientBalance('QOIN_INSUFFICIENT_BALANCE'),
+  qoinSpendDisabled('QOIN_SPEND_DISABLED'),
+  qoinBelowCashFloor('QOIN_BELOW_CASH_FLOOR'),
+
+  /// 위 셋 외의 모든 `QOIN_*` (단위/상한/최소단위 — `QOIN_BELOW_MIN_UNIT`, `QOIN_NOT_UNIT_MULTIPLE`, 이후 추가될 것). 서버가 사유를 늘려도
+  /// 갈래 C 로 떨어지지 않고 "사용액을 확인해 주세요" 로 안내한다. 문의 코드 캡션은 실제 토큰을 보여 준다.
+  qoinInvalidAmount('QOIN_INVALID_AMOUNT'),
   unknown('');
 
   const PaymentFailureReason(this.token);
@@ -44,6 +52,8 @@ enum PaymentFailureReason {
     for (final r in values) {
       if (r != unknown && r.token == token) return r;
     }
+    // 알려진 Qoin 3종 밖의 QOIN_* 는 한 문구로 (qoin_spend design §6.1 "그 외").
+    if (token.startsWith('QOIN_')) return qoinInvalidAmount;
     return null;
   }
 }
@@ -92,7 +102,7 @@ class PaymentFailure {
   /// `verifyAndCreateOrder` 등에서 잡은 예외 → 갈래 B/C.
   ///
   /// 입력은 [VerifyPaymentFailure.message] (또는 임의 객체의 `toString()`) 이며 **끝의 토큰만** 읽는다.
-  /// 알려진 10개 → 갈래 B. 그 밖(토큰 없음·모르는 토큰·파싱 불가)은 모두 갈래 C — 돈이 안 나갔다고 잘못 말하느니
+  /// 알려진 사유(Qoin `QOIN_*` 포함) → 갈래 B. 그 밖(토큰 없음·모르는 토큰·파싱 불가)은 모두 갈래 C — 돈이 안 나갔다고 잘못 말하느니
   /// 확인을 시킨다 (design D4).
   factory PaymentFailure.from(Object error) {
     final text = error is VerifyPaymentFailure

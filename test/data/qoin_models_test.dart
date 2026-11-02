@@ -61,6 +61,13 @@ void main() {
       expect(e.accrualRate, isNull);
       expect(e.createdAt, isNull);
     });
+    test('qoin_spend: spend / spendRefund 코드 파싱', () {
+      expect(QoinTransactionType.fromCode('spend'), QoinTransactionType.spend);
+      expect(
+        QoinTransactionType.fromCode('spendRefund'),
+        QoinTransactionType.spendRefund,
+      );
+    });
     test('unknown type string -> null type, amount sign preserved', () {
       final e = QoinTransactionModel.fromMap('x', {
         'type': 'expire',

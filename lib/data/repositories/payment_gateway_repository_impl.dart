@@ -92,14 +92,16 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
     required CartEntity cartSnapshot,
     required String uid,
     required PaymentMethod paymentMethod,
+    int qoinToUse = 0,
   }) async {
     await _functionsDs.verifyTossPayment(
       paymentKey: paymentKey,
       orderId: orderId,
       amount: amount,
       idempotencyKey: orderId,
-      cartSnapshot: cartToMap(cartSnapshot),
+      cartSnapshot: cartToMap(cartSnapshot, qoinToUse: qoinToUse),
       paymentMethod: paymentMethod.name,
+      qoinToUse: qoinToUse,
     );
 
     // Functions 완료 후 Firestore 에서 생성된 주문 조회.
@@ -175,14 +177,18 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
   ///
   /// **`brandId` 를 보내지 않는다 (의도).** 적립의 브랜드는 서버가 `stores/{storeId}.brandId` 에서 읽는다 —
   /// 클라이언트가 보낸 브랜드는 신뢰원이 아니다 (F1). 키 집합은 `test_fixtures/qoin_cart_contract.json` 골든이 고정한다.
+  ///
+  /// **Qoin 사용(qoin_spend)**: [qoinToUse] > 0 이면 `discount = qoinToUse`, `totalPrice = subtotal - qoinToUse` 를 **표시·기록용**으로 채운다.
+  /// 권위가 아니다 — 서버가 `qoinToUse` 를 검증하고 서버 소계로 재계산한다. 0 이면 `discount: null`, `totalPrice: subtotal` —
+  /// 이전과 **바이트 동일** (구버전·비-Qoin 회귀 0). `qoinToUse` 자체는 cart 밖 최상위 입력이다 (골든 `inputKeys`).
   @visibleForTesting
-  static Map<String, dynamic> cartToMap(CartEntity cart) {
+  static Map<String, dynamic> cartToMap(CartEntity cart, {int qoinToUse = 0}) {
     return <String, dynamic>{
       'storeId': cart.storeId,
       'storeName': cart.storeName,
       'subtotal': cart.subtotal,
-      'discount': null,
-      'totalPrice': cart.subtotal,
+      'discount': qoinToUse > 0 ? qoinToUse : null,
+      'totalPrice': cart.subtotal - (qoinToUse > 0 ? qoinToUse : 0),
       'items': cart.items
           .map((item) => _cartItemToMapStatic(item))
           .toList(growable: false),

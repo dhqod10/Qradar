@@ -14,6 +14,9 @@ class VerifyAndCreateOrderUseCase {
     required CartEntity cartSnapshot,
     required String uid,
     required PaymentMethod paymentMethod,
+
+    /// 사용할 Qoin (1 Qoin = 1원). 요청일 뿐 — 서버가 잔액·정책·서버 소계로 검증한다. 0 이면 기존 결제 흐름과 동일.
+    int qoinToUse = 0,
   }) {
     return _repo.verifyAndCreateOrder(
       paymentKey: paymentKey,
@@ -22,6 +25,7 @@ class VerifyAndCreateOrderUseCase {
       cartSnapshot: cartSnapshot,
       uid: uid,
       paymentMethod: paymentMethod,
+      qoinToUse: qoinToUse,
     );
   }
 }

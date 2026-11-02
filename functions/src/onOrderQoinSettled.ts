@@ -4,6 +4,11 @@
  * 주문 상태 전이에 따라 고객 Qoin 을 적립 / 회수한다.
  *   - `* -> completed`        : 적립 (floor(totalPrice * accrualRate))
  *   - `completed -> refunded` : 회수 (earn 원장의 amount 를 읽어 반전. 재계산 금지)
+ *   - `* -> cancelled`, `* -> refunded` : 사용 복원 spendRefund (qoin_spend spec §6.1). `spend_{orderId}` 원장의 amount 를 반전한다 (재계산 금지).
+ *       Qoin 을 쓰지 않은 주문은 spend 원장이 없어 no-op (read 1회). `completed -> refunded` 는 clawback 과 spendRefund 가 **둘 다** 일어난다
+ *       (서로 독립 원장·독립 멱등 — 순 효과: 잔액이 주문 전으로 원복).
+ *       복원은 `config/qoin.enabled` 만 본다 — **`spendEnabled=false` 는 복원을 막지 않는다** (막으면 환불된 고객 돈이 증발, D-7).
+ *       `enabled=false`(전역 비상정지)면 복원도 멈추지만, 돈이 걸려 있으므로 `qoinSettlementIssues` 에 남겨 수동 복구 대상으로 둔다.
  *
  * 설계 (docs/tasks/qoin/spec.md §4, §5, §6, §9):
  *   - 원장 `users/{uid}/qoinTransactions/{txId}` 는 append-only.
@@ -41,6 +46,7 @@ import {
 } from "./qoinRate";
 import { describeRaw } from "./qoinAdmin";
 import { findSelfDealing } from "./selfDealing";
+import { recordSpendIssue, spendRefundFields, spendTxId } from "./qoinSpendLedger";
 
 const LOG = "[onOrderQoinSettled]";
 
@@ -186,15 +192,12 @@ export const onOrderQoinSettled = onDocumentUpdated(
     const afterStatus = after.status as string | undefined;
     if (!beforeStatus || !afterStatus || beforeStatus === afterStatus) return;
 
-    // 전이 매트릭스: `* -> completed` 적립, `completed -> refunded` 회수. 그 외 무동작.
-    let kind: "earn" | "clawback";
-    if (afterStatus === "completed") {
-      kind = "earn";
-    } else if (beforeStatus === "completed" && afterStatus === "refunded") {
-      kind = "clawback";
-    } else {
-      return;
-    }
+    // 전이 매트릭스: `* -> completed` 적립, `completed -> refunded` 회수, `* -> cancelled|refunded` 사용 복원. 그 외 무동작.
+    const isEarn = afterStatus === "completed";
+    const isClawback = beforeStatus === "completed" && afterStatus === "refunded";
+    const isRestore = afterStatus === "cancelled" || afterStatus === "refunded";
+    if (!isEarn && !isClawback && !isRestore) return;
+    const kind: "earn" | "clawback" = isEarn ? "earn" : "clawback";
 
     const userId = after.userId as string | undefined;
     if (!userId) {
@@ -325,10 +328,42 @@ export const onOrderQoinSettled = onDocumentUpdated(
       return;
     }
 
-    // clawback: config(kill switch 만) → earn 원장에서 금액을 읽어 반전 (재계산 금지). 계층 read 0.
-    const config = evaluateConfig(await configRef.get(), orderId); // 실패 시 throw -> 재시도
+    const ctx: LedgerCtx = { orderId, userId, after, configRef, userRef, txCol };
+    if (isClawback) {
+      // completed → refunded: config · earn · spend 를 한 왕복(getAll)으로 읽는다 — 사용 복원 확인이 왕복을 늘리지 않게 한다 (CH16).
+      const [configSnap, earnSnap, spendSnap] = await db.getAll(
+        configRef,
+        txCol.doc(`earn_${orderId}`),
+        txCol.doc(spendTxId(orderId))
+      ); // 실패 시 throw -> 재시도
+      await clawbackEarn(db, ctx, configSnap, earnSnap);
+      await restoreSpend(db, ctx, spendSnap, configSnap);
+    } else if (isRestore) {
+      await restoreSpend(db, ctx);
+    }
+  }
+);
+
+type OrderData = admin.firestore.DocumentData;
+interface LedgerCtx {
+  orderId: string;
+  userId: string;
+  after: OrderData;
+  configRef: admin.firestore.DocumentReference;
+  userRef: admin.firestore.DocumentReference;
+  txCol: admin.firestore.CollectionReference;
+}
+
+/** clawback: config(kill switch 만) → earn 원장에서 금액을 읽어 반전 (재계산 금지). 계층 read 0. (qoin_spend 이전 코드 그대로 — 함수로만 분리) */
+async function clawbackEarn(
+  db: admin.firestore.Firestore,
+  ctx: LedgerCtx,
+  configSnap: admin.firestore.DocumentSnapshot,
+  earnSnap: admin.firestore.DocumentSnapshot
+): Promise<void> {
+    const { orderId, userId, after, userRef, txCol } = ctx;
+    const config = evaluateConfig(configSnap, orderId);
     if (!config) return;
-    const earnSnap = await txCol.doc(`earn_${orderId}`).get(); // 실패 시 throw -> 재시도
     if (!earnSnap.exists) {
       console.info(`${LOG} skipped_no_earn: no earn ledger for refunded order. orderId:`, orderId);
       return;
@@ -360,8 +395,52 @@ export const onOrderQoinSettled = onDocumentUpdated(
       },
     });
     logResult(result, "clawback", orderId, userId, amount);
+}
+
+/**
+ * 사용 복원 (qoin_spend spec §6.1): spend 원장을 읽어 금액을 반전한다. 적립률·스위치 계층을 읽지 않는다 (read: spend 1 + config 1).
+ * spend 원장이 없으면 no-op (Qoin 을 쓰지 않은 주문 — 대부분). 멱등 ID `spendRefund_{orderId}` — 결제 실패 롤백(verifyTossPayment)과 같은 ID.
+ */
+async function restoreSpend(
+  db: admin.firestore.Firestore,
+  ctx: LedgerCtx,
+  knownSpendSnap?: admin.firestore.DocumentSnapshot,
+  knownConfigSnap?: admin.firestore.DocumentSnapshot
+): Promise<void> {
+  const { orderId, userId, after, configRef, userRef, txCol } = ctx;
+  const spendSnap = knownSpendSnap ?? (await txCol.doc(spendTxId(orderId)).get()); // 실패 시 throw -> 재시도
+  if (!spendSnap.exists) return; // Qoin 미사용 주문 — 정상 경로
+
+  const configSnap = knownConfigSnap ?? (await configRef.get()); // 실패 시 throw -> 재시도
+  if (!configSnap.exists || (configSnap.data() ?? {}).enabled !== true) {
+    // 전역 비상정지 중 복원 불가. 돈이 걸려 있어 로그로만 두지 않는다 — 수동 복구 대상 목록.
+    console.warn(`${LOG} skipped_restore_disabled: config/qoin.enabled != true, spend ledger exists. orderId:`, orderId);
+    await recordSpendIssue(db, {
+      orderId,
+      userId,
+      storeId: typeof after.storeId === "string" ? after.storeId : "",
+      reason: "spend_restore_skipped_disabled",
+      values: { spendAmount: rawForIssue(spendSnap.get("amount")) },
+    });
+    return;
   }
-);
+
+  const spend = spendSnap.data() ?? {};
+  const spent = spend.amount;
+  if (typeof spent !== "number" || !Number.isFinite(spent) || spent >= 0) {
+    console.error(`${LOG} skipped_invalid_spend_amount. orderId:`, orderId, "amount:", spent);
+    return;
+  }
+  const amount = -spent;
+
+  const result = await applyTransaction(db, {
+    userRef,
+    txRef: txCol.doc(`spendRefund_${orderId}`),
+    amount,
+    fields: spendRefundFields(spend, orderId, after),
+  });
+  logResult(result, "spendRefund", orderId, userId, amount);
+}
 
 function logResult(
   result: Outcome | "no_user",

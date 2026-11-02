@@ -29,6 +29,33 @@ void main() {
       }
     });
 
+    test('qoin_spend: QOIN_* 토큰은 갈래 B 이고 문의 코드 캡션은 실제 토큰이다 (정규식 통과)', () {
+      final cases = {
+        'QOIN_INSUFFICIENT_BALANCE': PaymentFailureReason.qoinInsufficientBalance,
+        'QOIN_SPEND_DISABLED': PaymentFailureReason.qoinSpendDisabled,
+        'QOIN_BELOW_CASH_FLOOR': PaymentFailureReason.qoinBelowCashFloor,
+        // 그 외 QOIN_* 는 한 문구 (서버가 사유를 늘려도 갈래 C 로 떨어지지 않는다)
+        'QOIN_BELOW_MIN_UNIT': PaymentFailureReason.qoinInvalidAmount,
+        'QOIN_NOT_UNIT_MULTIPLE': PaymentFailureReason.qoinInvalidAmount,
+        'QOIN_EXCEEDS_CAP': PaymentFailureReason.qoinInvalidAmount,
+      };
+      for (final e in cases.entries) {
+        final f = PaymentFailure.from(_v('Qoin 문장 [${e.key}]'));
+        expect(f.family, PaymentFailureFamily.gate, reason: e.key);
+        expect(f.reason, e.value, reason: e.key);
+        expect(f.rawCode, e.key, reason: '캡션은 원문이 아니라 검증된 토큰');
+        expect(f.menuItemIds, isEmpty);
+        expect(RegExp(r'^[A-Z][A-Z0-9_]{2,39}$').hasMatch(f.rawCode!), isTrue);
+      }
+    });
+
+    test('qoin_spend: QOIN_ 접두가 아닌 모르는 토큰은 여전히 갈래 C', () {
+      expect(
+        PaymentFailure.from(_v('x [SOMETHING_ELSE]')).family,
+        PaymentFailureFamily.unknown,
+      );
+    });
+
     test('메뉴 사유 아닌 토큰의 ids 는 무시', () {
       final f = PaymentFailure.from(_v('x [STORE_NOT_SELLABLE:a,b]'));
       expect(f.reason, PaymentFailureReason.storeNotSellable);
@@ -142,6 +169,10 @@ void main() {
         PaymentFailureReason.storeNotFound: '매장 정보를 찾을 수 없어요',
         PaymentFailureReason.readFailed: '일시적인 오류가 생겼어요',
         PaymentFailureReason.selfDealing: '본인 매장은 주문할 수 없어요',
+        PaymentFailureReason.qoinInsufficientBalance: 'Qoin 잔액이 부족해요',
+        PaymentFailureReason.qoinSpendDisabled: '지금은 Qoin을 결제에 쓸 수 없어요',
+        PaymentFailureReason.qoinBelowCashFloor: 'Qoin을 최대로 쓸 수 없는 주문이에요',
+        PaymentFailureReason.qoinInvalidAmount: 'Qoin 사용액을 확인해 주세요',
       };
       const expectedPrimary = {
         PaymentFailureReason.menuSoldOut: '카트에서 확인하기',
@@ -154,6 +185,10 @@ void main() {
         PaymentFailureReason.storeNotFound: '카트 비우고 메뉴 보러가기',
         PaymentFailureReason.readFailed: '카트로 돌아가기',
         PaymentFailureReason.selfDealing: '카트 비우고 메뉴 보러가기',
+        PaymentFailureReason.qoinInsufficientBalance: '카트로 돌아가기',
+        PaymentFailureReason.qoinSpendDisabled: '카트로 돌아가기',
+        PaymentFailureReason.qoinBelowCashFloor: '카트로 돌아가기',
+        PaymentFailureReason.qoinInvalidAmount: '카트로 돌아가기',
       };
       final known = PaymentFailureReason.values.where(
         (r) => r != PaymentFailureReason.unknown,

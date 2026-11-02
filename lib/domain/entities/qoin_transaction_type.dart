@@ -5,7 +5,13 @@
 /// 미지 타입은 중립 문구(`Qoin 조정`) 로 렌더한다 (2차 소멸 타입 추가 시 전방 호환).
 enum QoinTransactionType {
   earn,
-  clawback;
+  clawback,
+
+  /// 결제 시 사용 (qoin_spend). amount 음수.
+  spend,
+
+  /// 주문 취소·환불로 사용분 복원 (qoin_spend). amount 양수.
+  spendRefund;
 
   /// Firestore 코드 → enum. 알 수 없는 값/null 은 null.
   static QoinTransactionType? fromCode(String? code) {

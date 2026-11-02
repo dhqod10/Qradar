@@ -19,8 +19,10 @@ import 'package:qradar/presentation/customer/auth/providers/user_profile_provide
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/checkout/payment_result_page.dart'
     show PaymentResultPage, PaymentResultVariant, resolveFailureMenuNames;
+import 'package:qradar/presentation/customer/checkout/providers/qoin_spend_providers.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_summary_card.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/payment_method_tile.dart';
+import 'package:qradar/presentation/customer/checkout/widgets/qoin_spend_section.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 import 'package:qradar/presentation/customer/order/widgets/price_summary.dart';
 
@@ -64,7 +66,10 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
 
     const uuid = Uuid();
     final idempotencyKey = uuid.v4();
-    final amount = cart.subtotal;
+    // Qoin 사용 (qoin_spend): 섹션이 숨김/로딩/비활성이면 0 → 금액은 소계 그대로 (기존 결제와 동일).
+    // 이 값은 요청일 뿐이다 — 서버가 잔액·정책·서버 소계로 검증하고 최종 청구액을 재계산한다.
+    final qoinToUse = ref.read(qoinSpendViewProvider).applied;
+    final amount = cart.subtotal - qoinToUse;
     final items = cart.items;
     final orderName = items.isNotEmpty
         ? (items.length > 1
@@ -161,6 +166,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
               cartSnapshot: cart,
               uid: profile.uid,
               paymentMethod: method,
+              qoinToUse: qoinToUse,
             );
 
         if (!mounted) return;
@@ -300,6 +306,8 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   Widget build(BuildContext context) {
     final cartAsync = ref.watch(cartProvider);
     final cart = cartAsync.value;
+    // 결제 버튼 금액 · PriceSummary · Qoin 섹션이 같은 값을 본다 (design §7). 섹션 숨김/비활성이면 0.
+    final qoinApplied = ref.watch(qoinSpendViewProvider).applied;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return IgnorePointer(
@@ -353,6 +361,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                             items: cart.items.map(_toOrderItem).toList(),
                             totalPrice: cart.subtotal,
                           ),
+                          const QoinSpendSection(),
                           const SizedBox(height: 24),
                           _SectionHeader(title: '결제 수단'),
                           const SizedBox(height: 12),
@@ -401,7 +410,9 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: PriceSummary(
                               subtotal: cart.subtotal,
-                              total: cart.subtotal,
+                              discount: qoinApplied,
+                              discountLabel: 'Qoin 사용',
+                              total: cart.subtotal - qoinApplied,
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -444,7 +455,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                                 ),
                               )
                             : Text(
-                                '${PriceFormatter.formatKrw(cart.subtotal)} 결제하기',
+                                '${PriceFormatter.formatKrw(cart.subtotal - qoinApplied)} 결제하기',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,

@@ -47,6 +47,23 @@ export interface CartSnapshot {
  */
 export const CONSUMED_CART_KEYS = ["discount", "items", "storeId", "storeName", "subtotal", "totalPrice"] as const;
 
+/**
+ * `verifyTossPayment` **최상위 입력**(cart 밖)에서 소비하는 키 집합 (qoin_spend). `qoinToUse` 는 cart 가 아니라 여기 있다 —
+ * 장바구니는 메뉴 선택을 표현하고 Qoin 차감은 결제 시점의 선택이다. Dart `CloudFunctionsRemoteDataSource.verifyPayload` 와
+ * `test_fixtures/qoin_cart_contract.json` 의 `inputKeys` 로 양방향 고정된다 (한쪽만 바뀌면 골든이 깨진다).
+ */
+export const CONSUMED_INPUT_KEYS = [
+  "amount",
+  "cart",
+  "clientLevel",
+  "deviceId",
+  "idempotencyKey",
+  "orderId",
+  "paymentKey",
+  "paymentMethod",
+  "qoinToUse",
+] as const;
+
 /** `data.cart.items[]` 에서 소비하는 키 집합 — Dart `cartToMap` 의 item 키와 골든으로 고정된다 (§1-5 재발 방지). */
 export const CONSUMED_ITEM_KEYS = [
   "imageUrl",
@@ -65,14 +82,18 @@ export const CONSUMED_OPTION_KEYS = ["groupId", "groupName", "itemId", "label", 
  * R8 (payment_price_authority §10): enforce 에서 주문 문서의 **금액 필드만** 서버가 문서에서 다시 만든 값으로 바꾼다
  * (`unitPriceWithOptions` / `lineTotal` / `subtotal` / `totalPrice`). 이름·옵션 라벨은 클라 값 그대로다 (Q4 ⓐ).
  * 클라 값이 주문 문서에 도달하는 경로 자체를 없애는 것이 목적이다 — enforce 에서는 값이 같아야 통과하므로 바이트는 같다.
- * `discount` 는 건드리지 않는다 (null 유지).
+ * `discount` 는 기본적으로 건드리지 않는다 (null 유지). **Qoin 사용(qoin_spend)** 주문만 세 번째 인자 `discount`(서버가 검증한 사용액)를
+ * 넘기며, 이때 `pricing.expected` 는 이미 `소계 − discount` (서버 최종청구액) 이고 주문 문서 `discount` 가 그 값으로 쓰인다.
+ * `discount` 를 생략/0 으로 부르면 결과는 현행과 바이트 동일하다.
  */
 export function applyServerPricing(
   cart: CartSnapshot,
-  pricing: { lines: ReadonlyArray<{ unitPrice: number; lineTotal: number }>; subtotal: number; expected: number }
+  pricing: { lines: ReadonlyArray<{ unitPrice: number; lineTotal: number }>; subtotal: number; expected: number },
+  discount = 0
 ): CartSnapshot {
   return {
     ...cart,
+    ...(discount > 0 ? { discount } : {}),
     items: cart.items.map((it, i) => ({
       ...it,
       unitPriceWithOptions: pricing.lines[i].unitPrice,
@@ -112,7 +133,7 @@ export function buildOrderData<TS>(
 
 export function buildOrderLogData<TS>(
   cart: CartSnapshot,
-  args: { logId: string; orderId: string; paymentMethod: string },
+  args: { logId: string; orderId: string; paymentMethod: string; /** 서버가 검증한 Qoin 사용액. 생략/0 이면 키 없음. */ discount?: number },
   times: { approvedAt: TS; now: TS }
 ): Record<string, unknown> {
   return {
@@ -123,6 +144,8 @@ export function buildOrderLogData<TS>(
     brandId: null, // 위와 같다
     items: cart.items,
     totalPrice: cart.totalPrice,
+    // Qoin 사용 주문만 (qoin_spend spec §7.3 — 내역 일관성). 호출자가 검증된 값을 명시로 넘길 때만 — 비-Qoin 은 키 자체가 없다.
+    ...(args.discount !== undefined && args.discount > 0 ? { discount: args.discount } : {}),
     status: "paid",
     paymentMethod: args.paymentMethod,
     paymentChannel: "toss",

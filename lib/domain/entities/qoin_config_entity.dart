@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
+import 'package:qradar/core/utils/qoin_spend_calculator.dart';
 
 part 'qoin_config_entity.freezed.dart';
 
@@ -16,5 +17,8 @@ abstract class QoinConfigEntity with _$QoinConfigEntity {
 
     /// kill switch. 부재 → false (fail-closed).
     @Default(false) bool enabled,
+
+    /// 사용(qoin_spend) 유효 정책. 부재/꺼짐/무효 → [QoinSpendPolicy.disabled] (fail-closed). 체크아웃 Qoin 섹션이 읽는다.
+    @Default(QoinSpendPolicy.disabled) QoinSpendPolicy spendPolicy,
   }) = _QoinConfigEntity;
 }

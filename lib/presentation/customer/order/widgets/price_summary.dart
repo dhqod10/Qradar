@@ -4,18 +4,21 @@ import 'package:qradar/core/utils/price_formatter.dart';
 
 /// 소계 / 할인 / 최종 결제액 요약 위젯.
 ///
-/// [discount] > 0 일 때만 할인 행이 표시된다.
+/// [discount] > 0 일 때만 할인 행이 표시된다. 행 라벨은 [discountLabel] (기본 `할인` — 하위호환,
+/// Qoin 사용분이면 호출자가 `Qoin 사용` 을 넘긴다).
 class PriceSummary extends StatelessWidget {
   const PriceSummary({
     super.key,
     required this.subtotal,
     this.discount = 0,
     required this.total,
+    this.discountLabel = '할인',
   });
 
   final int subtotal;
   final int discount;
   final int total;
+  final String discountLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +33,7 @@ class PriceSummary extends StatelessWidget {
         if (discount > 0) ...[
           const SizedBox(height: 8),
           _row(
-            label: '할인',
+            label: discountLabel,
             value: '-${PriceFormatter.formatKrw(discount)}',
             labelStyle:
                 const TextStyle(fontSize: 13, color: AppColors.success),

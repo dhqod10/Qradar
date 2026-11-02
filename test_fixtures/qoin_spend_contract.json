@@ -1,0 +1,61 @@
+{
+  "_doc": "Qoin 사용(qoin_spend) 교차 골든 — 서버 functions/src/qoinSpend.ts(resolveSpendPolicy · validateQoinSpend · maxSpendable · parseQoinToUse)와 Dart lib/core/utils/qoin_spend_calculator.dart 가 같은 파일을 읽는다. 한쪽만 규칙을 바꾸면 양쪽 테스트가 깨진다. policyCases: config/qoin 원시 문서 → 유효 사용 정책(전역 enabled 와 spendEnabled 가 둘 다 true 이고 값이 유효해야 spendEnabled). maxCases: 표시용 사용가능액 = floor_unit(max(0, min(balance, subtotal − minCashFloor))). validateCases: 요청 한 건의 서버 판정(reason 은 SpendRejectReason) — Dart 의 isAllowed 는 ok 와 같아야 한다. requestCases: qoinToUse 입력 파싱(미전송=0, 무효=null).",
+  "policyCases": [
+    { "name": "정상: 전부 켜짐 + minCashFloor 300", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 300 }, "expect": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 } },
+    { "name": "minSpendUnit 100", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 300, "minSpendUnit": 100 }, "expect": { "spendEnabled": true, "minUnit": 100, "minCashFloor": 300 } },
+    { "name": "spendEnabled 부재 → 차단 (fail-closed)", "config": { "enabled": true, "minCashFloor": 300 }, "expect": { "spendEnabled": false } },
+    { "name": "spendEnabled false → 차단", "config": { "enabled": true, "spendEnabled": false, "minCashFloor": 300 }, "expect": { "spendEnabled": false } },
+    { "name": "spendEnabled 가 문자열 'true' → 차단", "config": { "enabled": true, "spendEnabled": "true", "minCashFloor": 300 }, "expect": { "spendEnabled": false } },
+    { "name": "전역 enabled false → 사용도 차단 (상위 비상정지)", "config": { "enabled": false, "spendEnabled": true, "minCashFloor": 300 }, "expect": { "spendEnabled": false } },
+    { "name": "전역 enabled 부재 → 차단", "config": { "spendEnabled": true, "minCashFloor": 300 }, "expect": { "spendEnabled": false } },
+    { "name": "minCashFloor 부재 → 차단", "config": { "enabled": true, "spendEnabled": true }, "expect": { "spendEnabled": false } },
+    { "name": "minCashFloor 0 → 차단 (0원 결제 불가)", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 0 }, "expect": { "spendEnabled": false } },
+    { "name": "minCashFloor 소수 → 차단", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 300.5 }, "expect": { "spendEnabled": false } },
+    { "name": "minCashFloor 상한(100000) 초과 → 차단", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 100001 }, "expect": { "spendEnabled": false } },
+    { "name": "minCashFloor 상한(100000) 경계 → 허용", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 100000 }, "expect": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 100000 } },
+    { "name": "minSpendUnit 0 → 차단", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 300, "minSpendUnit": 0 }, "expect": { "spendEnabled": false } },
+    { "name": "minSpendUnit 음수 → 차단", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 300, "minSpendUnit": -1 }, "expect": { "spendEnabled": false } },
+    { "name": "minSpendUnit 상한(10000) 초과 → 차단", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 300, "minSpendUnit": 10001 }, "expect": { "spendEnabled": false } },
+    { "name": "minSpendUnit 문자열 → 차단", "config": { "enabled": true, "spendEnabled": true, "minCashFloor": 300, "minSpendUnit": "100" }, "expect": { "spendEnabled": false } }
+  ],
+  "maxCases": [
+    { "name": "잔액이 한도 (잔액 < 소계−최소현금)", "balance": 1200, "subtotal": 5000, "minUnit": 1, "minCashFloor": 300, "expect": 1200 },
+    { "name": "최소현금이 한도 (잔액 ≥ 소계−최소현금)", "balance": 12300, "subtotal": 5000, "minUnit": 1, "minCashFloor": 300, "expect": 4700 },
+    { "name": "잔액 = 소계−최소현금 경계", "balance": 4700, "subtotal": 5000, "minUnit": 1, "minCashFloor": 300, "expect": 4700 },
+    { "name": "잔액 0", "balance": 0, "subtotal": 5000, "minUnit": 1, "minCashFloor": 300, "expect": 0 },
+    { "name": "음수 잔액 → 0", "balance": -120, "subtotal": 5000, "minUnit": 1, "minCashFloor": 300, "expect": 0 },
+    { "name": "소계 ≤ 최소현금 → 0 (주문이 작음)", "balance": 5000, "subtotal": 300, "minUnit": 1, "minCashFloor": 300, "expect": 0 },
+    { "name": "소계 < 최소현금 → 0", "balance": 5000, "subtotal": 100, "minUnit": 1, "minCashFloor": 300, "expect": 0 },
+    { "name": "소계 = 최소현금+1 → 1", "balance": 5000, "subtotal": 301, "minUnit": 1, "minCashFloor": 300, "expect": 1 },
+    { "name": "단위 100: 4700 → 4700", "balance": 99999, "subtotal": 5000, "minUnit": 100, "minCashFloor": 300, "expect": 4700 },
+    { "name": "단위 100: 한도 4650 → 4600 으로 내림", "balance": 99999, "subtotal": 4950, "minUnit": 100, "minCashFloor": 300, "expect": 4600 },
+    { "name": "단위 100: 잔액 250 → 200", "balance": 250, "subtotal": 9000, "minUnit": 100, "minCashFloor": 300, "expect": 200 },
+    { "name": "단위 100: 잔액 99 → 0", "balance": 99, "subtotal": 9000, "minUnit": 100, "minCashFloor": 300, "expect": 0 }
+  ],
+  "validateCases": [
+    { "name": "요청 0 → 항상 통과 (정책 꺼짐이어도)", "policy": { "spendEnabled": false, "minUnit": 1, "minCashFloor": 300 }, "balance": 0, "subtotal": 5000, "requested": 0, "expect": { "ok": true, "validatedQ": 0 } },
+    { "name": "정상 사용", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 2000, "subtotal": 5000, "requested": 700, "expect": { "ok": true, "validatedQ": 700 } },
+    { "name": "정책 꺼짐 → DISABLED", "policy": { "spendEnabled": false, "minUnit": 1, "minCashFloor": 300 }, "balance": 2000, "subtotal": 5000, "requested": 700, "expect": { "ok": false, "reason": "DISABLED" } },
+    { "name": "잔액 초과 → INSUFFICIENT_BALANCE", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 699, "subtotal": 5000, "requested": 700, "expect": { "ok": false, "reason": "INSUFFICIENT_BALANCE" } },
+    { "name": "잔액 = 요청 경계 → 통과", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 700, "subtotal": 5000, "requested": 700, "expect": { "ok": true, "validatedQ": 700 } },
+    { "name": "음수 잔액 → INSUFFICIENT_BALANCE", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": -5, "subtotal": 5000, "requested": 1, "expect": { "ok": false, "reason": "INSUFFICIENT_BALANCE" } },
+    { "name": "소계−최소현금 경계 (4700) → 통과", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 99999, "subtotal": 5000, "requested": 4700, "expect": { "ok": true, "validatedQ": 4700 } },
+    { "name": "소계−최소현금 +1 (4701) → BELOW_CASH_FLOOR", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 99999, "subtotal": 5000, "requested": 4701, "expect": { "ok": false, "reason": "BELOW_CASH_FLOOR" } },
+    { "name": "전액(5000) 시도 → BELOW_CASH_FLOOR", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 99999, "subtotal": 5000, "requested": 5000, "expect": { "ok": false, "reason": "BELOW_CASH_FLOOR" } },
+    { "name": "소계가 최소현금 이하인 주문에 1 요청 → BELOW_CASH_FLOOR", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 99999, "subtotal": 300, "requested": 1, "expect": { "ok": false, "reason": "BELOW_CASH_FLOOR" } },
+    { "name": "단위 100: 250 → NOT_UNIT_MULTIPLE", "policy": { "spendEnabled": true, "minUnit": 100, "minCashFloor": 300 }, "balance": 99999, "subtotal": 5000, "requested": 250, "expect": { "ok": false, "reason": "NOT_UNIT_MULTIPLE" } },
+    { "name": "단위 100: 300 → 통과", "policy": { "spendEnabled": true, "minUnit": 100, "minCashFloor": 300 }, "balance": 99999, "subtotal": 5000, "requested": 300, "expect": { "ok": true, "validatedQ": 300 } },
+    { "name": "음수 요청 → BELOW_MIN_UNIT", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 2000, "subtotal": 5000, "requested": -100, "expect": { "ok": false, "reason": "BELOW_MIN_UNIT" } },
+    { "name": "소수 요청 → BELOW_MIN_UNIT", "policy": { "spendEnabled": true, "minUnit": 1, "minCashFloor": 300 }, "balance": 2000, "subtotal": 5000, "requested": 10.5, "expect": { "ok": false, "reason": "BELOW_MIN_UNIT" } }
+  ],
+  "requestCases": [
+    { "name": "미전송 (구버전 앱) → 0", "absent": true, "expect": 0 },
+    { "name": "null → 0", "raw": null, "expect": 0 },
+    { "name": "0 → 0", "raw": 0, "expect": 0 },
+    { "name": "700 → 700", "raw": 700, "expect": 700 },
+    { "name": "음수 → 무효", "raw": -1, "expect": null },
+    { "name": "소수 → 무효", "raw": 1.5, "expect": null },
+    { "name": "문자열 → 무효", "raw": "100", "expect": null },
+    { "name": "NaN 은 JSON 에 없으므로 true → 무효", "raw": true, "expect": null }
+  ]
+}

@@ -321,13 +321,14 @@ console.log('\n── C. CH16 read 수 실측 ──');
     eq(c.docs, 4, 'earn(개인) 문서 read');
     ok(c.batchGets <= 4, `batchGet 왕복 ${c.batchGets} (1차 4 이하여야 한다)`);
   });
-  await check('CH16 clawback: config1 + earn1 + 가드1 + users1 = 4 read (계층 read 0, 1차와 동일)', async () => {
+  // qoin_spend: completed → refunded 는 clawback 에 더해 사용 복원 확인(spend 원장 1 read)이 붙는다. Qoin 을 쓰지 않은 주문은 그 1 read 로 끝(no-op).
+  await check('CH16 clawback: config1 + earn1 + 가드1 + users1 + spend 원장 확인 1 = 5 read (계층 read 0, 사용 복원 확인 +1)', async () => {
     const uid = nid('u'); await seedUser(uid);
     const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S' });
     const orderId = nid('o');
     await measure('earn 선행', orderId, 'ready', 'completed', { userId: uid, storeId, storeName: 'S', totalPrice: 10000 });
     const c = await measure('clawback', orderId, 'completed', 'refunded', { userId: uid, storeId, storeName: 'S', totalPrice: 10000 });
-    eq(c.docs, 4, 'clawback 문서 read');
+    eq(c.docs, 5, 'clawback 문서 read');
     ok(c.batchGets <= 4, `batchGet 왕복 ${c.batchGets} (1차 4 이하여야 한다)`);
   });
   DocumentReader.prototype._get = origGet;
@@ -1177,6 +1178,251 @@ await check('CF8 auditBrandLinks: non-admin → PERMISSION_DENIED, 비로그인 
   eq((await call('auditBrandLinks', {}, NONADMIN)).error, 'PERMISSION_DENIED');
   eq((await call('auditBrandLinks', {}, undefined)).error, 'UNAUTHENTICATED');
 });
+
+// ═════════════════════════════════════════════════════════════════════════
+// SP. qoin_spend — 사용(차감) · 복원 · 정책 callable · 정책 이력 (실제 Firestore 트랜잭션, 실결제 0)
+// ═════════════════════════════════════════════════════════════════════════
+console.log('\n── SP. qoin_spend ──');
+{
+  const { handleVerifyTossPayment } = require('../lib/verifyTossPayment.js');
+  const { reserveSpend, rollbackSpend } = require('../lib/qoinSpendLedger.js');
+  const { resolveSpendPolicy } = require('../lib/qoinSpend.js');
+  const SPEND_ON = { enabled: true, accrualRate: 0.03, spendEnabled: true, minCashFloor: 300 };
+  const balanceOfUser = async (uid) => (await db.collection('users').doc(uid).get()).get('qoinBalance');
+  const sumLedger = async (uid) => (await db.collection('users').doc(uid).collection('qoinTransactions').get()).docs.reduce((a, d) => a + d.get('amount'), 0);
+  const ledgerAmt = async (uid, id) => { const d = await ledger(uid, id); return d.exists ? d.get('amount') : null; };
+
+  /** 사용 주문을 운영 코드(reserveSpend + buildOrderData)로 만든다. status 지정. */
+  async function spendOrder({ uid, orderId, storeId, q = 700, subtotal = 5000, status = 'paid' }) {
+    await reserveSpend(db, { uid, orderId, requested: q, policy: resolveSpendPolicy(SPEND_ON), serverSubtotal: subtotal, serverFinal: subtotal - q, storeId, storeName: 'S', brandId: null });
+    const cart = { storeId, storeName: 'S', items: [], subtotal, discount: q, totalPrice: subtotal - q };
+    const order = buildOrderData(cart, uid, { method: 'card', channel: 'toss' }, { approvedAt: Timestamp.now(), now: FieldValue.serverTimestamp() });
+    await db.collection('orders').doc(orderId).set({ ...order, status });
+  }
+  const setStatus = (orderId, status) => db.collection('orders').doc(orderId).update({ status });
+  const waitLedger = (uid, id) => until(async () => { const s = await ledger(uid, id); return s.exists ? s : null; });
+
+  await check('SP1 reserveSpend: 차감 + spend 원장 + 잔액 절대값 (실 트랜잭션)', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'x' });
+    await spendOrder({ uid, orderId: nid('o'), storeId, q: 700 });
+    eq(await balanceOfUser(uid), 2300, '잔액');
+    eq(await sumLedger(uid), -700, '원장 합');
+  });
+
+  await check('SP2 동시 예약 2건 (잔액 3000, 각 2000): 실제 트랜잭션 경합에서 정확히 1건만 성공, 잔액 음수 없음', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 });
+    const mk = (orderId) => reserveSpend(db, { uid, orderId, requested: 2000, policy: resolveSpendPolicy(SPEND_ON), serverSubtotal: 9000, serverFinal: 7000, storeId: 's', storeName: 'S', brandId: null }).then(() => 'ok', (e) => e.constructor.name);
+    const out = await Promise.all([mk('raceA'), mk('raceB')]);
+    eq(out.filter((x) => x === 'ok').length, 1, `성공 건수 ${JSON.stringify(out)}`);
+    eq(out.filter((x) => x === 'SpendRejectedError').length, 1, '나머지는 잔액 부족 거절');
+    eq(await balanceOfUser(uid), 1000, '잔액');
+  });
+
+  await check('SP3 같은 주문 키 재예약 → SpendConflictError, 이중 차감 0', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 });
+    const args = { uid, orderId: 'dupKey_' + uid, requested: 500, policy: resolveSpendPolicy(SPEND_ON), serverSubtotal: 5000, serverFinal: 4500, storeId: 's', storeName: 'S', brandId: null };
+    await reserveSpend(db, args);
+    let name = null; try { await reserveSpend(db, args); } catch (e) { name = e.constructor.name; }
+    eq(name, 'SpendConflictError'); eq(await balanceOfUser(uid), 2500);
+  });
+
+  await check('SP4 rollbackSpend: 반전 원장 + 잔액 원복, 재호출은 no-op (멱등)', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 });
+    const orderId = nid('o');
+    await reserveSpend(db, { uid, orderId, requested: 800, policy: resolveSpendPolicy(SPEND_ON), serverSubtotal: 5000, serverFinal: 4200, storeId: 's', storeName: 'S', brandId: null });
+    eq(await rollbackSpend(db, { uid, orderId, reason: 't', storeId: 's', storeName: 'S' }), 'rolled_back');
+    eq(await rollbackSpend(db, { uid, orderId, reason: 't', storeId: 's', storeName: 'S' }), 'already_refunded');
+    eq(await rollbackSpend(db, { uid, orderId: 'none', reason: 't', storeId: 's', storeName: 'S' }), 'no_spend');
+    eq(await balanceOfUser(uid), 3000); eq(await sumLedger(uid), 0, '불변식');
+  });
+
+  const RESTORE_FROM = ['paid', 'accepted', 'making', 'ready'];
+  for (const from of RESTORE_FROM) {
+    const to = from === 'paid' ? 'cancelled' : 'refunded';
+    await check(`SP5 복원 ${from} → ${to}: spendRefund + 잔액 원복`, async () => {
+      const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 }); await setGlobal(SPEND_ON);
+      const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'x' });
+      const orderId = nid('o');
+      await spendOrder({ uid, orderId, storeId, q: 700, status: from });
+      eq(await balanceOfUser(uid), 2300);
+      await sleep(250); await setStatus(orderId, to);
+      const refund = await waitLedger(uid, `spendRefund_${orderId}`);
+      ok(refund, 'spendRefund 문서 없음');
+      eq(refund.get('amount'), 700, 'amount'); eq(refund.get('type'), 'spendRefund'); eq(refund.get('orderTotalPrice'), 4300, '상속');
+      eq(await balanceOfUser(uid), 3000, '잔액 원복'); eq(await sumLedger(uid), 0, '불변식');
+      eq(await ledgerAmt(uid, `clawback_${orderId}`), null, '적립 없던 주문은 clawback 없음');
+    });
+  }
+
+  await check('SP6 completed → refunded: earn(현금 기준 적립) + clawback + spendRefund 동시 — 잔액이 주문 전으로 원복', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'x' });
+    const orderId = nid('o');
+    await spendOrder({ uid, orderId, storeId, q: 1000, subtotal: 5000, status: 'ready' }); // 현금 4000
+    await sleep(250); await setStatus(orderId, 'completed');
+    const earn = await waitLedger(uid, `earn_${orderId}`); ok(earn, 'earn 없음');
+    eq(earn.get('orderTotalPrice'), 4000, 'D-4: 현금 결제액 기준 적립'); eq(earn.get('amount'), 120, 'floor(4000 × 3%)');
+    eq(await balanceOfUser(uid), 3000 - 1000 + 120);
+    await sleep(250); await setStatus(orderId, 'refunded');
+    const cb = await waitLedger(uid, `clawback_${orderId}`); const sr = await waitLedger(uid, `spendRefund_${orderId}`);
+    ok(cb && sr, `clawback=${!!cb} spendRefund=${!!sr}`);
+    eq(cb.get('amount'), -120); eq(sr.get('amount'), 1000);
+    eq(await balanceOfUser(uid), 3000, '주문 전 잔액으로 원복'); eq(await sumLedger(uid), 0, '불변식(4타입)');
+  });
+
+  await check('SP7 복원 멱등: 이벤트 재전달(핸들러 직접 2회) → spendRefund 1건, 이중 복원 0', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'x' });
+    const orderId = nid('o');
+    await spendOrder({ uid, orderId, storeId, q: 700 });
+    const { onOrderQoinSettled } = require('../lib/onOrderQoinSettled.js');
+    const ev = { params: { orderId }, data: { before: { data: () => ({ status: 'paid', userId: uid, storeId, storeName: 'S' }) }, after: { data: () => ({ status: 'cancelled', userId: uid, storeId, storeName: 'S' }) } } };
+    await onOrderQoinSettled.run(ev); await onOrderQoinSettled.run(ev);
+    eq(await balanceOfUser(uid), 3000); eq(await sumLedger(uid), 0);
+  });
+
+  await check('SP8 Qoin 미사용 주문의 취소/환불: spendRefund 없음 (no-op)', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 500 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'x' });
+    const orderId = nid('o'); await createOrder({ orderId, uid, storeId, orderOverrides: { status: 'paid' } });
+    await sleep(250); await setStatus(orderId, 'cancelled'); await sleep(3500);
+    eq(await ledgerAmt(uid, `spendRefund_${orderId}`), null); eq(await balanceOfUser(uid), 500);
+  });
+
+  await check('SP9 spendEnabled=false 여도 복원은 통과 (D-7: 환불된 고객 돈이 증발하면 안 된다)', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'x' });
+    const orderId = nid('o'); await spendOrder({ uid, orderId, storeId, q: 700 });
+    await setGlobal({ ...SPEND_ON, spendEnabled: false });
+    await sleep(250); await setStatus(orderId, 'cancelled');
+    ok(await waitLedger(uid, `spendRefund_${orderId}`), '복원 안 됨');
+    eq(await balanceOfUser(uid), 3000);
+    await setGlobal(SPEND_ON);
+  });
+
+  await check('SP10 전역 enabled=false: 복원 멈춤 + qoinSettlementIssues 에 수동 복구 대상 기록', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'x' });
+    const orderId = nid('o'); await spendOrder({ uid, orderId, storeId, q: 700 });
+    await setGlobal({ ...SPEND_ON, enabled: false });
+    await sleep(250); await setStatus(orderId, 'cancelled'); await sleep(3500);
+    eq(await ledgerAmt(uid, `spendRefund_${orderId}`), null, '복원되면 안 됨');
+    const issue = await issueDoc(orderId); ok(issue, '이슈 기록 없음');
+    eq([issue.reason, issue.resolved], ['spend_restore_skipped_disabled', false]);
+    await setGlobal(SPEND_ON);
+  });
+
+  await check('SP11 verifyTossPayment E2E (실 Firestore, 가격 모드 off): Q=700 → 주문/원장/잔액, 이후 취소 → 복원', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 3000 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); const menuId = nid('mn');
+    await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'someone_else', status: 'approved', approvedAt: Timestamp.now() });
+    await db.collection('stores').doc(storeId).collection('menuItems').doc(menuId).set({ name: '라떼', basePrice: 5000, soldOut: false, visible: true, optionGroupRefs: [] });
+    const key = nid('idem');
+    const spy = { amount: null };
+    const deps = {
+      db, secretKey: () => 'live_sk_real', gateMode: () => 'off', priceMode: () => 'off',
+      confirm: async (_k, p) => { spy.amount = p.amount; return { paymentKey: p.paymentKey, orderId: p.orderId, status: 'DONE', totalAmount: p.amount, approvedAt: new Date().toISOString(), easyPay: null }; },
+      cancel: async () => ({}),
+    };
+    const line = { menuItemId: menuId, menuItemName: '라떼', quantity: 1, selectedOptions: [], unitPriceWithOptions: 5000, lineTotal: 5000 };
+    const data = { paymentKey: 'pk', orderId: key, amount: 4300, idempotencyKey: key, paymentMethod: 'card', qoinToUse: 700,
+      cart: { storeId, storeName: 'S', items: [line], subtotal: 5000, discount: 700, totalPrice: 4300 } };
+    const res = await handleVerifyTossPayment(deps, { auth: { uid }, data });
+    eq(res, { orderId: key, status: 'paid' }); eq(spy.amount, 4300, 'Toss 승인액');
+    const order = (await db.collection('orders').doc(key).get()).data();
+    eq([order.discount, order.subtotal, order.totalPrice, order.status], [700, 5000, 4300, 'paid']);
+    eq(await balanceOfUser(uid), 2300); eq(await ledgerAmt(uid, `spend_${key}`), -700);
+    // 재호출 = 멱등 (이중 차감 0)
+    eq(await handleVerifyTossPayment(deps, { auth: { uid }, data }), { orderId: key, status: 'paid' });
+    eq(await balanceOfUser(uid), 2300);
+    // 취소 → 복원
+    await sleep(250); await setStatus(key, 'cancelled');
+    ok(await waitLedger(uid, `spendRefund_${key}`), '복원 안 됨'); eq(await balanceOfUser(uid), 3000);
+  });
+
+  await check('SP12 verifyTossPayment E2E: 소계 뻥튀기 공격 거절 (가격 모드 off 에서도) — 잔액·주문 불변', async () => {
+    const uid = nid('u'); await seedUser(uid, { qoinBalance: 99999 }); await setGlobal(SPEND_ON);
+    const storeId = nid('st'); const menuId = nid('mn');
+    await db.collection('stores').doc(storeId).set({ name: 'S', ownerId: 'someone_else', status: 'approved', approvedAt: Timestamp.now() });
+    await db.collection('stores').doc(storeId).collection('menuItems').doc(menuId).set({ name: '라떼', basePrice: 5000, soldOut: false, visible: true, optionGroupRefs: [] });
+    const key = nid('idem'); let confirms = 0;
+    const deps = { db, secretKey: () => 'live_sk_real', gateMode: () => 'off', priceMode: () => 'off', confirm: async () => { confirms++; throw new Error('호출되면 안 됨'); }, cancel: async () => ({}) };
+    const line = { menuItemId: menuId, menuItemName: '라떼', quantity: 1, selectedOptions: [], unitPriceWithOptions: 50000, lineTotal: 50000 };
+    const data = { paymentKey: 'pk', orderId: key, amount: 300, idempotencyKey: key, paymentMethod: 'card', qoinToUse: 49700,
+      cart: { storeId, storeName: 'S', items: [line], subtotal: 50000, discount: 49700, totalPrice: 300 } };
+    let err = null; try { await handleVerifyTossPayment(deps, { auth: { uid }, data }); } catch (e) { err = e; }
+    ok(err && /PRICE_MISMATCH/.test(err.message), `거절되어야 함: ${err?.message}`);
+    eq(confirms, 0); eq(await balanceOfUser(uid), 99999); eq((await db.collection('orders').doc(key).get()).exists, false);
+  });
+
+  // ── 정책 callable + 이력 ───────────────────────────────────────────────
+  await check('SP13 setQoinSpendPolicy: 비로그인/비관리자 거절, 인자 검증 (빈 요청·0·소수·문자열·상한 초과)', async () => {
+    await setGlobal({ enabled: true, accrualRate: 0.03 });
+    eq((await call('setQoinSpendPolicy', { minCashFloor: 300 }, undefined)).error, 'UNAUTHENTICATED');
+    eq((await call('setQoinSpendPolicy', { minCashFloor: 300 }, NONADMIN)).error, 'PERMISSION_DENIED');
+    for (const bad of [{}, { minCashFloor: 0 }, { minCashFloor: 300.5 }, { minCashFloor: '300' }, { minCashFloor: 100001 }, { minSpendUnit: 0 }, { minSpendUnit: 10001 }, { spendEnabled: 'true' }]) {
+      eq((await call('setQoinSpendPolicy', bad, ADMIN)).error, 'INVALID_ARGUMENT', JSON.stringify(bad));
+    }
+    const cfg = (await db.collection('config').doc('qoin').get()).data();
+    eq([cfg.minCashFloor, cfg.spendEnabled], [undefined, undefined], '아무것도 쓰이면 안 됨');
+  });
+
+  await check('SP14 setQoinSpendPolicy: 최소현금 없이 켜기 거절 → 설정 후 켜기 성공 + 필드별 이력(callable) + accrualRate/enabled 불변 + 트리거 중복 기록 없음', async () => {
+    await setGlobal({ enabled: true, accrualRate: 0.03 });
+    await sleep(3000); // setGlobal 이 만든 direct 이력이 가라앉기를 기다린 뒤 기준선을 뜬다
+    const seen = new Set((await histories(globalHist())).map((x) => x.id));
+    const fresh = async () => (await histories(globalHist())).filter((x) => !seen.has(x.id) && ['spendEnabled', 'minCashFloor', 'minSpendUnit'].includes(x.field));
+    eq((await call('setQoinSpendPolicy', { spendEnabled: true }, ADMIN)).error, 'FAILED_PRECONDITION', 'minCashFloor 없이 켜기');
+    const r1 = await call('setQoinSpendPolicy', { minCashFloor: 300, reason: '토스 최소금액' }, ADMIN);
+    ok(r1.result?.changed, `r1 ${JSON.stringify(r1)}`);
+    const r2 = await call('setQoinSpendPolicy', { spendEnabled: true, minSpendUnit: 1 }, ADMIN);
+    eq(r2.result.changes.map((c) => c.field).sort(), ['minSpendUnit', 'spendEnabled']);
+    const cfg = (await db.collection('config').doc('qoin').get()).data();
+    eq([cfg.spendEnabled, cfg.minCashFloor, cfg.minSpendUnit, cfg.accrualRate, cfg.enabled], [true, 300, 1, 0.03, true]);
+    const h = await fresh();
+    const byField = Object.fromEntries(h.map((x) => [x.field, x]));
+    eq([byField.minCashFloor.before, byField.minCashFloor.after, byField.minCashFloor.beforeState, byField.minCashFloor.source, byField.minCashFloor.changedBy, byField.minCashFloor.reason],
+      [null, 300, 'absent', 'callable', ADMIN, '토스 최소금액']);
+    eq([byField.spendEnabled.before, byField.spendEnabled.after, byField.spendEnabled.source], [null, true, 'callable']);
+    await sleep(3500); // onQoinConfigWritten 이 callable 이력과 중복 기록하지 않아야 한다
+    const h2 = await fresh();
+    eq(h2.length, h.length, `중복 이력 없음 (callable ${h.length} → ${h2.length})`);
+    ok(h2.every((x) => x.source === 'callable'), `direct 중복 기록: ${JSON.stringify(h2.map((x) => x.source))}`);
+  });
+
+  await check('SP15 setQoinSpendPolicy: 같은 값 재요청은 noop (이력 추가 0), 다른 값은 before 포함 새 이력', async () => {
+    const before = (await histories(globalHist())).length;
+    const r = await call('setQoinSpendPolicy', { minCashFloor: 300, spendEnabled: true }, ADMIN);
+    eq([r.result.changed, r.result.changes.length], [false, 0]);
+    eq((await histories(globalHist())).length, before, 'noop 은 이력 없음');
+    const r2 = await call('setQoinSpendPolicy', { minCashFloor: 500 }, ADMIN);
+    eq([r2.result.changes[0].before, r2.result.changes[0].after], [300, 500]);
+    await call('setQoinSpendPolicy', { minCashFloor: 300 }, ADMIN);
+  });
+
+  await check('SP16 setQoinSpendPolicy: config/qoin 이 없으면 만들지 않는다 (failed-precondition)', async () => {
+    await db.collection('config').doc('qoin').delete();
+    eq((await call('setQoinSpendPolicy', { minCashFloor: 300 }, ADMIN)).error, 'FAILED_PRECONDITION');
+    eq((await db.collection('config').doc('qoin').get()).exists, false);
+    await setGlobal(SPEND_ON);
+  });
+
+  await check('SP17 onQoinConfigWritten: Console(SDK) 로 사용 정책을 바꾸면 source=direct 이력이 남는다 (spendEnabled/minCashFloor/minSpendUnit)', async () => {
+    await setGlobal(SPEND_ON); await sleep(3500);
+    const seen = new Set((await histories(globalHist())).map((x) => x.id));
+    await db.collection('config').doc('qoin').update({ spendEnabled: false, minCashFloor: 400, minSpendUnit: 100 });
+    const pick = (hs) => hs.filter((x) => !seen.has(x.id) && x.source === 'direct' && ['spendEnabled', 'minCashFloor', 'minSpendUnit'].includes(x.field));
+    const got = await until(async () => { const p = pick(await histories(globalHist())); return p.length >= 3 ? p : null; });
+    ok(got, '이력 3건이 생기지 않음');
+    const m = Object.fromEntries(got.map((x) => [x.field, x]));
+    eq([m.spendEnabled?.before, m.spendEnabled?.after], [true, false]);
+    eq([m.minCashFloor?.before, m.minCashFloor?.after], [300, 400]);
+    eq([m.minSpendUnit?.before, m.minSpendUnit?.after, m.minSpendUnit?.changedBy], [null, 100, null]);
+    eq(m.minSpendUnit.beforeState, 'absent');
+    await setGlobal(SPEND_ON);
+  });
+}
 
 // ═════════════════════════════════════════════════════════════════════════
 console.log('\n================ CF 에뮬레이터 검증 결과 ================');

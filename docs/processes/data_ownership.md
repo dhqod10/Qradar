@@ -317,7 +317,8 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | 필드 | 작업 | 허용 |
 |---|---|---|
 | `accrualRate` | create / update / delete | 🔒 **차단** — 🛠 CF `setQoinAccrualRate` 전담 |
-| `enabled` (비상 정지, 적립·회수 **둘 다** 멈춤) | update | ✅ **admin 직접 쓰기 유지** |
+| `enabled` (비상 정지, 적립·회수 **둘 다** 멈춤 + Qoin **사용(qoin_spend)도** 멈춤) | update | ✅ **admin 직접 쓰기 유지** |
+| `spendEnabled` (사용 kill switch — 부재 = 꺼짐, fail-closed) · `minSpendUnit`(부재 = 1) · `minCashFloor`(부재 = 사용 차단) | create / update / delete | 🔒 **차단** — 🛠 CF `setQoinSpendPolicy` 전담 (`qoinSpendPolicyFields()` 1곳). Console 편집은 `onQoinConfigWritten` 이 `source:'direct'` 로 사후 기록 |
 
 `enabled` 만 직접 쓰기를 남긴 이유: **CF 장애 중에도 끌 수 있어야 한다.** 이력은 `onQoinConfigWritten` 트리거가 남긴다. 행위자(`changedBy`)를 남기려면 같은 write 에 **`enabledChangedBy == uid()` 와 `enabledChangedAt == request.time`(= `FieldValue.serverTimestamp()`) 을 둘 다 Rules 로 강제**한다. `enabledChangedBy` 만 강제하면 **생략**으로 우회된다 — 둘 중 하나를 빼고 쓰면 트리거가 Console 편집과 구별하지 못해 이력의 행위자가 `null` 로 남는다 (2차 정정, `audit_trail.md` §4-4). 상세: `qoin_accrual_rate_hierarchy/spec.md` §19.3 / §21.9-1.
 
@@ -332,7 +333,7 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | create / update / delete | 🔒 **전부 `if false` — admin 도 불가** |
 | 🛠 CF 전담 | `setQoinAccrualRate` · `applyBrandQoinRate` · `onQoinConfigWritten` |
 
-`field` 값은 `'accrualRate'`(적립률) / `'accrualEnabled'`(매장·브랜드 스위치) / `'globalEnabled'`(전역 비상 정지) 3종이고, `source` 는 `'callable' | 'bulk' | 'direct' | 'app_direct' | 'migration'` 이다.
+`field` 값은 `'accrualRate'`(적립률) / `'accrualEnabled'`(매장·브랜드 스위치) / `'globalEnabled'`(전역 비상 정지) / `'spendEnabled'` · `'minSpendUnit'` · `'minCashFloor'`(전역 사용 정책, qoin_spend — 앱 이력 화면은 아직 이 3종을 그리지 않는다, 모델이 걸러낸다) 6종이고, `source` 는 `'callable' | 'bulk' | 'direct' | 'app_direct' | 'migration'` 이다.
 
 세 범위의 **컬렉션 이름이 같아야** collection group 조회가 성립한다. CG 쿼리(`orderBy changedAt desc`)는 **인덱스 배포가 선행**돼야 한다 (에뮬레이터는 인덱스를 강제하지 않는다).
 
@@ -342,9 +343,11 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 |---|---|
 | read | `self(uid) OR admin` |
 | create / update / delete | 🔒 **전부 `if false` — append-only, admin 도 불가** |
-| 🛠 CF 전담 | `onOrderQoinSettled` (`* → completed` 적립 / `completed → refunded` 회수) |
+| 🛠 CF 전담 | `onOrderQoinSettled` (`* → completed` 적립 / `completed → refunded` 회수 / **`* → cancelled|refunded` 사용 복원 `spendRefund`**) · `verifyTossPayment` (**사용 `spend` — Toss confirm 전 트랜잭션 차감**, confirm 이후 실패 시 같은 ID 의 `spendRefund` 로 롤백) |
 
-원장은 **당시 값을 박제**한다 (`accrualRate`, `accrualRateSource`, `orderTotalPrice`, `storeId`, `brandId`, `balanceAfter`). `brandId` 는 적립 비용 정산(`audit_trail.md` §5)의 선행 자산이며, **해석에 쓴 `stores/{id}.brandId`** 를 기록한다 (주문 문서의 `brandId` 는 클라이언트 값이라 금액·정산에 쓰지 않는다). 멱등 ID 는 `earn_{orderId}` / `clawback_{orderId}`.
+원장 타입은 `earn(+)` · `clawback(−)` · `spend(−)` · `spendRefund(+)` 4종이고 불변식은 `qoinBalance == Σ amount` 다 (append-only, clamp 금지, 음수 잔액 가능).
+
+원장은 **당시 값을 박제**한다 (`accrualRate`, `accrualRateSource`, `orderTotalPrice`, `storeId`, `brandId`, `balanceAfter`). `brandId` 는 적립 비용 정산(`audit_trail.md` §5)의 선행 자산이며, **해석에 쓴 `stores/{id}.brandId`** 를 기록한다 (주문 문서의 `brandId` 는 클라이언트 값이라 금액·정산에 쓰지 않는다). 멱등 ID 는 `earn_{orderId}` / `clawback_{orderId}` / `spend_{orderId}` / `spendRefund_{orderId}`. `spend` 원장은 `orderSubtotal`(서버 재계산 소계) · `orderTotalPrice`(현금 결제액) 를 당시 값으로 박제하고 `storeId`/`brandId` 를 남긴다 (사용 비용 정산 N4 의 선행 자산).
 
 #### 2.11.5 `qoinSettlementIssues/{orderId}` — 적립 누락 기록 (**구현됨**)
 
@@ -354,7 +357,7 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 |---|---|
 | read | `admin` |
 | create / update / delete | 🔒 `if false` |
-| 🛠 CF 전담 | `onOrderQoinSettled` (`skipped_invalid_rate` / `skipped_invalid_store` / `skipped_invalid_total` / `skipped_invalid_enabled`) |
+| 🛠 CF 전담 | `onOrderQoinSettled` (`skipped_invalid_rate` / `skipped_invalid_store` / `skipped_invalid_total` / `skipped_invalid_enabled`) · qoin_spend: `spend_restore_skipped_disabled`(전역 비상정지 중 환불돼 **복원이 멈춘** 사용분) · `spend_rollback_failed`(결제 실패 후 **롤백 자체가 실패**한 사용분) — 둘 다 수동 복구 대상 |
 
 **의도된 중단은 기록하지 않는다**: 스위치가 꺼져 적립을 건너뛴 경우(`skipped_accrual_disabled`)는 Cloud Logging 에만 남는다 — 값이 사라진 사건이 아니라 **설정대로 동작한 사건**이고 그 설정 자체는 `qoinRateHistory` 에 영구 보존된다(빈도도 높아 노이즈가 된다). 반면 스위치 값이 **무효**(비bool, Console 편집)여서 fail-closed 된 경우(`skipped_invalid_enabled`)는 **고객 돈의 영구 누락**이므로 기록한다. 상세: `qoin_accrual_rate_hierarchy/spec.md` §19.4 / §20.3.4.
 
@@ -364,7 +367,7 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 
 | 컬렉션 | read | write | 내용 |
 |---|---|---|---|
-| `paymentGateRejections/{autoId}` | `admin` | **없음** (CF 전담) | `uid, storeId, reason(STORE_NOT_SELLABLE\|STORE_NOT_FOUND\|MENU_SOLD_OUT\|MENU_EXCLUDED\|MENU_NOT_FOUND\|PRICE_MISMATCH\|OPTION_UNAVAILABLE\|READ_FAILED), detail, amount, createdAt`. `detail` 은 품절 계열이면 `{rawStatus,hasApprovedAt,violatedMenuItemIds,violatedMenuNames}`, 금액 계열(`PRICE_MISMATCH`·`OPTION_UNAVAILABLE`·금액 게이트의 `READ_FAILED`)이면 `{clientAmount, serverExpected, delta(부호 있음), checks{c1..c6}, lines[{menuItemId,clientLineTotal,serverLineTotal,quantity,unusable?}], optionIssues[{menuItemId,groupId,itemId?,kind}], failure?}`. `shadow` 모드 기록은 `detail.shadow:true`. **오탐 탐지 장치** — 거절이 악용 차단인지 데이터가 틀어져 정상 손님을 막은 것인지는 건수·분포로만 구분된다 |
+| `paymentGateRejections/{autoId}` | `admin` | **없음** (CF 전담) | `uid, storeId, reason(STORE_NOT_SELLABLE\|STORE_NOT_FOUND\|MENU_SOLD_OUT\|MENU_EXCLUDED\|MENU_NOT_FOUND\|PRICE_MISMATCH\|OPTION_UNAVAILABLE\|READ_FAILED\|SELF_DEALING\|QOIN_SPEND_DISABLED\|QOIN_INSUFFICIENT_BALANCE\|QOIN_BELOW_CASH_FLOOR\|QOIN_BELOW_MIN_UNIT\|QOIN_NOT_UNIT_MULTIPLE), detail, amount, createdAt`. `detail` 은 품절 계열이면 `{rawStatus,hasApprovedAt,violatedMenuItemIds,violatedMenuNames}`, 금액 계열(`PRICE_MISMATCH`·`OPTION_UNAVAILABLE`·금액 게이트의 `READ_FAILED`)이면 `{clientAmount, serverExpected, delta(부호 있음), checks{c1..c6}, lines[{menuItemId,clientLineTotal,serverLineTotal,quantity,unusable?}], optionIssues[{menuItemId,groupId,itemId?,kind}], failure?}`. `shadow` 모드 기록은 `detail.shadow:true`. **오탐 탐지 장치** — 거절이 악용 차단인지 데이터가 틀어져 정상 손님을 막은 것인지는 건수·분포로만 구분된다 |
 | `storeDeletionHistory/{storeId_createdAtMillis}` | `admin` | **없음** (CF 전담) | `storeId, storeName, ownerId, brandId, status, deletedBy, deletedAt, reason, snapshot(삭제 직전 매장 문서), imageUrls, affected, phase(started\|docDeleted\|subDeleted\|storageDeleted\|done)` |
 | `priceHistory/{eventId}` | `admin` | **없음** (트리거 전담 — Admin SDK) | **가격 변경 이력** (payment_price_authority R16). `kind(menuItem\|menuOverride\|optionGroup), scope(store\|brand\|master), storeId, brandId, targetId, before, after, changedBy(인증 주체 uid — Admin SDK/CF 쓰기면 null), authType, changedAt`. 문서 ID 는 트리거 이벤트 ID(재전달 멱등). `before`/`after` 는 가격 필드만(`basePrice` / `priceOverride`+`status`+`approvedBy` / `items[].priceDelta` 맵)이며 **원시 값을 정규화하지 않는다**(증거). **쓰기 경로를 건드리지 않는다** — Rules 로는 이력을 강제할 수 없고 트리거는 클라이언트 직접 쓰기도 포착한다 |
 | `migrationHistory/{autoId}` | (규칙 없음 = 클라이언트 접근 불가) | Admin SDK | 일괄 처리 1건 + 영향 범위(대상 수). `auditOrderPriceIntegrity` 실행 1건도 여기 남긴다(`name:'auditOrderPriceIntegrity'`) |
@@ -395,7 +398,7 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | `onMainCategoryActiveWritten` | admin (카테고리 active 토글) | `mainCategories/{id}` written | active 실제 플립시에만 전 매장 재계산 | 위와 동일 |
 | `backfillAvailableMainCategories` | admin (callable) | 수동 호출, `dryRun` 기본 | 전 매장 `availableMainCategories` 재계산, `migrationHistory` 1건(affected/total). 상시 정합 도구(멱등) | 시드·트리거 누락 치유 |
 
-| `onOrderQoinSettled` | customer/owner (주문 status 전이) | `orders/{orderId}` updated 트리거 | 계층 해석(매장→브랜드→전역) 후 `users/{uid}/qoinTransactions/{txId}` create + `users/{uid}.qoinBalance` 절대값 갱신 (한 트랜잭션) | 1) 원장·잔액은 클라이언트 쓰기 `if false` 2) **적립률은 돈의 계수** — 저장값을 믿지 않고 발행 직전 경계 재검증 3) 멱등 가드(`earn_{orderId}`)가 서버에만 있을 수 있다 |
+| `onOrderQoinSettled` | customer/owner (주문 status 전이) | `orders/{orderId}` updated 트리거 | (qoin_spend) `* → cancelled|refunded` 에서 `spend_{orderId}` 원장을 반전해 `spendRefund_{orderId}` 복원 — 없으면 no-op, `spendEnabled=false` 여도 복원은 통과 / 계층 해석(매장→브랜드→전역) 후 `users/{uid}/qoinTransactions/{txId}` create + `users/{uid}.qoinBalance` 절대값 갱신 (한 트랜잭션) | 1) 원장·잔액은 클라이언트 쓰기 `if false` 2) **적립률은 돈의 계수** — 저장값을 믿지 않고 발행 직전 경계 재검증 3) 멱등 가드(`earn_{orderId}`)가 서버에만 있을 수 있다 |
 | `setQoinAccrualRate` | admin (단건 설정) | `{scope, targetId, rate\|clear, reason?}` | `stores`/`brands`/`config` 의 적립률 1필드 + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) 이력을 클라이언트가 쓰면 **위조·누락** 가능 3) admin role **서버 재검증** + 범위 검증 |
 | `applyBrandQoinRate` | admin (브랜드 일괄) | `{brandId, rate\|clear, mode: preserve\|overwrite, reason?, resumeHistoryId?}` | 브랜드 값 1 write + 이력 선기록(한 트랜잭션) → (overwrite) 산하 매장 개별 설정 청크 삭제 + 매장별 이력 → 이력 마감 | 1) 500 batch 한도·권한 재검증·이력 위조 2) **A 가 쓴 문서로 B 소유 문서를 갱신** (§3 규칙) 3) 재개(`partial`) 멱등 처리 |
 | `setQoinAccrualEnabled` | admin (적립 사용 토글) | `{scope: store\|brand, targetId, enabled: boolean, reason?}` | `stores`/`brands` 의 `qoinAccrualEnabled` 1필드(또는 삭제) + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) **적립이 발생하는지 자체를 결정**하는 정책 값이므로 적립률과 동급 3) 이력 위조·누락 차단. `scope: 'global'` 은 거부 (전역은 `config/qoin.enabled`) |
@@ -410,7 +413,9 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | `migrateQoinZeroRates` ⏳**임시** | admin (1회성) | `{dryRun: boolean}` | `qoinAccrualRate == 0` 인 `stores`/`brands` 를 `{rate 삭제, qoinAccrualEnabled: false}` + 이력 1건(`source: 'migration'`, `migratedFromRate: 0`) 으로 이전. 멱등 | Q1 결정 이전용. **마이그레이션 0건 확인 후 과도기 호환 분기와 함께 삭제한다** (`qoin_accrual_rate_hierarchy/spec.md` §20.4.5) |
 | `claimSubmittedBrand` | brand 신청자 (브랜드 마스터 정보 등록 직후) | `{ brandId }` | `brands/{brandId}.submittedBy == uid` 검증 후 `users/{uid}.brandId` 설정 + `users/{uid}/roleHistory` 1건 (**같은 트랜잭션**). 멱등 | 1) `brandId` 는 **권한 값**이다 — 클라이언트가 쓰면 임의 브랜드의 보유자가 된다 2) Rules 로는 검증 불가: 신규 등록이 brand create 와 같은 **batch** 라 `get()` 이 brand 문서를 보지 못한다 3) 권한 변경 이력을 값과 같은 트랜잭션에 둔다 |
 | `auditBrandLinks` ⏳**임시** | admin (1회성) | `{}` | **쓰기 0.** `users(role=='brand')` / `brands` / `stores.brandId` 를 스캔해 `ok` · `ok_onboarding` · `dangling` · `mismatch` · `duplicate` · `orphan_brand` · `store_dangling_brand` · `store_unapproved_brand` 로 분류해 **보고만** 한다 | 개정 전 Rules 로 잘못 연결된 계정이 운영에 있을 수 있고 설계자는 운영 Firestore 를 읽을 수 없다. 자동 교정하지 않는다(의도를 추측할 수 없으면 손대지 않는다). **정리 커밋에서 삭제** (`brand_authorization_hardening/spec.md` §4 · §8-A2) |
-| `onQoinConfigWritten` | 누구든 (`config/qoin` written) | `config/qoin` written 트리거 | `accrualRate`/`enabled` 변경을 `config/qoin/qoinRateHistory` 에 1건 기록 (callable 이 이미 남긴 건 skip) | **Console / Admin SDK 쓰기는 Rules 를 우회한다.** 직접 쓰기를 유지하는 `enabled` 와 콘솔 편집을 사후 포착하는 유일한 수단 |
+| `setQoinSpendPolicy` | admin | `{spendEnabled?, minSpendUnit?, minCashFloor?, reason?}` (적어도 하나) | `config/qoin` 의 보낸 필드만 + 필드별 `qoinRateHistory` 이력 (**같은 트랜잭션**). `config/qoin` 이 없으면 만들지 않음, `minCashFloor` 없이 `spendEnabled:true` 거부 | 1) 사용 정책은 **돈의 계수** — 클라이언트(admin 포함)는 쓸 수 없다 2) 이력 위조·누락 차단 |
+| `verifyTossPayment` Qoin 사용 (2-d) | customer | `qoinToUse`(요청) | `qoinToUse>0` 일 때만: 정책·잔액·**서버 재계산 소계**로 검증 → **confirm 전** 트랜잭션으로 `spend_{orderId}` 원장 + `users.qoinBalance` 차감 → confirm 실패/주문 쓰기 실패 시 `spendRefund_{orderId}` 롤백. 가격 모드와 무관하게 금액 게이트 enforce 강제 | 클라 소계를 믿으면 '소계 뻥튀기 → Qoin 으로 거의 전액 차감' 공짜 돈이 샌다. `qoinToUse=0`/미전송은 현행 경로 그대로(회귀 0) |
+| `onQoinConfigWritten` | 누구든 (`config/qoin` written) | `config/qoin` written 트리거 | `accrualRate`/`enabled`/사용 정책 3필드 변경을 `config/qoin/qoinRateHistory` 에 1건 기록 (callable 이 이미 남긴 건 skip) | **Console / Admin SDK 쓰기는 Rules 를 우회한다.** 직접 쓰기를 유지하는 `enabled` 와 콘솔 편집을 사후 포착하는 유일한 수단 |
 
 **규칙**: 결제 / 외부 OAuth / 다중 collection batch + 권한 재검증이 필요한 작업은 모두 Cloud Function.
 

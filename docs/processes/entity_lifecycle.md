@@ -64,6 +64,8 @@ stateDiagram-v2
 | accepted+ → refunded | owner | 🛠 CF `processRefund` | `stores/{storeId}.ownerId == uid` + `order.refundRequest != null` + `order.status ∈ {accepted, making, ready, completed}` | `status='refunded'`, `refundInfo` (cancellationKey, reason, approvedBy=uid, processedAt, amount), `refundedAt`, `updatedAt` | 클라이언트 update 차단. CF 만 |
 | paid/accepted+ → cancelled/refunded (admin 전권) | admin | ✅ Rules O4 (`isAdmin()`) | — | 임의 필드 update 가능 | `orders.update` O4 |
 
+> **Qoin 사용(qoin_spend) 후속 액션**: `orders.discount > 0` 인 주문(= Qoin 사용분이 있는 주문)이 **`→ cancelled` 또는 `→ refunded`** 로 전이하면(위 표의 어떤 actor 든) `onOrderQoinSettled` 가 `spend_{orderId}` 원장을 반전해 `spendRefund_{orderId}` 로 **사용 Qoin 을 전액 복원**한다 (없으면 no-op). `completed → refunded` 는 적립 회수(`clawback`)와 사용 복원(`spendRefund`)이 **둘 다** 일어난다. 사용은 결제 시점(`verifyTossPayment`, Toss confirm 전 트랜잭션 차감)에 일어나므로 복원은 paid 이후의 모든 종료 전이를 덮는다. 상세: `docs/tasks/qoin_spend/spec.md` §6.
+
 ### 2.3 Order 내부 sub-state: refundRequest
 
 `orders/{orderId}.refundRequest` 는 자체 status 가 아니라 **존재 여부 + deniedAt** 으로 분기.

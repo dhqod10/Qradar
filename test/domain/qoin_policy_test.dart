@@ -151,6 +151,45 @@ void main() {
       expect(s.contains('-'), isFalse);
       expect(s.contains('540 Q 회수'), isTrue);
     });
+
+    // qoin_spend: 사용/복원 타입. `after` 접두사는 부호 2갈래가 아니라 타입별이어야 한다 (spend 가 "회수 후" 로 읽히던 버그).
+    test('spend 사유: 결제수단을 특정하지 않고 현금 결제액(박제값)을 보인다', () {
+      expect(
+        qoinReasonText(tx(type: QoinTransactionType.spend, amount: -700, total: 7300)),
+        '결제에 사용 · 현금 결제 7,300원',
+      );
+      expect(
+        qoinReasonText(tx(type: QoinTransactionType.spend, amount: -700)),
+        '결제에 사용',
+      );
+      expect(
+        qoinReasonText(tx(type: QoinTransactionType.spend, amount: -700, total: 0)),
+        '결제에 사용',
+      );
+    });
+    test('spendRefund 사유', () {
+      expect(
+        qoinReasonText(tx(type: QoinTransactionType.spendRefund, amount: 700)),
+        '주문 취소·환불로 사용한 Qoin 복원',
+      );
+    });
+    test('스크린리더: 타입별 동사 + 타입별 `… 후 잔액` 접두사', () {
+      String spoken(QoinTransactionType? t, int amount) =>
+          qoinSpokenText(tx(type: t, amount: amount));
+      final spend = spoken(QoinTransactionType.spend, -700);
+      expect(spend.contains('700 Q 사용'), isTrue);
+      expect(spend.contains('사용 후 잔액'), isTrue);
+      expect(spend.contains('회수 후'), isFalse, reason: 'spend 가 "회수 후" 로 읽히면 안 된다');
+      expect(spend.contains('-'), isFalse);
+      final refund = spoken(QoinTransactionType.spendRefund, 700);
+      expect(refund.contains('700 Q 복원'), isTrue);
+      expect(refund.contains('복원 후 잔액'), isTrue);
+      expect(spoken(QoinTransactionType.earn, 540).contains('적립 후 잔액'), isTrue);
+      expect(spoken(QoinTransactionType.clawback, -540).contains('회수 후 잔액'), isTrue);
+      // 미지 타입은 부호로 폴백 (전방 호환)
+      expect(spoken(null, 100).contains('적립 후 잔액'), isTrue);
+      expect(spoken(null, -100).contains('회수 후 잔액'), isTrue);
+    });
   });
 
   test('stale 판정 기준(5분)은 TS 와 같은 공유 픽스처를 읽는다 — test_fixtures/qoin_bulk_policy.json', () {

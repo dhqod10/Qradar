@@ -1233,6 +1233,47 @@ await run('PPA-C2 고객이 config/app update (게이트 끄기)', 'deny', () =>
 await run('PPA-C2b 점주가 config/app update', 'deny', () => updateDoc(doc(asOwner, 'config', 'app'), { minClientLevel: 0 }));
 await run('PPA-C3 admin 이 config/app update', 'allow', () => updateDoc(doc(asAdmin, 'config', 'app'), { minClientLevel: 3 }));
 
+// ── qoin_spend: config/qoin 사용 정책 필드(spendEnabled / minSpendUnit / minCashFloor) — CF 전담 (create·update 양쪽 차단) + 정상 회귀 ──
+await run('QS-R1 admin 이 config/qoin.spendEnabled update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { spendEnabled: true }));
+await run('QS-R1b admin 이 config/qoin.minCashFloor update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { minCashFloor: 1 }));
+await run('QS-R1c admin 이 config/qoin.minSpendUnit update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { minSpendUnit: 100 }));
+await run('QS-R1d admin 이 spendEnabled 를 enabled(정상 필드) 와 동시 update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'config', 'qoin'), { enabled: true, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp(), spendEnabled: true }));
+await run('QS-R1e admin 이 spendEnabled 삭제(deleteField)', 'deny', async () => {
+  await seed((db) => setDoc(doc(db, 'config', 'qoin_spend_seeded'), { enabled: true, spendEnabled: false, minCashFloor: 300 }));
+  return updateDoc(doc(asAdmin, 'config', 'qoin_spend_seeded'), { spendEnabled: deleteField() });
+});
+await run('QS-R1f admin 이 setDoc 교체로 사용 정책 필드 제거/변경', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_spend_seeded'), { enabled: true, minCashFloor: 1 }));
+await run('QS-R2 admin 이 config 문서를 spendEnabled 포함해 create', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_spend_probe'), { spendEnabled: true, enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
+await run('QS-R2b admin 이 config 문서를 minCashFloor 포함해 create', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_spend_probe2'), { minCashFloor: 1, enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
+await run('QS-R2c admin 이 config 문서를 minSpendUnit 포함해 create', 'deny', () =>
+  setDoc(doc(asAdmin, 'config', 'qoin_spend_probe3'), { minSpendUnit: 1, enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() }));
+await run('QS-R3 고객이 config/qoin.spendEnabled write', 'deny', () =>
+  updateDoc(doc(asCustomer, 'config', 'qoin'), { spendEnabled: true }));
+await run('QS-R3b 점주가 config/qoin.minCashFloor write', 'deny', () =>
+  updateDoc(doc(asOwner, 'config', 'qoin'), { minCashFloor: 1 }));
+await run('QS-R4 회귀: 사용 정책이 이미 있는 문서에서 admin 이 enabled 만 update (정책 필드 불변)', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'config', 'qoin_spend_seeded2'), { enabled: true, spendEnabled: true, minCashFloor: 300, minSpendUnit: 1 }));
+  return updateDoc(doc(asAdmin, 'config', 'qoin_spend_seeded2'), { enabled: false, enabledChangedBy: ADMIN, enabledChangedAt: serverTimestamp() });
+});
+await run('QS-R5 고객이 config/qoin(사용 정책 포함) read — 체크아웃이 정책을 읽는다', 'allow', async () => {
+  await seed((db) => setDoc(doc(db, 'config', 'qoin_spend_seeded3'), { enabled: true, spendEnabled: true, minCashFloor: 300 }));
+  return getDoc(doc(asCustomer, 'config', 'qoin_spend_seeded3'));
+});
+// spend/spendRefund 원장은 기존 qoinTransactions 규칙(create/update/delete = false) 그대로 — 신규 타입도 클라이언트 쓰기 불가.
+await run('QS-R6 고객이 spend 타입 원장 직접 create (무한 Qoin 방지)', 'deny', () =>
+  setDoc(doc(asCustomer, 'users', CUSTOMER, 'qoinTransactions', 'spend_forge'), { type: 'spendRefund', amount: 999999, balanceAfter: 999999 }));
+await run('QS-R6b admin 이 spendRefund 원장 create', 'deny', () =>
+  setDoc(doc(asAdmin, 'users', CUSTOMER, 'qoinTransactions', 'spendRefund_forge'), { type: 'spendRefund', amount: 1, balanceAfter: 1 }));
+await run('QS-R7 고객이 qoinSettlementIssues 직접 create (롤백 실패 기록 위조)', 'deny', () =>
+  setDoc(doc(asCustomer, 'qoinSettlementIssues', 'o_forge'), { reason: 'spend_rollback_failed' }));
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {

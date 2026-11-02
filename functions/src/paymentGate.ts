@@ -30,7 +30,13 @@ export type GateReason =
   | "OPTION_UNAVAILABLE"
   | "READ_FAILED"
   // [prelaunch_security_bundle] 자기거래 가드 (selfDealing.ts) — 게이트 판정이 아니라 별도 가드지만 거절 기록·토큰 문법을 공유한다.
-  | "SELF_DEALING";
+  | "SELF_DEALING"
+  // [qoin_spend] Qoin 사용 거절 (qoinSpend.ts 판정). Toss confirm **전**이라 돈이 안 움직인다. 토큰 문법은 메뉴 id 를 싣지 않는 사유와 같다.
+  | "QOIN_SPEND_DISABLED"
+  | "QOIN_INSUFFICIENT_BALANCE"
+  | "QOIN_BELOW_CASH_FLOOR"
+  | "QOIN_BELOW_MIN_UNIT"
+  | "QOIN_NOT_UNIT_MULTIPLE";
 
 /**
  * 게이트 모드 (spec §17.0) — `PAYMENT_GATE_MODE` 파라미터 값.
@@ -62,6 +68,11 @@ export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-fo
   OPTION_UNAVAILABLE: "failed-precondition",
   READ_FAILED: "unavailable",
   SELF_DEALING: "permission-denied",
+  QOIN_SPEND_DISABLED: "failed-precondition",
+  QOIN_INSUFFICIENT_BALANCE: "failed-precondition",
+  QOIN_BELOW_CASH_FLOOR: "failed-precondition",
+  QOIN_BELOW_MIN_UNIT: "failed-precondition",
+  QOIN_NOT_UNIT_MULTIPLE: "failed-precondition",
 };
 
 /** 사람용 문장 (디버깅·구 앱용). 신 앱 화면은 이 문자열을 그리지 않는다 — 코드 안 상수만 그린다 (spec §15.1). */
@@ -76,6 +87,11 @@ const GATE_TEXT: Record<GateReason, string> = {
   OPTION_UNAVAILABLE: "선택한 옵션이 바뀌었어요. 카트에서 옵션을 다시 골라주세요",
   READ_FAILED: "일시적인 오류예요. 잠시 후 다시 시도해주세요",
   SELF_DEALING: "본인 매장은 주문할 수 없어요",
+  QOIN_SPEND_DISABLED: "지금은 Qoin 을 결제에 쓸 수 없어요",
+  QOIN_INSUFFICIENT_BALANCE: "Qoin 잔액이 부족해요",
+  QOIN_BELOW_CASH_FLOOR: "Qoin 을 최대로 쓸 수 없는 주문이에요",
+  QOIN_BELOW_MIN_UNIT: "Qoin 사용액을 확인해 주세요",
+  QOIN_NOT_UNIT_MULTIPLE: "Qoin 사용액을 확인해 주세요",
 };
 
 /** 토큰에 menuItemId 를 싣는 사유 (메뉴 사유 3종 + 금액 사유 2종 — payment_price_authority R11). */

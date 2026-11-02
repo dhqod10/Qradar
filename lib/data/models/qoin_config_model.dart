@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
+import 'package:qradar/core/utils/qoin_spend_calculator.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 
 /// `config/qoin` 매퍼.
@@ -26,6 +27,8 @@ class QoinConfigModel {
       accrualRate: setting.isValid ? setting.value : null,
       accrualRateSetting: setting,
       enabled: enabled is bool ? enabled : false,
+      // 사용 정책(qoin_spend): 서버 resolveSpendPolicy 와 같은 기준 (골든). 부재/무효 → disabled.
+      spendPolicy: QoinSpendPolicy.fromConfig(data),
     );
   }
 }

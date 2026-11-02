@@ -9,7 +9,7 @@ import {
   MIN_RATE, MAX_RATE, BULK_STALE_MS, classifyRate, classifySwitch, resolveEffectiveRate, isValidCallableRate, isValidCallableSwitch,
   computeEarnAmount,
 } from '../lib/qoinRate.js';
-import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS, CONSUMED_ITEM_KEYS, CONSUMED_OPTION_KEYS } from '../lib/orderBuilder.js';
+import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS, CONSUMED_INPUT_KEYS, CONSUMED_ITEM_KEYS, CONSUMED_OPTION_KEYS } from '../lib/orderBuilder.js';
 import { describeRaw, BULK_STATUS } from '../lib/qoinAdmin.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -166,6 +166,13 @@ test('T2-b item 레벨 입력 계약 (payment_price_authority §1-5): items[] �
   assert.ok(!CONSUMED_OPTION_KEYS.includes('optionGroupId') && !CONSUMED_OPTION_KEYS.includes('optionId'));
   // imageUrl 은 주문상세 썸네일용으로 보낸다(order_flow_phase1 UI 캐싱 의도 복원).
   assert.ok(CONSUMED_ITEM_KEYS.includes('imageUrl'));
+});
+
+test('T2 qoin_spend 최상위 입력 계약: TS 가 소비하는 입력 키 집합 = fixture.inputKeys (qoinToUse 는 cart 밖 최상위)', () => {
+  assert.deepEqual([...CONSUMED_INPUT_KEYS].sort(), [...cartContract.inputKeys].sort());
+  assert.ok(CONSUMED_INPUT_KEYS.includes('qoinToUse'));
+  assert.ok(!CONSUMED_CART_KEYS.includes('qoinToUse'), 'qoinToUse 는 cart 키가 아니다');
+  for (const k of cartContract.requiredInputKeys) assert.ok(cartContract.inputKeys.includes(k));
 });
 
 test('T2 buildOrderData 가 cart 에서 읽는 키는 CONSUMED_CART_KEYS 와 일치 (Proxy 로 접근 키 수집)', () => {

@@ -51,6 +51,9 @@ class GateFailureCopy {
 /// 돈 줄 (design §3.4). 갈래 B 에서만 쓴다.
 const String kGateMoneyLine = '아직 결제되지 않았고, 요금도 청구되지 않았어요';
 
+/// Qoin 사용 거절 공통 보조 문구 (qoin_spend design §6.1) — 거절은 confirm 전이라 Qoin 도 차감되지 않았다.
+const String kQoinUnchangedLine = 'Qoin 사용 내역은 바뀌지 않았어요.';
+
 // ── 가격 거절 화면 (payment_price_authority design §4.2) ─────────────────────────
 // 이 화면에는 금액 숫자가 없다 (Q6=ⓒ) — 숫자는 카트로 돌아간 뒤 재가격 결과로 보인다. 서버 문자열도 보간하지 않는다.
 
@@ -204,6 +207,47 @@ GateFailureCopy gateFailureCopy(
         body: '내가 운영하는 매장에서는 주문할 수 없어요. 결제는 진행되지 않았어요. 카트를 비우고 다른 매장에서 담아 주세요.',
         primaryLabel: '카트 비우고 메뉴 보러가기',
         primaryAction: PaymentFailureAction.clearCartAndBrowse,
+        secondaryLabel: '닫기',
+        secondaryAction: PaymentFailureAction.popToCart,
+      );
+    // ── Qoin 사용 거절 (qoin_spend design §6.1). 금액 숫자·서버 문자열 없음. 돈 줄은 kGateMoneyLine 재사용.
+    case PaymentFailureReason.qoinInsufficientBalance:
+      return const GateFailureCopy(
+        headline: 'Qoin 잔액이 부족해요',
+        body: '보유한 Qoin이 결제하려는 금액보다 적어요. 카트로 돌아가 사용할 Qoin을 줄이거나 쓰지 않고 결제해 주세요.',
+        subBody: kQoinUnchangedLine,
+        primaryLabel: '카트로 돌아가기',
+        primaryAction: PaymentFailureAction.popToCart,
+        secondaryLabel: '닫기',
+        secondaryAction: PaymentFailureAction.popToCart,
+      );
+    case PaymentFailureReason.qoinSpendDisabled:
+      return const GateFailureCopy(
+        headline: '지금은 Qoin을 결제에 쓸 수 없어요',
+        body: 'Qoin 사용이 잠시 중단됐어요. Qoin 없이 결제하거나 잠시 후 다시 시도해 주세요. 보유한 Qoin은 그대로예요.',
+        subBody: kQoinUnchangedLine,
+        primaryLabel: '카트로 돌아가기',
+        primaryAction: PaymentFailureAction.popToCart,
+        secondaryLabel: '닫기',
+        secondaryAction: PaymentFailureAction.popToCart,
+      );
+    case PaymentFailureReason.qoinBelowCashFloor:
+      return const GateFailureCopy(
+        headline: 'Qoin을 최대로 쓸 수 없는 주문이에요',
+        body: '주문 금액 중 일부는 카드 등으로 결제해야 해요. 카트로 돌아가 Qoin 사용액을 줄여 주세요.',
+        subBody: kQoinUnchangedLine,
+        primaryLabel: '카트로 돌아가기',
+        primaryAction: PaymentFailureAction.popToCart,
+        secondaryLabel: '닫기',
+        secondaryAction: PaymentFailureAction.popToCart,
+      );
+    case PaymentFailureReason.qoinInvalidAmount:
+      return const GateFailureCopy(
+        headline: 'Qoin 사용액을 확인해 주세요',
+        body: '사용하려는 Qoin 금액을 적용할 수 없어요. 카트로 돌아가 다시 입력해 주세요.',
+        subBody: kQoinUnchangedLine,
+        primaryLabel: '카트로 돌아가기',
+        primaryAction: PaymentFailureAction.popToCart,
         secondaryLabel: '닫기',
         secondaryAction: PaymentFailureAction.popToCart,
       );

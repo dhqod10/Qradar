@@ -53,6 +53,8 @@ export interface PriceGateDetail {
     unusable?: "menuUnresolved" | "badMenuItemId" | "badQuantity" | "badSelection";
   }>;
   optionIssues: Array<OptionIssue & { menuItemId: string }>;
+  /** 검증 대상 Qoin 할인액 (qoin_spend). D>0 일 때만 존재 — 없으면 현행과 같은 모양이다. */
+  discount?: number;
   /** READ_FAILED 일 때만: 왜 계산하지 못했는가. */
   failure?: "storeUnreadable" | "menuUnreadable" | "optionGroupsUnreadable" | "optionGroupCapExceeded";
 }
@@ -194,9 +196,16 @@ export async function evaluatePriceAuthority(
     menus: ReadonlyMap<string, MergedMenu>;
     amount: number;
     cart: { subtotal: unknown; totalPrice: unknown; items: unknown[] };
+    /**
+     * 할인 `D` (qoin_spend spec §5.3) — 검증 대상 Qoin 사용 요청액. 생략/0 이면 **현행 판정과 동일**하다 (비-Qoin 주문 회귀 0).
+     * 양의 안전 정수만 받는다 (호출자가 `parseQoinToUse` 로 보장). `D>0` 이면 c2/c4 가 `subtotal − D` / `serverSubtotal − D` 로 일반화된다.
+     * 할인의 정당성은 **서버가 다시 만든 소계**에 의존하므로, 호출자는 `D>0` 일 때 가격 모드와 무관하게 이 함수를 enforce 로 쓴다.
+     */
+    discount?: number;
   }
 ): Promise<PriceGateResult> {
   const { cart } = args;
+  const discount = args.discount ?? 0;
   const clientAmount = isInt(args.amount) ? args.amount : null;
   if (!Array.isArray(cart.items) || cart.items.length > MAX_CART_ITEMS) {
     return readFailed({ failure: "menuUnreadable", clientAmount });
@@ -255,7 +264,8 @@ export async function evaluatePriceAuthority(
 
   const anyUnusable = unusable.some((u) => u !== undefined);
   const amount = computeCartAmount(pricingInput);
-  const serverExpected = anyUnusable ? null : amount.expected;
+  // D=0 이면 amount.expected 그대로 (현행). D>0 이면 서버 소계에서 할인을 뺀 서버 최종청구액.
+  const serverExpected = anyUnusable ? null : discount === 0 ? amount.expected : amount.expected - discount;
 
   // §4-3 판정식. ①②③ 은 클라 값끼리의 비교(권위 아님, 기준선과 같은 불변식), ④⑤⑥ 이 권위다.
   const clientLineTotals = parsed.map((p) => p.clientTotal);
@@ -264,7 +274,8 @@ export async function evaluatePriceAuthority(
   const lineOk6 = parsed.map((p, i) => unusable[i] === undefined && p.clientUnit === amount.lines[i].unitPrice);
   const checks: PriceChecks = {
     c1: clientAmount !== null && clientAmount === cart.totalPrice,
-    c2: cart.totalPrice === cart.subtotal,
+    // D=0 분기는 현행 식 그대로 (타입 강제 변환 차이까지 동일하게). D>0 은 클라 소계가 정수일 때만 `subtotal − D` 와 대조.
+    c2: discount === 0 ? cart.totalPrice === cart.subtotal : isInt(cart.subtotal) && cart.totalPrice === cart.subtotal - discount,
     c3: clientSum !== null && cart.subtotal === clientSum,
     c4: serverExpected !== null && clientAmount === serverExpected,
     c5: lineOk5.every(Boolean),
@@ -284,6 +295,8 @@ export async function evaluatePriceAuthority(
       ...(unusable[i] !== undefined ? { unusable: unusable[i] } : {}),
     })),
     optionIssues,
+    // D>0 일 때만 싣는다 — D=0 의 거절 기록(paymentGateRejections.detail) 모양은 현행과 같다.
+    ...(discount !== 0 ? { discount } : {}),
   };
 
   const tokenIds = (ids: Iterable<string | null>): string[] => {
@@ -301,5 +314,6 @@ export async function evaluatePriceAuthority(
     const bad = parsed.filter((_, i) => !lineOk5[i] || !lineOk6[i]).map((p) => p.menuItemId);
     return { ok: false, reason: "PRICE_MISMATCH", menuItemIds: tokenIds(bad), detail };
   }
-  return { ok: true, pricing: { lines: amount.lines, subtotal: amount.subtotal, expected: amount.expected } };
+  // pricing.expected = 서버 최종청구액 (D>0 이면 소계 − D). 주문 문서 totalPrice 는 이 값으로 쓰인다.
+  return { ok: true, pricing: { lines: amount.lines, subtotal: amount.subtotal, expected: discount === 0 ? amount.expected : amount.expected - discount } };
 }

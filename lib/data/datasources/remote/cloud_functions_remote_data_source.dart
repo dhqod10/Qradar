@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:firebase_app_installations/firebase_app_installations.dart';
 import 'package:qradar/core/constants/app_client_level.dart';
 import 'package:qradar/core/errors/verify_payment_failure.dart';
@@ -37,6 +38,36 @@ class CloudFunctionsRemoteDataSource {
     }
   }
 
+  /// `verifyTossPayment` 최상위 입력. 키 집합은 `test_fixtures/qoin_cart_contract.json` 의 `inputKeys` 골든이 서버와 양방향으로 고정한다.
+  ///
+  /// **`qoinToUse`** (qoin_spend): 사용 요청액일 뿐 권위가 아니다. 0 이어도 항상 싣는다 — 서버는 0 을 "사용 안 함" 으로 읽고
+  /// 기존 흐름과 동일하게 처리한다 (구버전 앱은 이 키가 없고 같은 결과).
+  @visibleForTesting
+  static Map<String, dynamic> verifyPayload({
+    required String paymentKey,
+    required String orderId,
+    required int amount,
+    required String idempotencyKey,
+    required Map<String, dynamic> cartSnapshot,
+    required String paymentMethod,
+    required int qoinToUse,
+    String? deviceId,
+  }) {
+    return <String, dynamic>{
+      'paymentKey': paymentKey,
+      'orderId': orderId,
+      'amount': amount,
+      'idempotencyKey': idempotencyKey,
+      'cart': cartSnapshot,
+      'paymentMethod': paymentMethod,
+      'qoinToUse': qoinToUse,
+      // 이 빌드가 금액 재가격(payment_price_authority R9)을 가진 수준이다. 서버는 거절 기록에 남겨 구버전 비율을 잰다.
+      'clientLevel': kPaymentClientLevel,
+      // Layer2 신호 (서버가 salt 와 해시해 orderSignals 에만 저장). 판정에 쓰지 않는다. 구버전·실패 시 키 없음.
+      if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
+    };
+  }
+
   Future<Map<String, dynamic>> verifyTossPayment({
     required String paymentKey,
     required String orderId,
@@ -44,22 +75,23 @@ class CloudFunctionsRemoteDataSource {
     required String idempotencyKey,
     required Map<String, dynamic> cartSnapshot,
     required String paymentMethod,
+    int qoinToUse = 0,
   }) async {
     try {
       final deviceId = await _deviceIdProvider();
       final callable = _functions.httpsCallable('verifyTossPayment');
-      final result = await callable.call<Object?>({
-        'paymentKey': paymentKey,
-        'orderId': orderId,
-        'amount': amount,
-        'idempotencyKey': idempotencyKey,
-        'cart': cartSnapshot,
-        'paymentMethod': paymentMethod,
-        // 이 빌드가 금액 재가격(payment_price_authority R9)을 가진 수준이다. 서버는 거절 기록에 남겨 구버전 비율을 잰다.
-        'clientLevel': kPaymentClientLevel,
-        // Layer2 신호 (서버가 salt 와 해시해 orderSignals 에만 저장). 판정에 쓰지 않는다. 구버전·실패 시 키 없음.
-        if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
-      });
+      final result = await callable.call<Object?>(
+        verifyPayload(
+          paymentKey: paymentKey,
+          orderId: orderId,
+          amount: amount,
+          idempotencyKey: idempotencyKey,
+          cartSnapshot: cartSnapshot,
+          paymentMethod: paymentMethod,
+          qoinToUse: qoinToUse,
+          deviceId: deviceId,
+        ),
+      );
       final data = result.data;
       if (data is Map) {
         return Map<String, dynamic>.from(data);
