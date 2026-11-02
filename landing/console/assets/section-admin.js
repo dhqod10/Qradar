@@ -10,7 +10,7 @@
    ========================================================================== */
 
 import {
-  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, LIST_LIMIT,
+  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, LIST_LIMIT,
 } from './console-data.js';
 import {
   esc, safeUrl, fmtDateTime, fmtShortDateTime, fmtClock, shortUid, fmtKrw, fmtRatePct, normalizeStatus, STATUS_LABEL, validateReason, classifyError, writeErrorText,
@@ -22,7 +22,10 @@ import {
 export const meta = { role: 'admin', defaultHash: '#/dashboard' };
 
 const NAV = [
-  { group: '운영', items: [{ key: 'dashboard', href: '#/dashboard', label: '대시보드' }] },
+  { group: '운영', items: [
+    { key: 'dashboard', href: '#/dashboard', label: '대시보드' },
+    { key: 'tools', href: '#/tools', label: '백필 도구' },
+  ] },
   { group: '승인 큐', items: [
     { key: 'brands', href: '#/brands', label: '브랜드', count: 'brands' },
     { key: 'storesPending', href: '#/stores/pending', label: '매장', count: 'stores' },
@@ -57,6 +60,7 @@ export function match(parts, alive) {
   if (p0 === 'overrides') return { key: 'overrides', run: () => viewOverrides(alive) };
   if (p0 === 'qoin') return { key: 'qoin', run: () => viewQoin(alive) };
   if (p0 === 'dashboard') return { key: 'dashboard', run: () => viewDashboard(alive) };
+  if (p0 === 'tools') return { key: 'tools', run: () => viewTools(alive) };
   return null;
 }
 
@@ -205,6 +209,101 @@ function viewDashboard(alive) {
   $('#refresh').onclick = () => { loadAllCounts().then(() => { if (COUNT_KEYS.some((k) => S.counts[k].state === 'ok')) stamp(); }); refreshQoin(); };
   if (COUNT_KEYS.every((k) => S.counts[k].state !== 'loading') && COUNT_KEYS.some((k) => S.counts[k].state === 'ok')) stamp();
   refreshQoin();
+}
+
+/* ============================================================================
+   백필 도구 — 운영용 사후 보정 (store_list_pagination / qoin_accrual_backfill)
+   항상 미리보기(dryRun) 먼저. "실제 실행" 은 미리보기 성공 후에만 켜지고 확인을 한 번 더 받는다.
+   ========================================================================== */
+
+const TOOLS = {
+  geo: {
+    h2: '매장 위치코드 백필',
+    desc: '거리순 매장 목록에 쓰는 위치코드(position)를 기존 매장에 채워요. 여러 번 실행해도 안전해요(멱등).',
+    confirm: '매장 위치코드를 실제로 기록할까요? 멱등이라 다시 눌러도 중복되지 않아요.',
+    dry: () => runBackfillGeohash(true),
+    commit: () => runBackfillGeohash(false),
+  },
+  qoin: {
+    h2: 'Qoin 적립 소급',
+    desc: '적립이 누락된 주문(미해결 이슈)에 당시 요율로 Qoin 을 사후 적립해요. 고객 잔액이 실제로 바뀌니 미리보기를 꼭 먼저 확인하세요.',
+    confirm: '미리보기에서 확인한 대상에게 Qoin 을 실제로 적립할까요? 고객 잔액이 바뀌고 되돌릴 수 없어요.',
+    dry: () => runBackfillQoinAccrual(true),
+    commit: () => runBackfillQoinAccrual(false),
+  },
+};
+
+const toolPanel = (id) => {
+  const t = TOOLS[id];
+  return `<div class="a-section">
+    <h2 class="a-h2">${esc(t.h2)}</h2>
+    <p class="a-muted" style="margin:-8px 0 16px">${esc(t.desc)}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="a-btn" id="${id}-dry">미리보기</button>
+      <button type="button" class="a-btn primary" id="${id}-commit" disabled>실제 실행</button>
+    </div>
+    <div id="${id}-msg" style="margin-top:12px"></div>
+    <pre id="${id}-out" style="display:none;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.55;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></pre>
+  </div>`;
+};
+
+function viewTools(alive) {
+  const v = $('#view');
+  v.innerHTML = `${headHtml({ title: '백필 도구', desc: '누락된 데이터를 사후 보정하는 운영 도구예요. 항상 미리보기로 대상을 확인한 뒤 실행하세요.', refresh: false })}
+    ${toolPanel('geo')}
+    ${toolPanel('qoin')}`;
+  wireTool('geo', alive);
+  wireTool('qoin', alive);
+}
+
+function wireTool(id, alive) {
+  const t = TOOLS[id];
+  const dryBtn = $(`#${id}-dry`);
+  const commitBtn = $(`#${id}-commit`);
+  const msg = $(`#${id}-msg`);
+  const out = $(`#${id}-out`);
+  let previewed = false;
+
+  const show = (data) => {
+    out.style.display = 'block';
+    out.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  };
+  const setBusy = (btn, busy, labelIdle) => {
+    btn.disabled = busy;
+    btn.innerHTML = busy ? '<span class="a-spin"></span> 실행 중…' : labelIdle;
+  };
+
+  const run = async (isDry) => {
+    const btn = isDry ? dryBtn : commitBtn;
+    msg.innerHTML = '';
+    setBusy(btn, true);
+    (isDry ? commitBtn : dryBtn).disabled = true;
+    try {
+      const data = await (isDry ? t.dry() : t.commit());
+      if (!alive()) return;
+      show(data);
+      if (isDry) {
+        previewed = true;
+        msg.innerHTML = banner('', '미리보기', '아래가 실행 시 반영될 내용이에요. 확인했으면 "실제 실행"을 눌러주세요.');
+      } else {
+        previewed = false;
+        msg.innerHTML = banner('success', '완료', '실제 실행이 끝났어요. 결과는 아래와 같아요.');
+        toast('백필을 실행했어요.');
+      }
+    } catch (e) {
+      if (!alive()) return;
+      msg.innerHTML = banner('error', '실패', writeErrorText(e).text);
+    } finally {
+      if (alive()) {
+        setBusy(dryBtn, false, '미리보기');
+        setBusy(commitBtn, false, '실제 실행');
+        commitBtn.disabled = !previewed;
+      }
+    }
+  };
+
+  dryBtn.onclick = () => run(true);
+  commitBtn.onclick = () => { if (window.confirm(t.confirm)) run(false); };
 }
 
 /* ============================================================================

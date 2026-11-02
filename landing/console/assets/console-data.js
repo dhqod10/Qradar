@@ -335,6 +335,25 @@ export async function readCurrentStatus(kind, id) {
   return snap.data().status ?? null;
 }
 
+/* ── 백필(운영 도구) callable ─────────────────────────────────────────────────
+   admin 전용. 두 함수 모두 dryRun 기본값은 서버가 true 다 — 미리보기는 반드시 dryRun:true 를
+   명시해 호출하고, 실제 실행만 dryRun:false 를 보낸다. 서버가 쓰기/멱등/범위 제한을 모두 판정한다. */
+const BACKFILL_TIMEOUT_MS = 120000;
+
+/** 매장 위치코드(position/geohash) 백필 — store_list_pagination. */
+export async function runBackfillGeohash(dryRun) {
+  const call = httpsCallable(functions, 'backfillStoreGeohash', { timeout: BACKFILL_TIMEOUT_MS });
+  const res = await withTimeout(call({ dryRun: dryRun === true ? true : false }), BACKFILL_TIMEOUT_MS + 5000);
+  return res?.data ?? null;
+}
+
+/** Qoin 적립 소급 백필 — qoin_accrual_backfill. source='issues' = 미해결 적립누락 이슈 전체. */
+export async function runBackfillQoinAccrual(dryRun, source = 'issues') {
+  const call = httpsCallable(functions, 'backfillQoinAccrual', { timeout: BACKFILL_TIMEOUT_MS });
+  const res = await withTimeout(call({ dryRun: dryRun === true ? true : false, source }), BACKFILL_TIMEOUT_MS + 5000);
+  return res?.data ?? null;
+}
+
 /* ============================================================================
    공통 헬퍼 (역할별 콘솔)
    ========================================================================== */
