@@ -3,13 +3,16 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/store_schedule_format.dart';
 import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/main_category_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
+import 'package:qradar/presentation/common/store_open_state.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/common/widgets/image_upload_field.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 import 'package:qradar/presentation/customer/order/store/providers/main_category_providers.dart';
+import 'package:qradar/presentation/owner/my_store/widgets/weekly_schedule_editor.dart';
 import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 
 /// 매장 운영 필드 폼 — status 변동 없이 즉시 반영.
@@ -44,6 +47,7 @@ class _StoreOperationFormPageState
 
   File? _pickedImage;
   bool _submitting = false;
+  final GlobalKey _scheduleKey = GlobalKey();
 
   @override
   void initState() {
@@ -111,23 +115,35 @@ class _StoreOperationFormPageState
               keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 20),
-            // 영업시간
-            _BusinessHoursPicker(
-              hours: _hours,
-              onChange: (h) => setState(() => _hours = h),
+            // 영업 스케줄 → 휴무 날짜 → 임시 휴업 (스케줄 항목끼리 묶는다, design §1.1)
+            KeyedSubtree(
+              key: _scheduleKey,
+              child: WeeklyScheduleEditor(
+                value: _hours,
+                enabled: !_submitting,
+                onChanged: (h) => setState(() => _hours = h),
+              ),
+            ),
+            const SizedBox(height: 12),
+            IgnorePointer(
+              ignoring: _submitting,
+              child: Opacity(
+                opacity: _submitting ? 0.6 : 1,
+                child: _ClosedDatesEditor(
+                  dates: _closedDates,
+                  onAdd: _addClosedDate,
+                  onRemove: (d) => setState(() => _closedDates.remove(d)),
+                  onClearPast: () => setState(
+                    () => _closedDates.removeWhere(_isPastDate),
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             // 임시 휴업 토글
             _TemporaryClosedToggle(
               value: _temporaryClosed,
               onChanged: (v) => setState(() => _temporaryClosed = v),
-            ),
-            const SizedBox(height: 12),
-            // 휴무 날짜 리스트
-            _ClosedDatesEditor(
-              dates: _closedDates,
-              onAdd: _addClosedDate,
-              onRemove: (d) => setState(() => _closedDates.remove(d)),
             ),
             const SizedBox(height: 20),
             // 카테고리 노출 설정 (임시 휴무와 같은 "매장 노출/운영" 성격이라 근처에 둔다)
@@ -166,6 +182,110 @@ class _StoreOperationFormPageState
         onSubmit: _submit,
       ),
     );
+  }
+
+  static bool _isPastDate(DateTime d) {
+    final n = DateTime.now();
+    return DateTime(d.year, d.month, d.day).isBefore(DateTime(n.year, n.month, n.day));
+  }
+
+  /// 저장 전 스케줄 확인 (design §2.1, §2.3). 막지 않는다 — 안내만. false = 사용자가 돌아가기.
+  ///   · 전체 휴무(영구 휴업)로 바뀌는 저장 → 경고 다이얼로그
+  ///   · 이번 저장으로 "지금부터" 닫히고 진행 중 주문이 1건 이상(또는 조회 실패) → 안내 다이얼로그 (0건이면 생략)
+  Future<bool> _confirmScheduleChange() async {
+    final existing = widget.existing;
+    final allOffNow = _hours != null && _hours!.weeklyHours.isEmpty;
+    final wasAllOff =
+        existing.businessHours != null &&
+        existing.businessHours!.weeklyHours.isEmpty;
+    final needAllOff = allOffNow && !wasAllOff;
+
+    final now = DateTime.now();
+    final next = existing.copyWith(
+      businessHours: _hours,
+      closedDates: _closedDates,
+    );
+    final closesNow =
+        !existing.temporaryClosed &&
+        storeOpenStateOf(existing, now).isOpen &&
+        !storeOpenStateOf(next, now).isOpen;
+
+    if (!needAllOff && !closesNow) return true;
+
+    int? activeCount; // null = 조회 실패 (막지 않고 숫자 없이 안내)
+    var queryFailed = false;
+    if (closesNow) {
+      setState(() => _submitting = true);
+      try {
+        activeCount = await ref
+            .read(countActiveStoreOrdersUseCaseProvider)
+            .call(existing.id);
+      } catch (_) {
+        queryFailed = true;
+      }
+      if (!mounted) return false;
+      setState(() => _submitting = false);
+      if (!needAllOff && !queryFailed && (activeCount ?? 0) == 0) return true;
+    }
+
+    final hasActive = (activeCount ?? 0) > 0;
+    final title = needAllOff
+        ? '매장이 영구 휴업 상태가 돼요'
+        : '지금부터 새 주문을 받지 않아요';
+    final lines = <String>[
+      if (needAllOff)
+        '모든 요일이 휴무라서 손님이 이 매장에서 주문할 수 없어요. 요일별 영업시간을 다시 켜기 전까지 계속돼요. 그래도 저장할까요?'
+      else if (hasActive)
+        '이미 받은 주문 $activeCount건은 그대로 진행돼요. 새 주문만 받지 않아요.'
+      else
+        '저장하면 바로 새 주문을 받지 않아요.',
+      if (needAllOff && hasActive) '이미 받은 주문 $activeCount건은 그대로 진행돼요.',
+      if (!needAllOff) '자동으로 취소되는 주문은 없어요.',
+    ];
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textHeading,
+          ),
+        ),
+        content: Text(
+          lines.join('\n'),
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.5,
+            color: AppColors.textBody,
+          ),
+        ),
+        actions: [
+          TextButton(
+            autofocus: needAllOff,
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              '돌아가기',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              needAllOff ? '그래도 저장' : '저장하기',
+              style: TextStyle(
+                color: needAllOff ? AppColors.error : AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   Future<void> _addClosedDate() async {
@@ -317,6 +437,21 @@ class _StoreOperationFormPageState
   Future<void> _submit() async {
     if (_submitting) return;
 
+    // 스케줄 검증 (Q2): 시작 == 종료 행은 저장 차단 + 해당 카드로 스크롤.
+    if (WeeklyScheduleEditor.hasInvalidRow(_hours)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('영업시간을 확인해 주세요')),
+      );
+      final ctx = _scheduleKey.currentContext;
+      if (ctx != null) {
+        await Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+      return;
+    }
     final active = ref.read(mainCategoriesActiveProvider).asData?.value;
     // 이미 전부 OFF 로 저장돼 있고 그대로면 다이얼로그 생략 (반복 경고 방지).
     final wasAllOff = active != null &&
@@ -327,6 +462,8 @@ class _StoreOperationFormPageState
     if (_allOff(active) && !wasAllOff) {
       if (!await _confirmAllOff() || !mounted) return;
     }
+
+    if (!await _confirmScheduleChange() || !mounted) return;
     setState(() => _submitting = true);
 
     // 임시 휴업 전환(false→true) 가드 — 진행 중 주문이 있으면 저장 중단 (temporary_closed_gate R5).
@@ -528,152 +665,6 @@ class _FormField extends StatelessWidget {
   }
 }
 
-// ── 영업시간 피커 ──────────────────────────────────────────────────────────
-
-class _BusinessHoursPicker extends StatelessWidget {
-  final BusinessHours? hours;
-  final ValueChanged<BusinessHours?> onChange;
-
-  const _BusinessHoursPicker({required this.hours, required this.onChange});
-
-  String get _open => hours?.openTime ?? '';
-  String get _close => hours?.closeTime ?? '';
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '영업시간',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textBody,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _TimeTile(
-                label: '영업 시작',
-                value: _open,
-                onPick: (t) => _update(open: t),
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text('~', style: TextStyle(color: AppColors.textMuted)),
-            ),
-            Expanded(
-              child: _TimeTile(
-                label: '영업 종료',
-                value: _close,
-                onPick: (t) => _update(close: t),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  void _update({String? open, String? close}) {
-    final nextOpen = open ?? _open;
-    final nextClose = close ?? _close;
-    if (nextOpen.isEmpty && nextClose.isEmpty) {
-      onChange(null);
-      return;
-    }
-    onChange(BusinessHours(openTime: nextOpen, closeTime: nextClose));
-  }
-}
-
-class _TimeTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final ValueChanged<String> onPick;
-
-  const _TimeTile({
-    required this.label,
-    required this.value,
-    required this.onPick,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _pick(context),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textMuted)),
-                  const SizedBox(height: 2),
-                  Text(
-                    value.isEmpty ? '--:--' : value,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          value.isEmpty ? AppColors.textMuted : AppColors.textHeading,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.access_time_rounded,
-                size: 18, color: AppColors.textMuted),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pick(BuildContext context) async {
-    final initial = _parse(value) ?? const TimeOfDay(hour: 9, minute: 0);
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: AppColors.primaryBright,
-            surface: AppColors.surfaceElevated,
-            onSurface: AppColors.textHeading,
-          ),
-        ),
-        child: child ?? const SizedBox.shrink(),
-      ),
-    );
-    if (picked == null) return;
-    onPick(_fmt(picked));
-  }
-
-  TimeOfDay? _parse(String v) {
-    final parts = v.split(':');
-    if (parts.length != 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return null;
-    return TimeOfDay(hour: h, minute: m);
-  }
-
-  String _fmt(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-}
-
 // ── 임시 휴무 토글 ─────────────────────────────────────────────────────────
 
 class _TemporaryClosedToggle extends StatelessWidget {
@@ -711,6 +702,11 @@ class _TemporaryClosedToggle extends StatelessWidget {
                 SizedBox(height: 2),
                 Text(
                   '켜면 손님이 이 매장에서 주문할 수 없어요. 진행 중인 주문이 있으면 켤 수 없어요.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '임시 휴업은 영업 스케줄보다 우선해요.',
                   style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
               ],
@@ -1005,24 +1001,38 @@ class _CategoryShimmerRow extends StatelessWidget {
   }
 }
 
-// ── 휴무 날짜 에디터 ───────────────────────────────────────────────────────
+// ── 특정 날짜 휴무 에디터 ──────────────────────────────────────────────────
 
 class _ClosedDatesEditor extends StatelessWidget {
   final List<DateTime> dates;
   final VoidCallback onAdd;
   final ValueChanged<DateTime> onRemove;
+  final VoidCallback onClearPast;
 
   const _ClosedDatesEditor({
     required this.dates,
     required this.onAdd,
     required this.onRemove,
+    required this.onClearPast,
   });
 
-  String _fmt(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  String _label(DateTime d, DateTime today) {
+    final wd = dayLabelOf(d.weekday);
+    final y = d.year == today.year ? '' : '${d.year}년 ';
+    return '$y${d.month}월 ${d.day}일 ($wd)';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = _day(now);
+    final upcoming = dates.where((d) => !_day(d).isBefore(today)).toList()
+      ..sort();
+    final past = dates.where((d) => _day(d).isBefore(today)).toList()..sort();
+    final ordered = [...upcoming, ...past];
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1033,46 +1043,56 @@ class _ClosedDatesEditor extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.event_busy_rounded,
+              const Icon(Icons.event_busy_rounded,
                   size: 18, color: AppColors.textHeading),
-              SizedBox(width: 8),
-              Text(
-                '휴무 날짜',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textHeading,
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '특정 날짜 휴무',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textHeading,
+                  ),
                 ),
               ),
+              if (past.isNotEmpty)
+                TextButton(
+                  onPressed: onClearPast,
+                  style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+                  child: const Text(
+                    '지난 날짜 정리',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 4),
           const Text(
-            '특정 날짜에 휴무인 경우 추가해주세요.',
+            '공휴일·임시 휴무처럼 하루만 쉬는 날을 추가해 주세요. 요일별 스케줄보다 우선해요.',
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           const SizedBox(height: 12),
           if (dates.isEmpty)
             const Text(
               '추가된 휴무 날짜가 없어요.',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textMuted,
-                fontStyle: FontStyle.italic,
-              ),
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
             )
           else
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: dates
-                  .map((d) => _DateChip(
-                        label: _fmt(d),
-                        onRemove: () => onRemove(d),
-                      ))
-                  .toList(),
+              children: [
+                for (final d in ordered)
+                  _DateChip(
+                    label: _label(d, today),
+                    isToday: _day(d) == today,
+                    isPast: _day(d).isBefore(today),
+                    onRemove: () => onRemove(d),
+                  ),
+              ],
             ),
           const SizedBox(height: 12),
           TextButton.icon(
@@ -1101,14 +1121,22 @@ class _ClosedDatesEditor extends StatelessWidget {
 
 class _DateChip extends StatelessWidget {
   final String label;
+  final bool isToday;
+  final bool isPast;
   final VoidCallback onRemove;
 
-  const _DateChip({required this.label, required this.onRemove});
+  const _DateChip({
+    required this.label,
+    required this.isToday,
+    required this.isPast,
+    required this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      height: 36,
+      padding: const EdgeInsets.only(left: 12),
       decoration: BoxDecoration(
         color: AppColors.background,
         borderRadius: BorderRadius.circular(8),
@@ -1119,22 +1147,79 @@ class _DateChip extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              color: AppColors.textHeading,
+              color: isPast ? AppColors.textMuted : AppColors.textHeading,
             ),
           ),
-          const SizedBox(width: 6),
-          GestureDetector(
-            onTap: onRemove,
-            child: const Icon(
-              Icons.close_rounded,
-              size: 14,
-              color: AppColors.textMuted,
+          if (isToday) ...[
+            const SizedBox(width: 6),
+            _Tag(
+              text: '오늘',
+              background: AppColors.primary,
+              foreground: AppColors.onPrimary,
+            ),
+          ],
+          if (isPast) ...[
+            const SizedBox(width: 6),
+            _Tag(
+              text: '지남',
+              background: AppColors.surface,
+              foreground: AppColors.textMuted,
+            ),
+          ],
+          Semantics(
+            button: true,
+            label: '$label 휴무 삭제',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onRemove,
+              child: const SizedBox(
+                width: 40,
+                height: 36,
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AppColors.textMuted,
+                ),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _Tag extends StatelessWidget {
+  final String text;
+  final Color background;
+  final Color foreground;
+
+  const _Tag({
+    required this.text,
+    required this.background,
+    required this.foreground,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
       ),
     );
   }

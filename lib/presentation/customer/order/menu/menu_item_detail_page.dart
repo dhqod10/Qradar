@@ -5,6 +5,8 @@ import 'package:qradar/core/errors/unauthenticated_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/cart_pricing.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
+import 'package:qradar/core/utils/store_schedule_format.dart';
+import 'package:qradar/core/utils/store_sellability.dart';
 import 'package:qradar/domain/entities/cart_item_entity.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/option_group_entity.dart';
@@ -13,6 +15,7 @@ import 'package:qradar/domain/entities/selected_option.dart';
 import 'package:qradar/presentation/common/favorite_login_required_dialog.dart';
 import 'package:qradar/presentation/common/quantity_stepper.dart';
 import 'package:qradar/presentation/common/sold_out_overlay.dart';
+import 'package:qradar/presentation/common/store_open_state.dart';
 import 'package:qradar/presentation/customer/order/store/store_menu_page.dart';
 import 'package:qradar/presentation/customer/review/providers/store_review_providers.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
@@ -546,15 +549,25 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
     final ready = ref.watch(menuItemAddToCartReadyProvider(widget.menuItemKey));
     final missing =
         ref.watch(menuItemMissingRequiredGroupsProvider(widget.menuItemKey));
-    // 매장 임시 휴업 (temporary_closed_gate). 로딩/에러 중엔 false 취급(막지 않음 — 서버 게이트가 백스톱).
-    final closed =
-        ref
-            .watch(watchedStoreProvider(widget.menuItemKey.storeId))
-            .asData
-            ?.value
-            ?.temporaryClosed ??
-        false;
-    // 판정 순서: ① 휴업 ② soldOut ③ _busy ④ required 미선택. 둘 다 토스트를 띄우지 않는다(라벨로 안내).
+    // 매장 임시 휴업 + 영업 스케줄 (temporary_closed_gate / store_business_schedule).
+    // 로딩/에러 중엔 false 취급(막지 않음 — 서버 게이트가 백스톱).
+    final liveStore = ref
+        .watch(watchedStoreProvider(widget.menuItemKey.storeId))
+        .asData
+        ?.value;
+    final tempClosed = liveStore?.temporaryClosed ?? false;
+    final openState = liveStore == null
+        ? null
+        : watchStoreOpenState(ref, liveStore);
+    final scheduleClosed = !tempClosed && openState != null && !openState.isOpen;
+    final closed = tempClosed || scheduleClosed;
+    final nextOpen = scheduleClosed
+        ? formatNextOpen(
+            openState.nextOpenAt,
+            kstClockOf(DateTime.now()).dateKey,
+          )
+        : null;
+    // 판정 순서: ① 임시 휴업 ② 영업 스케줄 ③ soldOut ④ _busy ⑤ required 미선택. 토스트를 띄우지 않는다(라벨로 안내).
     final soldOut = widget.menuItem.soldOut;
     final enabled = !closed && !soldOut && ready && !_busy;
     final active = !closed && !soldOut && ready;
@@ -577,6 +590,26 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (nextOpen != null) ...[
+              Row(
+                children: [
+                  const Icon(
+                    Icons.schedule_rounded,
+                    size: 14,
+                    color: AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '다음 영업 $nextOpen',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -621,9 +654,11 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
                   ),
                 ),
                 child: closed
-                    ? const Text(
-                        '임시 휴업중',
-                        style: TextStyle(
+                    ? Text(
+                        tempClosed
+                            ? '임시 휴업중'
+                            : StoreClosedCopy.buttonLabel(openState!.kind),
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
@@ -662,12 +697,13 @@ class _BottomActionState extends ConsumerState<_BottomAction> {
 
   Future<void> _onAddPressed(List<String> missing) async {
     // 선택 도중 매장이 휴업으로 바뀌는 경쟁 상태 방어 — 토스트 없이 즉시 종료.
-    if (ref
-            .read(watchedStoreProvider(widget.menuItemKey.storeId))
-            .asData
-            ?.value
-            ?.temporaryClosed ??
-        false) {
+    final liveStore = ref
+        .read(watchedStoreProvider(widget.menuItemKey.storeId))
+        .asData
+        ?.value;
+    if (liveStore != null &&
+        (liveStore.temporaryClosed ||
+            !storeOpenStateOf(liveStore, DateTime.now()).isOpen)) {
       return;
     }
     // 선택 도중 품절로 바뀌는 경쟁 상태 방어 — 품절이면 토스트 없이 즉시 종료.

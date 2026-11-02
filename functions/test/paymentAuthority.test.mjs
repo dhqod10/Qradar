@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { canSellNow, storeGateReason } from '../lib/storeSellability.js';
+import { canSellNow, storeGateReason, evaluateStoreOpenState, isStoreOpenNow, parseWeeklyHours } from '../lib/storeSellability.js';
 import { applyOverrideForCustomer, classifyCartMenu } from '../lib/menuVisibility.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +18,8 @@ const gate = load('checkout_menu_gate_contract.json');
 test('골든 fixture 가 비어 있지 않다', () => {
   assert.ok(visibility.cases.length >= 8);
   assert.ok(sellability.cases.length >= 8);
+  assert.ok(sellability.openStateCases.length >= 20);
+  assert.ok(sellability.parseCases.length >= 8);
   assert.ok(gate.cases.length >= 8);
 });
 
@@ -30,9 +32,33 @@ for (const c of visibility.cases) {
 
 for (const c of sellability.cases) {
   test(`store_sellability: ${c.name}`, () => {
-    const input = { rawStatus: c.rawStatus, hasApprovedAt: c.hasApprovedAt, temporaryClosed: c.temporaryClosed };
+    const input = { rawStatus: c.rawStatus, hasApprovedAt: c.hasApprovedAt, temporaryClosed: c.temporaryClosed, scheduleClosedNow: c.scheduleClosedNow };
     assert.equal(storeGateReason(input), c.expectReason);
     assert.equal(canSellNow(input), c.expect);
+  });
+}
+
+for (const c of sellability.openStateCases) {
+  test(`store_open_state: ${c.name}`, () => {
+    const args = {
+      weeklyHours: c.weeklyHours,
+      closedDateKeys: new Set(c.closedDateKeys),
+      nowWeekday: c.now.weekday,
+      nowMinuteOfDay: c.now.minuteOfDay,
+      nowDateKey: c.now.dateKey,
+    };
+    const r = evaluateStoreOpenState(args);
+    assert.deepEqual(
+      { kind: r.kind, isOpen: r.isOpen, nextOpenAt: r.nextOpenAt, closeAt: r.closeAt, todayRange: r.todayRange },
+      c.expect
+    );
+    assert.equal(isStoreOpenNow(args), c.expect.isOpen);
+  });
+}
+
+for (const c of sellability.parseCases) {
+  test(`business_hours_parse: ${c.name}`, () => {
+    assert.deepEqual(parseWeeklyHours(c.raw), c.expect);
   });
 }
 

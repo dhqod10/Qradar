@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/checkout_validation.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
@@ -225,6 +226,75 @@ void main() {
       ['a'],
     );
     expect(unapproved.store, StoreViolation.notSellable);
+  });
+
+  group('영업 스케줄 (store_business_schedule) — 기기 시계 KST, 선검증은 권위 아님', () {
+    // 2026-11-02 = 월요일. 12:00 KST.
+    final monNoon = DateTime.utc(2026, 11, 2, 3);
+    Future<CheckoutValidation> runAt(StoreSellabilityInput store) =>
+        ValidateCheckoutUseCase(
+          _FakeRepo(
+            store: store,
+            docs: {'a': CheckoutMenuDocs(storeMenu: _menu('a'))},
+          ),
+          now: () => monNoon,
+        ).call(storeId: 's1', menuItemIds: ['a']);
+
+    StoreSellabilityInput withHours(
+      Map<int, BusinessDayHours> w, {
+      bool temporaryClosed = false,
+      List<DateTime> closedDates = const [],
+    }) => StoreSellabilityInput(
+      rawStatus: 'approved',
+      hasApprovedAt: true,
+      temporaryClosed: temporaryClosed,
+      businessHours: BusinessHours(weeklyHours: w),
+      closedDates: closedDates,
+    );
+
+    const open9to18 = BusinessDayHours(open: '09:00', close: '18:00');
+    const open9to11 = BusinessDayHours(open: '09:00', close: '11:00');
+
+    test('스케줄 미설정(null) -> 통과 (기존 매장 회귀 안전, Q1)', () async {
+      final r = await runAt(
+        const StoreSellabilityInput(rawStatus: 'approved', hasApprovedAt: true),
+      );
+      expect(r.hasViolations, isFalse);
+    });
+
+    test('영업 중 -> 통과', () async {
+      expect((await runAt(withHours({1: open9to18}))).hasViolations, isFalse);
+    });
+
+    test('영업시간 밖 / 요일 엔트리 부재 / 전체 휴무(빈 맵) -> closedSchedule', () async {
+      expect((await runAt(withHours({1: open9to11}))).store,
+          StoreViolation.closedSchedule);
+      expect((await runAt(withHours({2: open9to18}))).store,
+          StoreViolation.closedSchedule);
+      expect((await runAt(withHours({}))).store, StoreViolation.closedSchedule);
+    });
+
+    test('오늘이 closedDates -> closedSchedule', () async {
+      final r = await runAt(
+        withHours({1: open9to18}, closedDates: [DateTime.utc(2026, 11, 1, 15)]),
+      );
+      expect(r.store, StoreViolation.closedSchedule);
+    });
+
+    test('우선순위: 임시 휴업 > 스케줄, 미승인 > 스케줄', () async {
+      expect(
+        (await runAt(withHours({}, temporaryClosed: true))).store,
+        StoreViolation.temporarilyClosed,
+      );
+      final unapproved = await runAt(
+        const StoreSellabilityInput(
+          rawStatus: 'pending',
+          hasApprovedAt: false,
+          businessHours: BusinessHours(),
+        ),
+      );
+      expect(unapproved.store, StoreViolation.notSellable);
+    });
   });
 
   test('pending + approvedAt 있음 -> 통과 (R2 불변식)', () async {

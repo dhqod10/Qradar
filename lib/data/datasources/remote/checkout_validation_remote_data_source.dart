@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qradar/core/constants/firestore_paths.dart';
 import 'package:qradar/core/utils/option_availability.dart';
+import 'package:qradar/data/models/business_hours_model.dart';
 import 'package:qradar/data/models/option_group_model.dart';
 import 'package:qradar/domain/entities/option_scope.dart';
 import 'package:qradar/data/models/menu_item_model.dart';
@@ -13,12 +14,20 @@ class RawStoreFields {
     required this.hasApprovedAt,
     required this.brandId,
     this.temporaryClosed = false,
+    this.businessHours,
+    this.closedDates = const [],
   });
 
   final String? rawStatus;
   final bool hasApprovedAt;
   final String? brandId;
   final bool temporaryClosed;
+
+  /// `businessHours` 원시 해석 (null = 스케줄 미설정 → 시간 제한 없음).
+  final BusinessHoursModel? businessHours;
+
+  /// `closedDates` (Timestamp → DateTime).
+  final List<DateTime> closedDates;
 }
 
 /// 결제 선검증용 신선 읽기 데이터소스. 모든 읽기는 `Source.server` 다 (design N5 — 캐시로 결제를 막지 않는다).
@@ -47,6 +56,12 @@ class CheckoutValidationRemoteDataSource {
       hasApprovedAt: data['approvedAt'] != null,
       brandId: brandId is String && brandId.isNotEmpty ? brandId : null,
       temporaryClosed: data['temporaryClosed'] == true,
+      businessHours: BusinessHoursModel.tryParse(data['businessHours']),
+      closedDates: [
+        if (data['closedDates'] is List)
+          for (final t in data['closedDates'] as List)
+            if (t is Timestamp) t.toDate(),
+      ],
     );
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/store_schedule_format.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_brand_link.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
@@ -208,7 +209,7 @@ class _AdminStoreApprovalDetailPageState
             ),
             const SizedBox(height: 16),
             // 영업시간
-            if (store.businessHours != null) ...[
+            ...[
               _SectionCard(
                 children: [
                   const Text(
@@ -321,8 +322,8 @@ class _AdminStoreApprovalDetailPageState
 
 String _businessHoursText(StoreEntity store) {
   final bh = store.businessHours;
-  if (bh == null) return '-';
-  return '${bh.openTime} ~ ${bh.closeTime}';
+  if (bh == null) return '미설정';
+  return formatWeeklySummary(bh.scheduleInput);
 }
 
 // ── Shared Widgets ────────────────────────────────────────────────────────

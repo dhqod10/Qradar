@@ -7,6 +7,7 @@ import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_history_page.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_info_row.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/store_schedule_format.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/admin/widgets/store_scope_badge.dart';
@@ -674,13 +675,11 @@ class _StoreInfoSection extends StatelessWidget {
             icon: Icons.phone_outlined,
             text: store.phone.isEmpty ? '전화번호 미입력' : store.phone,
           ),
-          if (hours != null) ...[
-            const SizedBox(height: 12),
-            _InfoRow(
-              icon: Icons.access_time_rounded,
-              text: '매일 ${hours.openTime} ~ ${hours.closeTime}',
-            ),
-          ],
+          const SizedBox(height: 12),
+          _InfoRow(
+            icon: Icons.access_time_rounded,
+            text: formatWeeklySummary(hours?.scheduleInput),
+          ),
           if (store.description != null &&
               store.description!.trim().isNotEmpty) ...[
             const SizedBox(height: 12),

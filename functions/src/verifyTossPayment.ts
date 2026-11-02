@@ -89,6 +89,8 @@ export interface VerifyDeps {
    * 생략하면 `off` — "설정이 없으면 평가하지 않는다" 와 같은 방향이다.
    */
   gateMode?: () => unknown;
+  /** 신뢰 시계 주입 (테스트용). 영업 스케줄 판정의 now. 생략 = `new Date()`. */
+  now?: () => Date;
   /** 금액 게이트 모드 원시 값 thunk (payment_price_authority §8). 생략하면 `off` — 옵션 그룹을 읽지 않는다. */
   priceMode?: () => unknown;
   /** Layer2 해시 salt thunk. 없거나 비어 있으면 신호 저장을 생략한다 (주문은 정상). */
@@ -252,7 +254,7 @@ export async function handleVerifyTossPayment(
     if (gateMode !== "off") {
       const shadow = gateMode === "shadow";
       try {
-        const gate = await evaluatePaymentGate(reader, data.cart);
+        const gate = await evaluatePaymentGate(reader, data.cart, deps.now?.() ?? new Date());
         if (gate.ok) {
           gateMenus = {
             menus: new Map(gate.resolved.map((r) => [r.menuItemId, r.merged])),

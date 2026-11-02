@@ -4,12 +4,14 @@ import 'package:kpostal/kpostal.dart';
 import 'package:qradar/core/errors/brand_key_lookup_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/brand_key_lookup.dart';
+import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/entity_approval_status.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
 import 'package:qradar/domain/entities/user_location.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/owner/my_store/widgets/weekly_schedule_editor.dart';
 import 'package:qradar/presentation/owner/providers/owner_providers.dart';
 
 /// brandKey 형식 검증 정규식 (클라이언트 side — V4).
@@ -65,6 +67,7 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
   UserLocation? _location;
   String? _resolvedAddress;
   bool _submitting = false;
+  BusinessHours? _hours;
   bool _isBrandFranchise = false;
   String? _brandKeyError;
 
@@ -92,10 +95,19 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
     super.dispose();
   }
 
+  /// 신규 등록만 영업 스케줄 필수 (store_business_schedule Q7) — 새 매장이 24시간/새벽 주문되는 것을 막는다.
+  /// 수정/재제출은 운영 정보 폼이 스케줄을 다루므로 여기서는 보이지 않는다.
+  bool get _scheduleOk =>
+      _isEdit ||
+      (_hours != null &&
+          _hours!.weeklyHours.isNotEmpty &&
+          !WeeklyScheduleEditor.hasInvalidRow(_hours));
+
   bool get _isValid {
     return _nameCtrl.text.trim().isNotEmpty &&
         _addressCtrl.text.trim().isNotEmpty &&
-        _location != null;
+        _location != null &&
+        _scheduleOk;
   }
 
   String get _appBarTitle {
@@ -203,6 +215,16 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
               controller: _addressCtrl,
               placeholder: '예: 서울시 강남구 테헤란로 1',
             ),
+            if (!_isEdit) ...[
+              const SizedBox(height: 20),
+              // 영업 스케줄 (필수, 기본값/건너뛰기 없음)
+              WeeklyScheduleEditor(
+                value: _hours,
+                required: true,
+                enabled: !_submitting,
+                onChanged: (h) => setState(() => _hours = h),
+              ),
+            ],
             const SizedBox(height: 20),
             // 사업자등록번호 (선택)
             _FormField(
@@ -330,7 +352,7 @@ class _StoreCoreFormPageState extends ConsumerState<StoreCoreFormPage> {
         // 운영 필드는 기존 값 보존
         phone: e?.phone ?? '',
         description: e?.description,
-        businessHours: e?.businessHours,
+        businessHours: e == null ? _hours : e.businessHours,
         temporaryClosed: e?.temporaryClosed ?? false,
         closedDates: e?.closedDates ?? const [],
         imageUrls: e?.imageUrls ?? const [],

@@ -12,10 +12,269 @@ part of 'business_hours.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
+mixin _$BusinessDayHours {
+
+ String get open; String get close;
+/// Create a copy of BusinessDayHours
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BusinessDayHoursCopyWith<BusinessDayHours> get copyWith => _$BusinessDayHoursCopyWithImpl<BusinessDayHours>(this as BusinessDayHours, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BusinessDayHours&&(identical(other.open, open) || other.open == open)&&(identical(other.close, close) || other.close == close));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,open,close);
+
+@override
+String toString() {
+  return 'BusinessDayHours(open: $open, close: $close)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BusinessDayHoursCopyWith<$Res>  {
+  factory $BusinessDayHoursCopyWith(BusinessDayHours value, $Res Function(BusinessDayHours) _then) = _$BusinessDayHoursCopyWithImpl;
+@useResult
+$Res call({
+ String open, String close
+});
+
+
+
+
+}
+/// @nodoc
+class _$BusinessDayHoursCopyWithImpl<$Res>
+    implements $BusinessDayHoursCopyWith<$Res> {
+  _$BusinessDayHoursCopyWithImpl(this._self, this._then);
+
+  final BusinessDayHours _self;
+  final $Res Function(BusinessDayHours) _then;
+
+/// Create a copy of BusinessDayHours
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? open = null,Object? close = null,}) {
+  return _then(_self.copyWith(
+open: null == open ? _self.open : open // ignore: cast_nullable_to_non_nullable
+as String,close: null == close ? _self.close : close // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [BusinessDayHours].
+extension BusinessDayHoursPatterns on BusinessDayHours {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _BusinessDayHours value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _BusinessDayHours() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _BusinessDayHours value)  $default,){
+final _that = this;
+switch (_that) {
+case _BusinessDayHours():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _BusinessDayHours value)?  $default,){
+final _that = this;
+switch (_that) {
+case _BusinessDayHours() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String open,  String close)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _BusinessDayHours() when $default != null:
+return $default(_that.open,_that.close);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String open,  String close)  $default,) {final _that = this;
+switch (_that) {
+case _BusinessDayHours():
+return $default(_that.open,_that.close);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String open,  String close)?  $default,) {final _that = this;
+switch (_that) {
+case _BusinessDayHours() when $default != null:
+return $default(_that.open,_that.close);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class _BusinessDayHours implements BusinessDayHours {
+  const _BusinessDayHours({required this.open, required this.close});
+  
+
+@override final  String open;
+@override final  String close;
+
+/// Create a copy of BusinessDayHours
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$BusinessDayHoursCopyWith<_BusinessDayHours> get copyWith => __$BusinessDayHoursCopyWithImpl<_BusinessDayHours>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BusinessDayHours&&(identical(other.open, open) || other.open == open)&&(identical(other.close, close) || other.close == close));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,open,close);
+
+@override
+String toString() {
+  return 'BusinessDayHours(open: $open, close: $close)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$BusinessDayHoursCopyWith<$Res> implements $BusinessDayHoursCopyWith<$Res> {
+  factory _$BusinessDayHoursCopyWith(_BusinessDayHours value, $Res Function(_BusinessDayHours) _then) = __$BusinessDayHoursCopyWithImpl;
+@override @useResult
+$Res call({
+ String open, String close
+});
+
+
+
+
+}
+/// @nodoc
+class __$BusinessDayHoursCopyWithImpl<$Res>
+    implements _$BusinessDayHoursCopyWith<$Res> {
+  __$BusinessDayHoursCopyWithImpl(this._self, this._then);
+
+  final _BusinessDayHours _self;
+  final $Res Function(_BusinessDayHours) _then;
+
+/// Create a copy of BusinessDayHours
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? open = null,Object? close = null,}) {
+  return _then(_BusinessDayHours(
+open: null == open ? _self.open : open // ignore: cast_nullable_to_non_nullable
+as String,close: null == close ? _self.close : close // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$BusinessHours {
 
-/// "HH:mm" 24시 포맷 (e.g. "09:00")
- String get openTime; String get closeTime; List<int> get closedDays;
+ Map<int, BusinessDayHours> get weeklyHours;
 /// Create a copy of BusinessHours
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -26,16 +285,16 @@ $BusinessHoursCopyWith<BusinessHours> get copyWith => _$BusinessHoursCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BusinessHours&&(identical(other.openTime, openTime) || other.openTime == openTime)&&(identical(other.closeTime, closeTime) || other.closeTime == closeTime)&&const DeepCollectionEquality().equals(other.closedDays, closedDays));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BusinessHours&&const DeepCollectionEquality().equals(other.weeklyHours, weeklyHours));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,openTime,closeTime,const DeepCollectionEquality().hash(closedDays));
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(weeklyHours));
 
 @override
 String toString() {
-  return 'BusinessHours(openTime: $openTime, closeTime: $closeTime, closedDays: $closedDays)';
+  return 'BusinessHours(weeklyHours: $weeklyHours)';
 }
 
 
@@ -46,7 +305,7 @@ abstract mixin class $BusinessHoursCopyWith<$Res>  {
   factory $BusinessHoursCopyWith(BusinessHours value, $Res Function(BusinessHours) _then) = _$BusinessHoursCopyWithImpl;
 @useResult
 $Res call({
- String openTime, String closeTime, List<int> closedDays
+ Map<int, BusinessDayHours> weeklyHours
 });
 
 
@@ -63,12 +322,10 @@ class _$BusinessHoursCopyWithImpl<$Res>
 
 /// Create a copy of BusinessHours
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? openTime = null,Object? closeTime = null,Object? closedDays = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? weeklyHours = null,}) {
   return _then(_self.copyWith(
-openTime: null == openTime ? _self.openTime : openTime // ignore: cast_nullable_to_non_nullable
-as String,closeTime: null == closeTime ? _self.closeTime : closeTime // ignore: cast_nullable_to_non_nullable
-as String,closedDays: null == closedDays ? _self.closedDays : closedDays // ignore: cast_nullable_to_non_nullable
-as List<int>,
+weeklyHours: null == weeklyHours ? _self.weeklyHours : weeklyHours // ignore: cast_nullable_to_non_nullable
+as Map<int, BusinessDayHours>,
   ));
 }
 
@@ -153,10 +410,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String openTime,  String closeTime,  List<int> closedDays)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Map<int, BusinessDayHours> weeklyHours)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BusinessHours() when $default != null:
-return $default(_that.openTime,_that.closeTime,_that.closedDays);case _:
+return $default(_that.weeklyHours);case _:
   return orElse();
 
 }
@@ -174,10 +431,10 @@ return $default(_that.openTime,_that.closeTime,_that.closedDays);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String openTime,  String closeTime,  List<int> closedDays)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Map<int, BusinessDayHours> weeklyHours)  $default,) {final _that = this;
 switch (_that) {
 case _BusinessHours():
-return $default(_that.openTime,_that.closeTime,_that.closedDays);case _:
+return $default(_that.weeklyHours);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -194,10 +451,10 @@ return $default(_that.openTime,_that.closeTime,_that.closedDays);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String openTime,  String closeTime,  List<int> closedDays)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Map<int, BusinessDayHours> weeklyHours)?  $default,) {final _that = this;
 switch (_that) {
 case _BusinessHours() when $default != null:
-return $default(_that.openTime,_that.closeTime,_that.closedDays);case _:
+return $default(_that.weeklyHours);case _:
   return null;
 
 }
@@ -208,18 +465,15 @@ return $default(_that.openTime,_that.closeTime,_that.closedDays);case _:
 /// @nodoc
 
 
-class _BusinessHours implements BusinessHours {
-  const _BusinessHours({required this.openTime, required this.closeTime, final  List<int> closedDays = const <int>[]}): _closedDays = closedDays;
+class _BusinessHours extends BusinessHours {
+  const _BusinessHours({final  Map<int, BusinessDayHours> weeklyHours = const <int, BusinessDayHours>{}}): _weeklyHours = weeklyHours,super._();
   
 
-/// "HH:mm" 24시 포맷 (e.g. "09:00")
-@override final  String openTime;
-@override final  String closeTime;
- final  List<int> _closedDays;
-@override@JsonKey() List<int> get closedDays {
-  if (_closedDays is EqualUnmodifiableListView) return _closedDays;
+ final  Map<int, BusinessDayHours> _weeklyHours;
+@override@JsonKey() Map<int, BusinessDayHours> get weeklyHours {
+  if (_weeklyHours is EqualUnmodifiableMapView) return _weeklyHours;
   // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(_closedDays);
+  return EqualUnmodifiableMapView(_weeklyHours);
 }
 
 
@@ -233,16 +487,16 @@ _$BusinessHoursCopyWith<_BusinessHours> get copyWith => __$BusinessHoursCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BusinessHours&&(identical(other.openTime, openTime) || other.openTime == openTime)&&(identical(other.closeTime, closeTime) || other.closeTime == closeTime)&&const DeepCollectionEquality().equals(other._closedDays, _closedDays));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BusinessHours&&const DeepCollectionEquality().equals(other._weeklyHours, _weeklyHours));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,openTime,closeTime,const DeepCollectionEquality().hash(_closedDays));
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_weeklyHours));
 
 @override
 String toString() {
-  return 'BusinessHours(openTime: $openTime, closeTime: $closeTime, closedDays: $closedDays)';
+  return 'BusinessHours(weeklyHours: $weeklyHours)';
 }
 
 
@@ -253,7 +507,7 @@ abstract mixin class _$BusinessHoursCopyWith<$Res> implements $BusinessHoursCopy
   factory _$BusinessHoursCopyWith(_BusinessHours value, $Res Function(_BusinessHours) _then) = __$BusinessHoursCopyWithImpl;
 @override @useResult
 $Res call({
- String openTime, String closeTime, List<int> closedDays
+ Map<int, BusinessDayHours> weeklyHours
 });
 
 
@@ -270,12 +524,10 @@ class __$BusinessHoursCopyWithImpl<$Res>
 
 /// Create a copy of BusinessHours
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? openTime = null,Object? closeTime = null,Object? closedDays = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? weeklyHours = null,}) {
   return _then(_BusinessHours(
-openTime: null == openTime ? _self.openTime : openTime // ignore: cast_nullable_to_non_nullable
-as String,closeTime: null == closeTime ? _self.closeTime : closeTime // ignore: cast_nullable_to_non_nullable
-as String,closedDays: null == closedDays ? _self._closedDays : closedDays // ignore: cast_nullable_to_non_nullable
-as List<int>,
+weeklyHours: null == weeklyHours ? _self._weeklyHours : weeklyHours // ignore: cast_nullable_to_non_nullable
+as Map<int, BusinessDayHours>,
   ));
 }
 

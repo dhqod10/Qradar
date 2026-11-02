@@ -336,6 +336,15 @@ await run('RH5 admin 이 stores 의 다른 필드 update (회귀)', 'allow', () 
   updateDoc(doc(asAdmin, 'stores', S_A), { notice: 'hi' }));
 await run('RH5b owner 가 자기 매장 운영 필드 update (회귀)', 'allow', () =>
   updateDoc(doc(asOwner, 'stores', S_A), { notice: 'hello' }));
+await run('BS1 store_business_schedule: owner 가 businessHours(요일별 weeklyHours 맵) + closedDates 운영 필드 update (Rules 변경 없음 회귀)', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), {
+    businessHours: { weeklyHours: { '1': { open: '09:00', close: '18:00' }, '6': { open: '22:00', close: '02:00' } } },
+    closedDates: [new Date('2026-11-24T00:00:00+09:00')],
+  }));
+await run('BS2 store_business_schedule: owner 가 전체 휴무(빈 weeklyHours) 저장', 'allow', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { businessHours: { weeklyHours: {} } }));
+await run('BS3 store_business_schedule: owner 가 businessHours + status 동시 update (status 는 여전히 거부)', 'deny', () =>
+  updateDoc(doc(asOwner, 'stores', S_A), { businessHours: { weeklyHours: {} }, status: 'rejected' }));
 await run('RH5c owner 가 개별 설정이 있는 매장의 다른 필드 update (필드 보존, 회귀)', 'allow', () =>
   updateDoc(doc(asOwner, 'stores', S_OVR), { notice: 'x' }));
 await run('RH5d brand 가 가맹점 운영 필드 update (회귀)', 'allow', () =>

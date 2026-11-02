@@ -10,6 +10,7 @@ class CartAvailabilityBanner extends StatefulWidget {
     super.key,
     required this.variant,
     required this.onRecheck,
+    this.nextOpenText,
   });
 
   final CartBannerVariant variant;
@@ -17,15 +18,19 @@ class CartAvailabilityBanner extends StatefulWidget {
   /// `다시 확인`. 실패 알림(SnackBar)은 호출자가 처리한다 — 이 위젯은 끝날 때까지 스피너만 그린다.
   final Future<void> Function() onRecheck;
 
+  /// `storeClosedSchedule` 전용: 다음 영업 시각 표기(`내일(수) 09:00`). 모르면 null (문장 생략).
+  final String? nextOpenText;
+
   static String titleOf(CartBannerVariant v) => switch (v) {
     CartBannerVariant.unavailableMenus => '결제하려면 확인이 필요한 메뉴가 있어요',
     CartBannerVariant.optionUnavailable => '옵션을 다시 골라야 하는 메뉴가 있어요',
     CartBannerVariant.serverRejectedOnly => '직전 결제에서 문제가 있던 메뉴가 있어요',
     CartBannerVariant.storeUnavailable => '지금은 이 매장에서 주문할 수 없어요',
     CartBannerVariant.storeTemporarilyClosed => '매장이 지금 임시 휴업중이에요',
+    CartBannerVariant.storeClosedSchedule => '지금은 매장이 문을 닫았어요',
   };
 
-  static String bodyOf(CartBannerVariant v) => switch (v) {
+  static String bodyOf(CartBannerVariant v, {String? nextOpenText}) => switch (v) {
     CartBannerVariant.unavailableMenus =>
       '표시된 메뉴를 빼고 결제해 주세요. 방금 다시 판매를 시작했을 수도 있으니 \'다시 확인\'을 눌러 보세요.',
     CartBannerVariant.optionUnavailable =>
@@ -36,6 +41,8 @@ class CartAvailabilityBanner extends StatefulWidget {
       '잠시 후 \'다시 확인\'을 눌러 보거나, 다른 매장에서 담아 주세요.',
     CartBannerVariant.storeTemporarilyClosed =>
       '영업을 다시 시작하면 \'다시 확인\'을 눌러 결제할 수 있어요. 카트는 그대로 남아 있어요.',
+    CartBannerVariant.storeClosedSchedule =>
+      '${nextOpenText == null ? '' : '다음 영업: $nextOpenText. '}영업을 시작하면 \'다시 확인\'을 눌러 결제할 수 있어요. 카트는 그대로 남아 있어요.',
   };
 
   @override
@@ -89,7 +96,10 @@ class _CartAvailabilityBannerState extends State<CartAvailabilityBanner> {
           ),
           const SizedBox(height: 6),
           Text(
-            CartAvailabilityBanner.bodyOf(widget.variant),
+            CartAvailabilityBanner.bodyOf(
+              widget.variant,
+              nextOpenText: widget.nextOpenText,
+            ),
             style: const TextStyle(
               fontSize: 13,
               height: 1.5,

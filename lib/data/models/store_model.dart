@@ -139,8 +139,7 @@ class StoreModel {
       menuCategories: ((data['menuCategories'] as List<dynamic>?) ?? const [])
           .map((e) => e.toString())
           .toList(growable: false),
-      businessHours:
-          hoursMap != null ? BusinessHoursModel.fromMap(hoursMap) : null,
+      businessHours: BusinessHoursModel.tryParse(hoursMap),
       createdAt: createdAtTs?.toDate() ?? DateTime.now(),
       // sub-phase 2 — T1: missing status → approved fallback
       brandId: data['brandId'] as String?,

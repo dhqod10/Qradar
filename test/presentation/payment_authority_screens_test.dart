@@ -309,6 +309,12 @@ void main() {
         ], const CheckoutValidation(store: StoreViolation.temporarilyClosed)),
         CartBannerVariant.storeTemporarilyClosed,
       );
+      expect(
+        b([
+          CartLineAvailability.normal,
+        ], const CheckoutValidation(store: StoreViolation.closedSchedule)),
+        CartBannerVariant.storeClosedSchedule,
+      );
     });
 
     testWidgets('배너: 제목/본문 + 다시 확인 탭 중 스피너, 끝나면 버튼 복귀', (tester) async {

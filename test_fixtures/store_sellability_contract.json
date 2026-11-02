@@ -1,21 +1,1067 @@
 {
-  "_doc": "canSellNow 교차 골든 — Dart(lib/core/utils/store_sellability.dart) 와 TS(functions/src/storeSellability.ts) 가 같은 파일을 읽는다 (spec payment_server_authority §6.3, §18.2). 입력은 가공 전 원시값이다: rawStatus 는 stores/{id}.status 문자열 그대로 (null = 필드 부재), hasApprovedAt 은 approvedAt != null. 판정식(Q1 ⓑ′): status=='approved' || (status=='pending' && approvedAt!=null). 알 수 없는 값/부재는 거절(fail-closed) — EntityApprovalStatus.fromString 의 approved 폴백을 복제하지 않는다. temporary_closed_gate: temporaryClosed(원시 bool) 입력과 expectReason(null|STORE_NOT_SELLABLE|STORE_TEMPORARILY_CLOSED) 추가. 우선순위: 승인 조건 실패 > 휴업. expect 는 expectReason==null 과 동치.",
-  "cases": [
-    { "name": "approved", "rawStatus": "approved", "hasApprovedAt": true, "expect": true, "temporaryClosed": false, "expectReason": null },
-    { "name": "approved (approvedAt 없음 — M1 백필 전 legacy)", "rawStatus": "approved", "hasApprovedAt": false, "expect": true, "temporaryClosed": false, "expectReason": null },
-    { "name": "pending + approvedAt = 수정 대기 (영업 중 정보 수정)", "rawStatus": "pending", "hasApprovedAt": true, "expect": true, "temporaryClosed": false, "expectReason": null },
-    { "name": "pending 단독 = 한 번도 승인된 적 없음", "rawStatus": "pending", "hasApprovedAt": false, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "rejected", "rawStatus": "rejected", "hasApprovedAt": false, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "rejected + approvedAt (반려 때 admin 이 approvedAt 을 함께 쓴다)", "rawStatus": "rejected", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "status 부재 (null)", "rawStatus": null, "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "status 부재 + approvedAt 없음", "rawStatus": null, "hasApprovedAt": false, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "알 수 없는 문자열", "rawStatus": "weird", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "대소문자 다른 문자열", "rawStatus": "Approved", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "빈 문자열", "rawStatus": "", "hasApprovedAt": true, "expect": false, "temporaryClosed": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "approved + 휴업", "rawStatus": "approved", "hasApprovedAt": true, "temporaryClosed": true, "expect": false, "expectReason": "STORE_TEMPORARILY_CLOSED" },
-    { "name": "approved (approvedAt 없음 legacy) + 휴업", "rawStatus": "approved", "hasApprovedAt": false, "temporaryClosed": true, "expect": false, "expectReason": "STORE_TEMPORARILY_CLOSED" },
-    { "name": "pending + approvedAt + 휴업", "rawStatus": "pending", "hasApprovedAt": true, "temporaryClosed": true, "expect": false, "expectReason": "STORE_TEMPORARILY_CLOSED" },
-    { "name": "pending 단독 + 휴업 = 승인 문제가 우선", "rawStatus": "pending", "hasApprovedAt": false, "temporaryClosed": true, "expect": false, "expectReason": "STORE_NOT_SELLABLE" },
-    { "name": "status 부재 + 휴업 = 승인 문제가 우선", "rawStatus": null, "hasApprovedAt": true, "temporaryClosed": true, "expect": false, "expectReason": "STORE_NOT_SELLABLE" }
-  ]
+ "_doc": "canSellNow 교차 골든 — Dart(lib/core/utils/store_sellability.dart) 와 TS(functions/src/storeSellability.ts) 가 같은 파일을 읽는다 (spec payment_server_authority §6.3, §18.2). 입력은 가공 전 원시값이다: rawStatus 는 stores/{id}.status 문자열 그대로 (null = 필드 부재), hasApprovedAt 은 approvedAt != null. 판정식(Q1 ⓑ′): status=='approved' || (status=='pending' && approvedAt!=null). 알 수 없는 값/부재는 거절(fail-closed) — EntityApprovalStatus.fromString 의 approved 폴백을 복제하지 않는다. temporary_closed_gate: temporaryClosed(원시 bool) 입력과 expectReason(null|STORE_NOT_SELLABLE|STORE_TEMPORARILY_CLOSED) 추가. 우선순위: 승인 조건 실패 > 휴업. expect 는 expectReason==null 과 동치. store_business_schedule: scheduleClosedNow(= !isStoreOpenNow, 호출자가 KST 로 계산해 주입) 입력 추가, 우선순위 승인 > 임시휴업 > 스케줄(STORE_CLOSED_SCHEDULE). openStateCases = evaluateStoreOpenState/isStoreOpenNow (weeklyHours null = 시간 제한 없음, {} = 전체 휴무, 요일 키 1=월..7=일, now 는 KST 요일·분·날짜키로 주입, nextOpenAt/closeAt = 'YYYY-MM-DDTHH:mm' KST 벽시계). parseCases = stores.businessHours 원시값 해석(legacy 단일구간 흡수 포함) — Dart BusinessHoursModel.tryParse ↔ TS parseWeeklyHours. 2026-11-02 는 월요일.",
+ "cases": [
+  {
+   "name": "approved",
+   "rawStatus": "approved",
+   "hasApprovedAt": true,
+   "expect": true,
+   "temporaryClosed": false,
+   "expectReason": null,
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "approved (approvedAt 없음 — M1 백필 전 legacy)",
+   "rawStatus": "approved",
+   "hasApprovedAt": false,
+   "expect": true,
+   "temporaryClosed": false,
+   "expectReason": null,
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "pending + approvedAt = 수정 대기 (영업 중 정보 수정)",
+   "rawStatus": "pending",
+   "hasApprovedAt": true,
+   "expect": true,
+   "temporaryClosed": false,
+   "expectReason": null,
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "pending 단독 = 한 번도 승인된 적 없음",
+   "rawStatus": "pending",
+   "hasApprovedAt": false,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "rejected",
+   "rawStatus": "rejected",
+   "hasApprovedAt": false,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "rejected + approvedAt (반려 때 admin 이 approvedAt 을 함께 쓴다)",
+   "rawStatus": "rejected",
+   "hasApprovedAt": true,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "status 부재 (null)",
+   "rawStatus": null,
+   "hasApprovedAt": true,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "status 부재 + approvedAt 없음",
+   "rawStatus": null,
+   "hasApprovedAt": false,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "알 수 없는 문자열",
+   "rawStatus": "weird",
+   "hasApprovedAt": true,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "대소문자 다른 문자열",
+   "rawStatus": "Approved",
+   "hasApprovedAt": true,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "빈 문자열",
+   "rawStatus": "",
+   "hasApprovedAt": true,
+   "expect": false,
+   "temporaryClosed": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "approved + 휴업",
+   "rawStatus": "approved",
+   "hasApprovedAt": true,
+   "temporaryClosed": true,
+   "expect": false,
+   "expectReason": "STORE_TEMPORARILY_CLOSED",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "approved (approvedAt 없음 legacy) + 휴업",
+   "rawStatus": "approved",
+   "hasApprovedAt": false,
+   "temporaryClosed": true,
+   "expect": false,
+   "expectReason": "STORE_TEMPORARILY_CLOSED",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "pending + approvedAt + 휴업",
+   "rawStatus": "pending",
+   "hasApprovedAt": true,
+   "temporaryClosed": true,
+   "expect": false,
+   "expectReason": "STORE_TEMPORARILY_CLOSED",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "pending 단독 + 휴업 = 승인 문제가 우선",
+   "rawStatus": "pending",
+   "hasApprovedAt": false,
+   "temporaryClosed": true,
+   "expect": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "status 부재 + 휴업 = 승인 문제가 우선",
+   "rawStatus": null,
+   "hasApprovedAt": true,
+   "temporaryClosed": true,
+   "expect": false,
+   "expectReason": "STORE_NOT_SELLABLE",
+   "scheduleClosedNow": false
+  },
+  {
+   "name": "store_business_schedule: approved + 스케줄 닫힘",
+   "rawStatus": "approved",
+   "hasApprovedAt": true,
+   "temporaryClosed": false,
+   "scheduleClosedNow": true,
+   "expect": false,
+   "expectReason": "STORE_CLOSED_SCHEDULE"
+  },
+  {
+   "name": "store_business_schedule: approved + 임시휴업 + 스케줄 닫힘 = 임시휴업이 우선",
+   "rawStatus": "approved",
+   "hasApprovedAt": true,
+   "temporaryClosed": true,
+   "scheduleClosedNow": true,
+   "expect": false,
+   "expectReason": "STORE_TEMPORARILY_CLOSED"
+  },
+  {
+   "name": "store_business_schedule: pending 단독 + 스케줄 닫힘 = 승인 문제가 우선",
+   "rawStatus": "pending",
+   "hasApprovedAt": false,
+   "temporaryClosed": false,
+   "scheduleClosedNow": true,
+   "expect": false,
+   "expectReason": "STORE_NOT_SELLABLE"
+  },
+  {
+   "name": "store_business_schedule: pending 단독 + 휴업 + 스케줄 닫힘 = 승인 문제가 우선",
+   "rawStatus": "pending",
+   "hasApprovedAt": false,
+   "temporaryClosed": true,
+   "scheduleClosedNow": true,
+   "expect": false,
+   "expectReason": "STORE_NOT_SELLABLE"
+  },
+  {
+   "name": "store_business_schedule: pending + approvedAt + 스케줄 닫힘",
+   "rawStatus": "pending",
+   "hasApprovedAt": true,
+   "temporaryClosed": false,
+   "scheduleClosedNow": true,
+   "expect": false,
+   "expectReason": "STORE_CLOSED_SCHEDULE"
+  },
+  {
+   "name": "store_business_schedule: approved + 영업시간 내",
+   "rawStatus": "approved",
+   "hasApprovedAt": true,
+   "temporaryClosed": false,
+   "scheduleClosedNow": false,
+   "expect": true,
+   "expectReason": null
+  }
+ ],
+ "openStateCases": [
+  {
+   "name": "미설정(null) = 시간 제한 없음",
+   "weeklyHours": null,
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "unrestricted",
+    "isOpen": true,
+    "nextOpenAt": null,
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "미설정(null) + 오늘 closedDate = 휴무",
+   "weeklyHours": null,
+   "closedDateKeys": [
+    "2026-11-02"
+   ],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-03T00:00",
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "영업 중",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "open",
+    "isOpen": true,
+    "nextOpenAt": null,
+    "closeAt": "2026-11-02T18:00",
+    "todayRange": "09:00–18:00"
+   }
+  },
+  {
+   "name": "경계: 정확히 open 시각 = 영업 중",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 540,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "open",
+    "isOpen": true,
+    "nextOpenAt": null,
+    "closeAt": "2026-11-02T18:00",
+    "todayRange": "09:00–18:00"
+   }
+  },
+  {
+   "name": "경계: 정확히 close 시각 = 영업 아님",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 1080,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "outsideHours",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-03T09:00",
+    "closeAt": null,
+    "todayRange": "09:00–18:00"
+   }
+  },
+  {
+   "name": "영업 전 (08:59)",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 539,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "outsideHours",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-02T09:00",
+    "closeAt": null,
+    "todayRange": "09:00–18:00"
+   }
+  },
+  {
+   "name": "토요일 단축 근무 종료 후 → 일요일 휴무 건너뛰고 월요일",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 6,
+    "minuteOfDay": 960,
+    "dateKey": "2026-11-07"
+   },
+   "expect": {
+    "kind": "outsideHours",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-09T09:00",
+    "closeAt": null,
+    "todayRange": "09:00–15:00"
+   }
+  },
+  {
+   "name": "일요일(엔트리 부재) = 정기 휴무",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 7,
+    "minuteOfDay": 600,
+    "dateKey": "2026-11-08"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-09T09:00",
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "오늘 closedDate = 영업시간 무관 휴무",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [
+    "2026-11-02"
+   ],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-03T09:00",
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "다음 영업 탐색은 closedDate 를 건너뜀 (토 closed, 일 휴무 → 월)",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "15:00"
+    }
+   },
+   "closedDateKeys": [
+    "2026-11-07"
+   ],
+   "now": {
+    "weekday": 5,
+    "minuteOfDay": 1140,
+    "dateKey": "2026-11-06"
+   },
+   "expect": {
+    "kind": "outsideHours",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-09T09:00",
+    "closeAt": null,
+    "todayRange": "09:00–18:00"
+   }
+  },
+  {
+   "name": "전체 휴무 (명시 저장한 빈 맵)",
+   "weeklyHours": {},
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": null,
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "자정 넘김: 시작 요일 밤 = 영업 중",
+   "weeklyHours": {
+    "5": {
+     "open": "22:00",
+     "close": "02:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 5,
+    "minuteOfDay": 1380,
+    "dateKey": "2026-11-06"
+   },
+   "expect": {
+    "kind": "open",
+    "isOpen": true,
+    "nextOpenAt": null,
+    "closeAt": "2026-11-07T02:00",
+    "todayRange": "22:00–익일 02:00"
+   }
+  },
+  {
+   "name": "자정 넘김: 다음날 01:00 은 전일 구간 (오늘 엔트리 없음)",
+   "weeklyHours": {
+    "5": {
+     "open": "22:00",
+     "close": "02:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 6,
+    "minuteOfDay": 60,
+    "dateKey": "2026-11-07"
+   },
+   "expect": {
+    "kind": "open",
+    "isOpen": true,
+    "nextOpenAt": null,
+    "closeAt": "2026-11-07T02:00",
+    "todayRange": null
+   }
+  },
+  {
+   "name": "자정 넘김: 다음날 02:00 = 종료",
+   "weeklyHours": {
+    "5": {
+     "open": "22:00",
+     "close": "02:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 6,
+    "minuteOfDay": 120,
+    "dateKey": "2026-11-07"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-13T22:00",
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "자정 넘김: 시작일이 closedDate 면 전일 구간 없음",
+   "weeklyHours": {
+    "5": {
+     "open": "22:00",
+     "close": "02:00"
+    }
+   },
+   "closedDateKeys": [
+    "2026-11-06"
+   ],
+   "now": {
+    "weekday": 6,
+    "minuteOfDay": 60,
+    "dateKey": "2026-11-07"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-13T22:00",
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "오늘이 closedDate 면 전일 자정 넘김 구간도 닫힘",
+   "weeklyHours": {
+    "5": {
+     "open": "22:00",
+     "close": "02:00"
+    }
+   },
+   "closedDateKeys": [
+    "2026-11-07"
+   ],
+   "now": {
+    "weekday": 6,
+    "minuteOfDay": 60,
+    "dateKey": "2026-11-07"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-13T22:00",
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "open == close 는 그 요일 닫힘",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "09:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": null,
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "파싱 실패(25:00)는 그 요일 닫힘",
+   "weeklyHours": {
+    "1": {
+     "open": "25:00",
+     "close": "18:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": null,
+    "closeAt": null,
+    "todayRange": null
+   }
+  },
+  {
+   "name": "00:00~23:59 종일",
+   "weeklyHours": {
+    "1": {
+     "open": "00:00",
+     "close": "23:59"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 1438,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "open",
+    "isOpen": true,
+    "nextOpenAt": null,
+    "closeAt": "2026-11-02T23:59",
+    "todayRange": "00:00–23:59"
+   }
+  },
+  {
+   "name": "자정 넘김 요일의 영업 전 (22~02, 12:00)",
+   "weeklyHours": {
+    "1": {
+     "open": "22:00",
+     "close": "02:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-02"
+   },
+   "expect": {
+    "kind": "outsideHours",
+    "isOpen": false,
+    "nextOpenAt": "2026-11-02T22:00",
+    "closeAt": null,
+    "todayRange": "22:00–익일 02:00"
+   }
+  },
+  {
+   "name": "월말 경계: 다음 영업은 12월",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "18:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 1140,
+    "dateKey": "2026-11-30"
+   },
+   "expect": {
+    "kind": "outsideHours",
+    "isOpen": false,
+    "nextOpenAt": "2026-12-01T09:00",
+    "closeAt": null,
+    "todayRange": "09:00–18:00"
+   }
+  },
+  {
+   "name": "월말 경계: 자정 넘김 종료는 12월",
+   "weeklyHours": {
+    "1": {
+     "open": "22:00",
+     "close": "02:00"
+    }
+   },
+   "closedDateKeys": [],
+   "now": {
+    "weekday": 1,
+    "minuteOfDay": 1380,
+    "dateKey": "2026-11-30"
+   },
+   "expect": {
+    "kind": "open",
+    "isOpen": true,
+    "nextOpenAt": null,
+    "closeAt": "2026-12-01T02:00",
+    "todayRange": "22:00–익일 02:00"
+   }
+  },
+  {
+   "name": "8일 안에 영업일이 없으면 nextOpenAt null",
+   "weeklyHours": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    }
+   },
+   "closedDateKeys": [
+    "2026-11-09",
+    "2026-11-16"
+   ],
+   "now": {
+    "weekday": 2,
+    "minuteOfDay": 720,
+    "dateKey": "2026-11-03"
+   },
+   "expect": {
+    "kind": "regularHoliday",
+    "isOpen": false,
+    "nextOpenAt": null,
+    "closeAt": null,
+    "todayRange": null
+   }
+  }
+ ],
+ "parseCases": [
+  {
+   "name": "null",
+   "raw": null,
+   "expect": null
+  },
+  {
+   "name": "빈 객체",
+   "raw": {},
+   "expect": null
+  },
+  {
+   "name": "문자열",
+   "raw": "x",
+   "expect": null
+  },
+  {
+   "name": "weeklyHours 빈 맵 = 전체 휴무",
+   "raw": {
+    "weeklyHours": {}
+   },
+   "expect": {}
+  },
+  {
+   "name": "weeklyHours 정상 + 범위 밖 키/잘못된 키는 버림",
+   "raw": {
+    "weeklyHours": {
+     "1": {
+      "open": "09:00",
+      "close": "18:00"
+     },
+     "8": {
+      "open": "09:00",
+      "close": "18:00"
+     },
+     "x": {
+      "open": "09:00",
+      "close": "18:00"
+     }
+    }
+   },
+   "expect": {
+    "1": {
+     "open": "09:00",
+     "close": "18:00"
+    }
+   }
+  },
+  {
+   "name": "weeklyHours 엔트리 필드 누락은 버림 (그날 휴무)",
+   "raw": {
+    "weeklyHours": {
+     "2": {
+      "open": "09:00"
+     },
+     "3": {
+      "open": "09:00",
+      "close": "18:00"
+     }
+    }
+   },
+   "expect": {
+    "3": {
+     "open": "09:00",
+     "close": "18:00"
+    }
+   }
+  },
+  {
+   "name": "legacy 단일구간 = 7요일 동일",
+   "raw": {
+    "openTime": "09:00",
+    "closeTime": "21:00",
+    "closedDays": []
+   },
+   "expect": {
+    "1": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "2": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "7": {
+     "open": "09:00",
+     "close": "21:00"
+    }
+   }
+  },
+  {
+   "name": "legacy closedDays 제외",
+   "raw": {
+    "openTime": "09:00",
+    "closeTime": "21:00",
+    "closedDays": [
+     1,
+     7
+    ]
+   },
+   "expect": {
+    "2": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "3": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "4": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "5": {
+     "open": "09:00",
+     "close": "21:00"
+    },
+    "6": {
+     "open": "09:00",
+     "close": "21:00"
+    }
+   }
+  },
+  {
+   "name": "legacy closedDays 부재",
+   "raw": {
+    "openTime": "10:00",
+    "closeTime": "20:00"
+   },
+   "expect": {
+    "1": {
+     "open": "10:00",
+     "close": "20:00"
+    },
+    "2": {
+     "open": "10:00",
+     "close": "20:00"
+    },
+    "3": {
+     "open": "10:00",
+     "close": "20:00"
+    },
+    "4": {
+     "open": "10:00",
+     "close": "20:00"
+    },
+    "5": {
+     "open": "10:00",
+     "close": "20:00"
+    },
+    "6": {
+     "open": "10:00",
+     "close": "20:00"
+    },
+    "7": {
+     "open": "10:00",
+     "close": "20:00"
+    }
+   }
+  },
+  {
+   "name": "legacy 빈 문자열 = 미설정 취급 (기존 매장이 막히지 않게)",
+   "raw": {
+    "openTime": "",
+    "closeTime": "",
+    "closedDays": []
+   },
+   "expect": null
+  },
+  {
+   "name": "legacy 형식 오류 = 미설정 취급",
+   "raw": {
+    "openTime": "9:00",
+    "closeTime": "21:00"
+   },
+   "expect": null
+  }
+ ]
 }

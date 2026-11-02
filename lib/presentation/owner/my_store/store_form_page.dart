@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:kpostal/kpostal.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/business_hours.dart';
+import 'package:qradar/presentation/owner/my_store/widgets/weekly_schedule_editor.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
 import 'package:qradar/domain/entities/user_location.dart';
@@ -68,7 +69,11 @@ class _StoreFormPageState extends ConsumerState<StoreFormPage> {
     return _nameCtrl.text.trim().isNotEmpty &&
         _phoneCtrl.text.trim().isNotEmpty &&
         _addressCtrl.text.trim().isNotEmpty &&
-        _location != null;
+        _location != null &&
+        (_isEdit ||
+            (_hours != null &&
+                _hours!.weeklyHours.isNotEmpty &&
+                !WeeklyScheduleEditor.hasInvalidRow(_hours)));
   }
 
   @override
@@ -136,9 +141,11 @@ class _StoreFormPageState extends ConsumerState<StoreFormPage> {
               onTap: _openAddressSearch,
             ),
             const SizedBox(height: 20),
-            _BusinessHoursPicker(
-              hours: _hours,
-              onChange: (h) => setState(() => _hours = h),
+            WeeklyScheduleEditor(
+              value: _hours,
+              required: !_isEdit,
+              enabled: !_submitting,
+              onChanged: (h) => setState(() => _hours = h),
             ),
             const SizedBox(height: 20),
             _FormField(
@@ -555,162 +562,6 @@ class _AddressSearchTile extends StatelessWidget {
 }
 
 // ── 카테고리 다중 선택 ───────────────────────────────────────────────────
-
-class _BusinessHoursPicker extends StatelessWidget {
-  final BusinessHours? hours;
-  final ValueChanged<BusinessHours?> onChange;
-
-  const _BusinessHoursPicker({required this.hours, required this.onChange});
-
-  String get _open => hours?.openTime ?? '';
-  String get _close => hours?.closeTime ?? '';
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '운영시간',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textDefault,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _TimeTile(
-                label: '영업 시작',
-                value: _open,
-                onPick: (t) => _update(open: t),
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text('~', style: TextStyle(color: AppColors.textMuted)),
-            ),
-            Expanded(
-              child: _TimeTile(
-                label: '영업 종료',
-                value: _close,
-                onPick: (t) => _update(close: t),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  void _update({String? open, String? close}) {
-    final nextOpen = open ?? _open;
-    final nextClose = close ?? _close;
-    if (nextOpen.isEmpty && nextClose.isEmpty) {
-      onChange(null);
-      return;
-    }
-    onChange(
-      BusinessHours(openTime: nextOpen, closeTime: nextClose),
-    );
-  }
-}
-
-class _TimeTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final ValueChanged<String> onPick;
-
-  const _TimeTile({
-    required this.label,
-    required this.value,
-    required this.onPick,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _pick(context),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value.isEmpty ? '--:--' : value,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: value.isEmpty
-                          ? AppColors.textMuted
-                          : AppColors.textDark,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.access_time_rounded,
-              size: 18,
-              color: AppColors.textMuted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pick(BuildContext context) async {
-    final initial = _parse(value) ?? const TimeOfDay(hour: 9, minute: 0);
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-      builder: (ctx, child) {
-        return Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: AppColors.primaryBright,
-              surface: AppColors.surfaceElevated,
-              onSurface: AppColors.textDark,
-            ),
-          ),
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
-    );
-    if (picked == null) return;
-    onPick(_format(picked));
-  }
-
-  TimeOfDay? _parse(String value) {
-    final parts = value.split(':');
-    if (parts.length != 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return null;
-    return TimeOfDay(hour: h, minute: m);
-  }
-
-  String _format(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-}
 
 // ── 저장 버튼 ─────────────────────────────────────────────────────────────
 

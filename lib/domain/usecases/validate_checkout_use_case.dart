@@ -31,10 +31,17 @@ class ValidateCheckoutUseCase {
     this._repository, {
     Duration timeout = const Duration(seconds: 3),
     Duration? userTimeout,
-  }) : _timeout = timeout,
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now,
+       _timeout = timeout,
        _userTimeout = userTimeout ?? timeout;
 
   final CheckoutValidationRepository _repository;
+
+  /// 기기 시계 (테스트 주입용).
+  final DateTime Function() _now;
+
+  KstClock _clock() => kstClockOf(_now());
 
   /// 자동 선검증(카트 진입·포그라운드 복귀·결제 탭) 타임아웃.
   final Duration _timeout;
@@ -82,13 +89,26 @@ class ValidateCheckoutUseCase {
     if (store == null) {
       return const CheckoutValidation(store: StoreViolation.notFound);
     }
+    // 기기 시계 → KST (선검증은 권위가 아니다 — 서버가 신뢰 시계로 최종 판정, store_business_schedule D0-3).
+    final clock = _clock();
+    final scheduleClosedNow = !isStoreOpenNow(
+      weeklyHours: store.businessHours?.scheduleInput,
+      closedDateKeys: closedDateKeysOf(store.closedDates),
+      nowWeekday: clock.weekday,
+      nowMinuteOfDay: clock.minuteOfDay,
+      nowDateKey: clock.dateKey,
+    );
     final storeReason = storeGateReason(
       rawStatus: store.rawStatus,
       hasApprovedAt: store.hasApprovedAt,
       temporaryClosed: store.temporaryClosed,
+      scheduleClosedNow: scheduleClosedNow,
     );
     if (storeReason == kStoreTemporarilyClosed) {
       return const CheckoutValidation(store: StoreViolation.temporarilyClosed);
+    }
+    if (storeReason == kStoreClosedSchedule) {
+      return const CheckoutValidation(store: StoreViolation.closedSchedule);
     }
     if (storeReason != null) {
       return const CheckoutValidation(store: StoreViolation.notSellable);

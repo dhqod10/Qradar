@@ -5,10 +5,12 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/errors/unauthenticated_exception.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/store_menu_visibility.dart';
+import 'package:qradar/core/utils/store_sellability.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/sub_category_entity.dart';
 import 'package:qradar/presentation/common/favorite_login_required_dialog.dart';
+import 'package:qradar/presentation/common/store_open_state.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/auth/login_page.dart';
 import 'package:qradar/presentation/customer/cart/cart_page.dart';
@@ -193,6 +195,7 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
     // "반영이 안 됐다" 고 오인한다.
     final liveStore =
         ref.watch(watchedStoreProvider(storeId)).asData?.value ?? store;
+    final openState = watchStoreOpenState(ref, liveStore);
     final menuAsync = ref.watch(storeMenuItemsProvider(storeId));
     final selectedMain = ref.watch(selectedMainCategoryProvider);
     final selectedSubId = ref.watch(selectedSubCategoryIdProvider);
@@ -263,8 +266,13 @@ class _StoreMenuPageState extends ConsumerState<StoreMenuPage> {
           return CustomScrollView(
             slivers: [
               _AppBar(store: store),
+              // 배너는 1개만: 임시 휴업 > 스케줄 닫힘 (store_business_schedule design §3.2).
               if (liveStore.temporaryClosed)
-                const SliverToBoxAdapter(child: _TemporaryClosedBanner()),
+                const SliverToBoxAdapter(child: _TemporaryClosedBanner())
+              else if (!openState.isOpen)
+                SliverToBoxAdapter(
+                  child: _ScheduleClosedBanner(state: openState),
+                ),
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _CategoryHeaderDelegate(
@@ -469,6 +477,59 @@ class _TemporaryClosedBanner extends StatelessWidget {
 }
 
 /// 검색에서 넘어온 메뉴 안내 띠. 목록에서 찾으면 `검색한 메뉴  {이름}`, 못 찾으면 판매하지 않을 수 있다는 정직한 안내.
+/// 영업시간 아님 / 정기 휴무 안내 배너 (store_business_schedule design §3.2). 중립 톤 — 임시 휴업(error)과 구분.
+class _ScheduleClosedBanner extends StatelessWidget {
+  const _ScheduleClosedBanner({required this.state});
+  final StoreOpenState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = StoreClosedCopy.banner(
+      state,
+      kstClockOf(DateTime.now()).dateKey,
+    );
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.schedule_rounded, size: 18, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  copy.title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textHeading,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  copy.body,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textBody,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SearchedMenuBand extends StatelessWidget {
   const _SearchedMenuBand({required this.foundName, required this.onClose});
 

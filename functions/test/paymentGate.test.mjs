@@ -69,7 +69,7 @@ function fakeReader({ store, storeMenus = {}, overrides = {}, masters = {}, fail
 }
 
 // gateMode 기본은 'enforce' — 기존 G1/G2 케이스는 게이트가 켜진 상태를 검증한다. 모드 자체는 아래 "PAYMENT_GATE_MODE" 블록이 검증.
-function setup({ reader, db = fakeDb(), secret = 'live_sk_real', gateMode = () => 'enforce' }) {
+function setup({ reader, db = fakeDb(), secret = 'live_sk_real', gateMode = () => 'enforce', now }) {
   const spy = { confirm: 0, cancel: 0 };
   const deps = {
     db,
@@ -81,6 +81,7 @@ function setup({ reader, db = fakeDb(), secret = 'live_sk_real', gateMode = () =
     cancel: async () => { spy.cancel++; return {}; },
     gateReader: reader,
     gateMode,
+    ...(now ? { now } : {}),
   };
   return { deps, spy, db };
 }
@@ -140,6 +141,44 @@ for (const [name, store, reason, code] of storeCases) {
       assert.equal(r.db.state.rejections[0].storeId, 's1');
       assert.equal(r.db.state.rejections[0].amount, 4000);
       assert.equal(r.db.state.committed, false);
+    }
+  });
+}
+
+// ── store_business_schedule: 영업 스케줄 게이트 (서버 KST 시계 권위). 2026-11-02 = 월요일. ──
+const MON_NOON_KST = () => new Date('2026-11-02T03:00:00Z'); // 월 12:00 KST
+const MON_2330_KST = () => new Date('2026-11-02T14:30:00Z'); // 월 23:30 KST
+const TUE_0100_KST = () => new Date('2026-11-02T16:00:00Z'); // 화 01:00 KST
+const wk = (o) => ({ weeklyHours: o });
+const scheduleCases = [
+  ['businessHours 미설정(null) = 시간 제한 없음 (Q1 회귀 안전)', { ...OKSTORE }, MON_2330_KST, null],
+  ['영업 중 (월 09~18, 월 12:00)', { ...OKSTORE, businessHours: wk({ 1: { open: '09:00', close: '18:00' } }) }, MON_NOON_KST, null],
+  ['영업시간 밖 (월 09~11, 월 12:00)', { ...OKSTORE, businessHours: wk({ 1: { open: '09:00', close: '11:00' } }) }, MON_NOON_KST, 'STORE_CLOSED_SCHEDULE'],
+  ['정기 휴무 (월 엔트리 부재)', { ...OKSTORE, businessHours: wk({ 2: { open: '09:00', close: '18:00' } }) }, MON_NOON_KST, 'STORE_CLOSED_SCHEDULE'],
+  ['전체 휴무 (명시 저장한 빈 맵)', { ...OKSTORE, businessHours: wk({}) }, MON_NOON_KST, 'STORE_CLOSED_SCHEDULE'],
+  ['자정 넘김 (월 22~02, 월 23:30) 영업 중', { ...OKSTORE, businessHours: wk({ 1: { open: '22:00', close: '02:00' } }) }, MON_2330_KST, null],
+  ['자정 넘김 새벽 (월 22~02, 화 01:00) 영업 중', { ...OKSTORE, businessHours: wk({ 1: { open: '22:00', close: '02:00' } }) }, TUE_0100_KST, null],
+  ['closedDates 일치 → 영업시간 무관 닫힘', { ...OKSTORE, businessHours: wk({ 1: { open: '09:00', close: '18:00' } }), closedDates: [new Date('2026-11-01T15:00:00Z')] }, MON_NOON_KST, 'STORE_CLOSED_SCHEDULE'],
+  ['closedDates 일치 + 스케줄 미설정 → 닫힘', { ...OKSTORE, closedDates: [{ toDate: () => new Date('2026-11-01T15:00:00Z') }] }, MON_NOON_KST, 'STORE_CLOSED_SCHEDULE'],
+  ['legacy 단일구간 (09~11) 영업시간 밖', { ...OKSTORE, businessHours: { openTime: '09:00', closeTime: '11:00', closedDays: [] } }, MON_NOON_KST, 'STORE_CLOSED_SCHEDULE'],
+  ['legacy 단일구간 (09~18) 영업 중', { ...OKSTORE, businessHours: { openTime: '09:00', closeTime: '18:00', closedDays: [] } }, MON_NOON_KST, null],
+  ['우선순위: 임시휴업 > 스케줄', { ...OKSTORE, temporaryClosed: true, businessHours: wk({}) }, MON_NOON_KST, 'STORE_TEMPORARILY_CLOSED'],
+  ['우선순위: 승인 > 스케줄', { status: 'pending', businessHours: wk({}) }, MON_NOON_KST, 'STORE_NOT_SELLABLE'],
+];
+for (const [name, store, now, reason] of scheduleCases) {
+  test(`G1 스케줄: ${name}`, async () => {
+    const reader = fakeReader({ store, storeMenus: { m1: OKMENU } });
+    const r = await run({ reader, now }, req([item('m1')]));
+    if (reason === null) {
+      assert.equal(r.err, null);
+      assert.equal(r.spy.confirm, 1);
+      assert.equal(r.db.state.rejections.length, 0);
+    } else {
+      assert.equal(r.err?.code, 'failed-precondition');
+      assert.ok(r.err.message.endsWith(`[${reason}]`), r.err.message);
+      assert.equal(r.spy.confirm, 0, 'Toss confirm 미호출');
+      assert.equal(r.db.state.rejections.length, 1);
+      assert.equal(r.db.state.rejections[0].reason, reason);
     }
   });
 }

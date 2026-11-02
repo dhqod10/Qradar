@@ -18,6 +18,8 @@ class CheckoutValidationRepositoryImpl implements CheckoutValidationRepository {
       hasApprovedAt: raw.hasApprovedAt,
       brandId: raw.brandId,
       temporaryClosed: raw.temporaryClosed,
+      businessHours: raw.businessHours?.toEntity(),
+      closedDates: raw.closedDates,
     );
   }
 

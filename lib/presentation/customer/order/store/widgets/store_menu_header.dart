@@ -1,14 +1,17 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/distance_calculator.dart';
-import 'package:qradar/domain/entities/business_hours.dart';
+import 'package:qradar/core/utils/store_schedule_format.dart';
+import 'package:qradar/core/utils/store_sellability.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/common/favorite_toggle_icon_button.dart';
+import 'package:qradar/presentation/common/store_open_state.dart';
 import 'package:qradar/presentation/customer/home/widgets/grade_badge.dart';
 import 'package:qradar/presentation/customer/review/store_reviews_page.dart';
 
-class StoreMenuHeader extends StatelessWidget {
+class StoreMenuHeader extends ConsumerWidget {
   const StoreMenuHeader({
     super.key,
     required this.store,
@@ -21,7 +24,8 @@ class StoreMenuHeader extends StatelessWidget {
   final VoidCallback onFavoriteTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final openState = watchStoreOpenState(ref, store);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -90,7 +94,7 @@ class StoreMenuHeader extends StatelessWidget {
                   if (store.temporaryClosed)
                     const _TemporaryClosedBadge()
                   else
-                    _OpenStatusText(hours: store.businessHours),
+                    Flexible(child: _StoreOpenStatus(state: openState)),
                   const Spacer(),
                   _TappableGradeBadge(store: store),
                 ],
@@ -216,44 +220,89 @@ class _TemporaryClosedBadge extends StatelessWidget {
   }
 }
 
-class _OpenStatusText extends StatelessWidget {
-  const _OpenStatusText({required this.hours});
-  final BusinessHours? hours;
+/// 정기 휴무 / 영업시간 아님 배지 (store_business_schedule design §3.1).
+/// 임시 휴업(빨강)과 구분되는 중립 톤 — 정해진 스케줄상 닫힘은 비정상이 아니다.
+class _ScheduleClosedBadge extends StatelessWidget {
+  const _ScheduleClosedBadge({required this.label, required this.semantics});
+  final String label;
+  final String semantics;
 
   @override
   Widget build(BuildContext context) {
-    if (hours == null) return const SizedBox.shrink();
-    final open = _isOpenNow(hours!);
-    return Text(
-      open ? '영업 중' : '마감',
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: open ? AppColors.success : AppColors.error,
+    return Semantics(
+      label: semantics,
+      child: Container(
+        height: 22,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.textHeading.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: AppColors.onPrimary.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: AppColors.onPrimary,
+          ),
+        ),
       ),
     );
   }
+}
 
-  bool _isOpenNow(BusinessHours h) {
-    final now = TimeOfDay.now();
-    final nowMin = now.hour * 60 + now.minute;
-    final open = _toMinutes(h.openTime);
-    final close = _toMinutes(h.closeTime);
-    if (open == null || close == null) return false;
-    if (open == close) return false;
-    if (open < close) {
-      return nowMin >= open && nowMin < close;
+/// 헤더 영업 상태 — 공용 [StoreOpenState] 만 그린다 (자체 시간 계산 없음).
+class _StoreOpenStatus extends StatelessWidget {
+  const _StoreOpenStatus({required this.state});
+  final StoreOpenState state;
+
+  @override
+  Widget build(BuildContext context) {
+    switch (state.kind) {
+      case StoreOpenKind.unrestricted:
+        return const SizedBox.shrink();
+      case StoreOpenKind.regularHoliday:
+        return const _ScheduleClosedBadge(
+          label: '정기 휴무',
+          semantics: '정기 휴무 중인 매장',
+        );
+      case StoreOpenKind.outsideHours:
+        return const _ScheduleClosedBadge(
+          label: '영업시간 아님',
+          semantics: '지금은 영업시간이 아닌 매장',
+        );
+      case StoreOpenKind.open:
+        final until = formatCloseAt(
+          state.closeAt,
+          kstClockOf(DateTime.now()).dateKey,
+        );
+        return Text.rich(
+          TextSpan(
+            children: [
+              const TextSpan(
+                text: '영업 중',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.success,
+                ),
+              ),
+              if (until != null)
+                TextSpan(
+                  text: ' · $until',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.onPrimary.withValues(alpha: 0.85),
+                  ),
+                ),
+            ],
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        );
     }
-    // 자정 넘김
-    return nowMin >= open || nowMin < close;
-  }
-
-  int? _toMinutes(String hhmm) {
-    final parts = hhmm.split(':');
-    if (parts.length != 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return null;
-    return h * 60 + m;
   }
 }

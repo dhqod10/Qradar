@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:qradar/core/utils/checkout_menu_gate.dart';
 import 'package:qradar/core/utils/store_menu_visibility.dart';
 import 'package:qradar/core/utils/store_sellability.dart';
+import 'package:qradar/data/models/business_hours_model.dart';
 import 'package:qradar/data/models/menu_item_model.dart';
 import 'package:qradar/data/models/menu_override_model.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
@@ -98,11 +99,13 @@ void main() {
         final rawStatus = c['rawStatus'] as String?;
         final hasApprovedAt = c['hasApprovedAt'] as bool;
         final temporaryClosed = c['temporaryClosed'] as bool;
+        final scheduleClosedNow = c['scheduleClosedNow'] as bool;
         expect(
           storeGateReason(
             rawStatus: rawStatus,
             hasApprovedAt: hasApprovedAt,
             temporaryClosed: temporaryClosed,
+            scheduleClosedNow: scheduleClosedNow,
           ),
           c['expectReason'] as String?,
         );
@@ -111,9 +114,81 @@ void main() {
             rawStatus: rawStatus,
             hasApprovedAt: hasApprovedAt,
             temporaryClosed: temporaryClosed,
+            scheduleClosedNow: scheduleClosedNow,
           ),
           c['expect'] as bool,
         );
+      });
+    }
+  });
+
+  group('store_sellability_contract.json — evaluateStoreOpenState / isStoreOpenNow', () {
+    final cases = (_load('store_sellability_contract.json')['openStateCases']
+            as List)
+        .cast<Map<String, dynamic>>();
+    assert(cases.length >= 20);
+    const kinds = {
+      'unrestricted': StoreOpenKind.unrestricted,
+      'open': StoreOpenKind.open,
+      'regularHoliday': StoreOpenKind.regularHoliday,
+      'outsideHours': StoreOpenKind.outsideHours,
+    };
+    for (final c in cases) {
+      test(c['name'] as String, () {
+        final raw = c['weeklyHours'] as Map<String, dynamic>?;
+        final weekly = raw == null
+            ? null
+            : <int, ScheduleDayHours>{
+                for (final e in raw.entries)
+                  int.parse(e.key): (
+                    open: (e.value as Map)['open'] as String,
+                    close: (e.value as Map)['close'] as String,
+                  ),
+              };
+        final now = c['now'] as Map<String, dynamic>;
+        final closed = (c['closedDateKeys'] as List).cast<String>().toSet();
+        final r = evaluateStoreOpenState(
+          weeklyHours: weekly,
+          closedDateKeys: closed,
+          nowWeekday: now['weekday'] as int,
+          nowMinuteOfDay: now['minuteOfDay'] as int,
+          nowDateKey: now['dateKey'] as String,
+        );
+        final expected = c['expect'] as Map<String, dynamic>;
+        expect(r.kind, kinds[expected['kind']]);
+        expect(r.isOpen, expected['isOpen']);
+        expect(r.nextOpenAt, expected['nextOpenAt']);
+        expect(r.closeAt, expected['closeAt']);
+        expect(r.todayRange, expected['todayRange']);
+        expect(
+          isStoreOpenNow(
+            weeklyHours: weekly,
+            closedDateKeys: closed,
+            nowWeekday: now['weekday'] as int,
+            nowMinuteOfDay: now['minuteOfDay'] as int,
+            nowDateKey: now['dateKey'] as String,
+          ),
+          expected['isOpen'],
+        );
+      });
+    }
+  });
+
+  group('store_sellability_contract.json — BusinessHoursModel.tryParse', () {
+    final cases = (_load('store_sellability_contract.json')['parseCases']
+            as List)
+        .cast<Map<String, dynamic>>();
+    assert(cases.length >= 8);
+    for (final c in cases) {
+      test(c['name'] as String, () {
+        final m = BusinessHoursModel.tryParse(c['raw']);
+        final expected = c['expect'] as Map<String, dynamic>?;
+        if (expected == null) {
+          expect(m, isNull);
+          return;
+        }
+        expect(m, isNotNull);
+        expect(m!.toMap()['weeklyHours'], expected);
       });
     }
   });

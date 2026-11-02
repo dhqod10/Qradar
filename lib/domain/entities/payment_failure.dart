@@ -17,6 +17,8 @@ enum PaymentFailureFamily {
 enum PaymentFailureReason {
   storeNotSellable('STORE_NOT_SELLABLE'),
   storeTemporarilyClosed('STORE_TEMPORARILY_CLOSED'),
+  // store_business_schedule: 영업시간 밖 / 정기휴무 (서버는 한 사유로 묶는다). Toss confirm 전이라 돈이 안 나갔다.
+  storeClosedSchedule('STORE_CLOSED_SCHEDULE'),
   storeNotFound('STORE_NOT_FOUND'),
   menuSoldOut('MENU_SOLD_OUT'),
   menuExcluded('MENU_EXCLUDED'),

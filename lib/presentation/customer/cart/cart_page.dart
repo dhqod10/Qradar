@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/price_formatter.dart';
+import 'package:qradar/core/utils/store_schedule_format.dart';
+import 'package:qradar/core/utils/store_sellability.dart';
 import 'package:qradar/domain/entities/cart_entity.dart';
 import 'package:qradar/domain/entities/checkout_validation.dart';
+import 'package:qradar/presentation/common/store_open_state.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/auth/login_page.dart';
 import 'package:qradar/presentation/customer/cart/cart_line_availability.dart';
@@ -16,6 +19,7 @@ import 'package:qradar/presentation/customer/checkout/checkout_page.dart';
 import 'package:qradar/presentation/customer/checkout/providers/client_update_providers.dart';
 import 'package:qradar/presentation/customer/checkout/update_required_page.dart';
 import 'package:qradar/presentation/customer/order/menu/menu_item_detail_page.dart';
+import 'package:qradar/presentation/customer/review/providers/store_review_providers.dart';
 
 class CartPage extends ConsumerStatefulWidget {
   const CartPage({super.key});
@@ -164,6 +168,8 @@ class _CartPageState extends ConsumerState<CartPage>
             content: Text(
               result.validation.store == StoreViolation.temporarilyClosed
                   ? '지금은 매장이 임시 휴업중이에요. 영업을 다시 시작하면 결제할 수 있어요.'
+                  : result.validation.store == StoreViolation.closedSchedule
+                  ? '지금은 매장 영업시간이 아니에요. 영업을 시작하면 결제할 수 있어요.'
                   : result.validation.store != null
                   ? '지금은 이 매장에서 주문할 수 없어요. 잠시 후 다시 시도해 주세요.'
                   : '지금 주문할 수 없는 메뉴가 있어요. 표시된 메뉴를 확인해 주세요.',
@@ -420,6 +426,17 @@ class _CartList extends ConsumerWidget {
   final ScrollController scroll;
   final GlobalKey Function(String cartItemId) keyFor;
 
+  /// 스케줄 휴업 배너의 다음 영업 시각. 매장 문서를 못 읽었으면 null (문장 생략 — 표시 전용).
+  String? _nextOpenText(WidgetRef ref) {
+    final store = ref.watch(watchedStoreProvider(cart.storeId)).asData?.value;
+    if (store == null) return null;
+    final now = DateTime.now();
+    return formatNextOpen(
+      storeOpenStateOf(store, now).nextOpenAt,
+      kstClockOf(now).dateKey,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return CustomScrollView(
@@ -455,6 +472,9 @@ class _CartList extends ConsumerWidget {
                     child: CartAvailabilityBanner(
                       variant: banner!,
                       onRecheck: onRecheck,
+                      nextOpenText: banner == CartBannerVariant.storeClosedSchedule
+                          ? _nextOpenText(ref)
+                          : null,
                     ),
                   ),
           ),

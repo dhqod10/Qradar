@@ -12,7 +12,7 @@
  * 판정 함수는 `storeGateReason`(storeSellability.ts) · `classifyCartMenu`(menuVisibility.ts) 두 개뿐이며 여기서 재구현하지 않는다.
  */
 
-import { storeGateReason } from "./storeSellability";
+import { closedDateKeysFromRaw, isStoreOpenNow, kstClockOf, parseWeeklyHours, storeGateReason } from "./storeSellability";
 import { classifyCartMenu, CartMenuReason, MergedMenu, RawDoc } from "./menuVisibility";
 
 /**
@@ -22,6 +22,8 @@ import { classifyCartMenu, CartMenuReason, MergedMenu, RawDoc } from "./menuVisi
 export type GateReason =
   | "STORE_NOT_SELLABLE"
   | "STORE_TEMPORARILY_CLOSED"
+  // [store_business_schedule] 영업시간 밖 / 정기휴무 / 특정 날짜 휴무 (서버 시계 KST 판정). 우선순위: 승인 > 임시휴업 > 스케줄.
+  | "STORE_CLOSED_SCHEDULE"
   | "STORE_NOT_FOUND"
   | "MENU_SOLD_OUT"
   | "MENU_EXCLUDED"
@@ -60,6 +62,7 @@ export function resolveGateMode(raw: unknown): GateMode {
 export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-found" | "unavailable" | "permission-denied"> = {
   STORE_NOT_SELLABLE: "failed-precondition",
   STORE_TEMPORARILY_CLOSED: "failed-precondition",
+  STORE_CLOSED_SCHEDULE: "failed-precondition",
   STORE_NOT_FOUND: "not-found",
   MENU_SOLD_OUT: "failed-precondition",
   MENU_EXCLUDED: "failed-precondition",
@@ -79,6 +82,7 @@ export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-fo
 const GATE_TEXT: Record<GateReason, string> = {
   STORE_NOT_SELLABLE: "지금은 이 매장이 주문을 받을 수 없어요. 잠시 후 다시 시도해주세요",
   STORE_TEMPORARILY_CLOSED: "지금은 매장이 잠시 휴업 중이에요. 잠시 후 다시 시도해주세요",
+  STORE_CLOSED_SCHEDULE: "지금은 매장 영업시간이 아니에요. 영업을 시작한 뒤 다시 시도해주세요",
   STORE_NOT_FOUND: "매장 정보를 찾을 수 없어요. 카트를 비우고 다시 담아주세요",
   MENU_SOLD_OUT: "품절된 메뉴가 있어요. 카트에서 빼고 다시 시도해주세요",
   MENU_EXCLUDED: "이 매장에서 더 이상 판매하지 않는 메뉴가 있어요",
@@ -193,7 +197,9 @@ const MENU_PRECEDENCE: CartMenuReason[] = ["MENU_SOLD_OUT", "MENU_EXCLUDED", "ME
 
 export async function evaluatePaymentGate(
   reader: GateReader,
-  cart: { storeId: string; items: GateCartItem[] }
+  cart: { storeId: string; items: GateCartItem[] },
+  /** 신뢰 시계 (테스트에서 고정 시각 주입). 영업 스케줄 판정의 now — KST 로 변환해 쓴다 (store_business_schedule §D2). */
+  now: Date = new Date()
 ): Promise<GateResult> {
   // ── G1: 매장 ────────────────────────────────────────────────────────────
   if (!isLookupSafeId(cart.storeId)) {
@@ -212,7 +218,16 @@ export async function evaluatePaymentGate(
   const rawStatus = typeof store.status === "string" ? store.status : null;
   const hasApprovedAt = store.approvedAt != null;
   const temporaryClosed = store.temporaryClosed === true;
-  const storeReason = storeGateReason({ rawStatus, hasApprovedAt, temporaryClosed });
+  // 영업 스케줄: businessHours 미설정(null) = 시간 제한 없음(Q1). closedDates 는 미설정이어도 적용. 우선순위는 storeGateReason 한 곳.
+  const clock = kstClockOf(now);
+  const scheduleClosedNow = !isStoreOpenNow({
+    weeklyHours: parseWeeklyHours(store.businessHours),
+    closedDateKeys: closedDateKeysFromRaw(store.closedDates),
+    nowWeekday: clock.weekday,
+    nowMinuteOfDay: clock.minuteOfDay,
+    nowDateKey: clock.dateKey,
+  });
+  const storeReason = storeGateReason({ rawStatus, hasApprovedAt, temporaryClosed, scheduleClosedNow });
   if (storeReason !== null) {
     return { ok: false, reason: storeReason, menuItemIds: [], detail: emptyDetail({ rawStatus, hasApprovedAt }) };
   }

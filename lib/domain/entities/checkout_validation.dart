@@ -1,4 +1,5 @@
 import 'package:qradar/core/utils/option_availability.dart';
+import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/menu_override_entity.dart';
 
@@ -11,6 +12,8 @@ class StoreSellabilityInput {
     required this.hasApprovedAt,
     this.brandId,
     this.temporaryClosed = false,
+    this.businessHours,
+    this.closedDates = const [],
   });
 
   /// `stores/{id}.status` 가공 전 문자열. 부재/비문자열이면 null.
@@ -24,6 +27,12 @@ class StoreSellabilityInput {
 
   /// `stores/{id}.temporaryClosed == true` 원시 읽기 (부재/비bool → false).
   final bool temporaryClosed;
+
+  /// `stores/{id}.businessHours` (null = 스케줄 미설정 = 시간 제한 없음, Q1).
+  final BusinessHours? businessHours;
+
+  /// `stores/{id}.closedDates` (특정 날짜 휴무). 스케줄이 없어도 오늘이 포함되면 닫힘.
+  final List<DateTime> closedDates;
 }
 
 /// 메뉴 1종의 판정 입력 (spec §7.2 ②). 문서 존재로 역추론한다 — 카트의 scope/brandId 를 믿지 않는다.
@@ -36,7 +45,7 @@ class CheckoutMenuDocs {
 }
 
 /// 매장 단위 위반.
-enum StoreViolation { notSellable, temporarilyClosed, notFound }
+enum StoreViolation { notSellable, temporarilyClosed, closedSchedule, notFound }
 
 /// 메뉴 위반 종류. `unavailable` = 판매 중단(excluded) 또는 메뉴 부재(notFound) — UI 는 둘을 구분하지 않는다.
 enum MenuViolationKind { soldOut, unavailable }

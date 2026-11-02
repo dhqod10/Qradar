@@ -185,6 +185,15 @@ GateFailureCopy gateFailureCopy(
         secondaryLabel: '다른 매장 둘러보기',
         secondaryAction: PaymentFailureAction.browseStores,
       );
+    case PaymentFailureReason.storeClosedSchedule:
+      return const GateFailureCopy(
+        headline: '지금은 매장 영업시간이 아니에요',
+        body: '영업시간이 아니거나 휴무일이라 주문을 받을 수 없어요. 결제하는 사이 영업이 끝났을 수도 있어요. 영업을 시작한 뒤 다시 결제해 주세요. 카트는 그대로 남아 있어요.',
+        primaryLabel: '카트로 돌아가기',
+        primaryAction: PaymentFailureAction.popToCart,
+        secondaryLabel: '다른 매장 둘러보기',
+        secondaryAction: PaymentFailureAction.browseStores,
+      );
     case PaymentFailureReason.storeNotFound:
       return const GateFailureCopy(
         headline: '매장 정보를 찾을 수 없어요',
