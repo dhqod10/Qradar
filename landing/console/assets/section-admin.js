@@ -10,7 +10,7 @@
    ========================================================================== */
 
 import {
-  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, LIST_LIMIT,
+  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, runBackfillSearchKeywords, LIST_LIMIT,
 } from './console-data.js';
 import {
   esc, safeUrl, fmtDateTime, fmtShortDateTime, fmtClock, shortUid, fmtKrw, fmtRatePct, normalizeStatus, STATUS_LABEL, validateReason, classifyError, writeErrorText,
@@ -231,6 +231,13 @@ const TOOLS = {
     dry: () => runBackfillQoinAccrual(true),
     commit: () => runBackfillQoinAccrual(false),
   },
+  search: {
+    h2: '매장 검색 키워드 백필',
+    desc: '검색에 쓰는 키워드(매장명·브랜드명·카테고리)를 기존 매장에 채워요. 여러 번 실행해도 안전해요(멱등).',
+    confirm: '매장 검색 키워드를 실제로 기록할까요? 멱등이라 다시 눌러도 중복되지 않아요.',
+    dry: () => runBackfillSearchKeywords(true),
+    commit: () => runBackfillSearchKeywords(false),
+  },
 };
 
 const toolPanel = (id) => {
@@ -251,9 +258,11 @@ function viewTools(alive) {
   const v = $('#view');
   v.innerHTML = `${headHtml({ title: '백필 도구', desc: '누락된 데이터를 사후 보정하는 운영 도구예요. 항상 미리보기로 대상을 확인한 뒤 실행하세요.', refresh: false })}
     ${toolPanel('geo')}
-    ${toolPanel('qoin')}`;
+    ${toolPanel('qoin')}
+    ${toolPanel('search')}`;
   wireTool('geo', alive);
   wireTool('qoin', alive);
+  wireTool('search', alive);
 }
 
 function wireTool(id, alive) {

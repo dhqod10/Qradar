@@ -354,6 +354,13 @@ export async function runBackfillQoinAccrual(dryRun, source = 'issues') {
   return res?.data ?? null;
 }
 
+/** 매장 검색 키워드(searchKeywords) 백필 — search_keyword_enhancement. */
+export async function runBackfillSearchKeywords(dryRun) {
+  const call = httpsCallable(functions, 'backfillStoreSearchKeywords', { timeout: BACKFILL_TIMEOUT_MS });
+  const res = await withTimeout(call({ dryRun: dryRun === true ? true : false }), BACKFILL_TIMEOUT_MS + 5000);
+  return res?.data ?? null;
+}
+
 /* ============================================================================
    공통 헬퍼 (역할별 콘솔)
    ========================================================================== */
