@@ -214,6 +214,13 @@ class QoinPolicyPlate extends StatelessWidget {
   Widget build(BuildContext context) {
     final paused = _paused;
 
+    // Qoin 사용(spend) 활성 여부 — 켜지면 "사용 가능", 꺼지면 "준비 중". (spendPolicy.enabled = 전역 enabled && spendEnabled && 정책 유효)
+    final spendEnabled = config?.spendPolicy.enabled ?? false;
+    final spendText =
+        spendEnabled ? '결제할 때 Qoin 을 사용할 수 있어요' : 'Qoin 사용은 준비 중이에요';
+    final spendIcon =
+        spendEnabled ? Icons.payments_outlined : Icons.info_outline_rounded;
+
     final IconData icon;
     final String title;
     final String sub;
@@ -281,20 +288,23 @@ class QoinPolicyPlate extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Semantics(
-            label: 'Qoin 사용은 준비 중이에요',
+            label: spendText,
             excludeSemantics: true,
-            child: const Row(
+            child: Row(
               children: [
                 Icon(
-                  Icons.info_outline_rounded,
+                  spendIcon,
                   size: 16,
                   color: AppColors.textMuted,
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Qoin 사용은 준비 중이에요',
-                    style: TextStyle(fontSize: 13, color: AppColors.textBody),
+                    spendText,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textBody,
+                    ),
                   ),
                 ),
               ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/utils/qoin_rate_resolver.dart';
+import 'package:qradar/core/utils/qoin_spend_calculator.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/qoin_rate_scope.dart';
 import 'package:qradar/presentation/common/widgets/qoin/qoin_rate_info_row.dart';
@@ -225,6 +226,38 @@ void main() {
         ),
       );
       expect(find.text('지금은 Qoin 적립이 잠시 중단되어 있어요'), findsOneWidget);
+    });
+
+    testWidgets('사용 꺼짐(기본 정책): "Qoin 사용은 준비 중이에요"', (t) async {
+      await t.pumpWidget(
+        host(
+          const QoinPolicyPlate(
+            config: QoinConfigEntity(accrualRate: 0.03, enabled: true),
+          ),
+        ),
+      );
+      expect(find.text('Qoin 사용은 준비 중이에요'), findsOneWidget);
+      expect(find.text('결제할 때 Qoin 을 사용할 수 있어요'), findsNothing);
+    });
+
+    testWidgets('사용 켜짐: "결제할 때 Qoin 을 사용할 수 있어요" (준비 중 문구 제거)', (t) async {
+      await t.pumpWidget(
+        host(
+          const QoinPolicyPlate(
+            config: QoinConfigEntity(
+              accrualRate: 0.03,
+              enabled: true,
+              spendPolicy: QoinSpendPolicy(
+                enabled: true,
+                minUnit: 1,
+                minCashFloor: 300,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('결제할 때 Qoin 을 사용할 수 있어요'), findsOneWidget);
+      expect(find.text('Qoin 사용은 준비 중이에요'), findsNothing);
     });
   });
 }
