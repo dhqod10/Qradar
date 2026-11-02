@@ -899,3 +899,8 @@ Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order
 
 ### 🤔 배달 기능 (검토중 — 확정 전)
 현재 픽업 전용. 배달 도입 여부/범위 **미결정**. 범위가 크다(배달비 정책·배달원/대행 연동·배송지 주소·거리 계산·배달 상태 추적·환불 영향 등). **할지/어떻게 할지 결정 후** D 로 편입.
+
+## Qoin 사용정책 admin 화면 (qoin_spend 후속 H-D, 2026-11-02)
+
+### ⬜ `setQoinSpendPolicy` 관리자 UI + 이력 표시
+현재 Qoin 사용정책(`spendEnabled`/`minSpendUnit`/`minCashFloor`) 변경 수단이 **admin 화면 없이 callable `setQoinSpendPolicy` 또는 Console 직접편집**뿐이다(운영 불편 + Console 편집은 `source:'direct'` 이력만). 적립률 계층화의 Qoin admin 허브에 **사용정책 1페이지 추가**: 값 편집(검증 포함 — minCashFloor 없이 spendEnabled:true 거부) + `config/qoin/qoinRateHistory`의 사용정책 이력(`field` = spendEnabled/minSpendUnit/minCashFloor) 표시. 앱 모델이 신규 3종 `field`를 걸러 admin 이력 화면에 안 보이는 것도 함께 해소. 사용자 확인됨(2026-11-02).
