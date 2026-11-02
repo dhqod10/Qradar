@@ -1,9 +1,37 @@
 # Qoin 적립률 계층화 기능 명세
 
 - 작성: 2026-10-22 (architect)
+- **정합 재확인: 2026-11-02 (architect)** — `qoin_spend` 랜딩(커밋 `70e3356`) 후 공유 인프라 충돌·중복 점검. 결과·상세는 **§22**. §0 에 사용자 결정 대기항목을 모았다.
 - 선행: `docs/tasks/qoin/` (1차 — 설계·구현·라이브 검증 완료, 실결제 0회)
+- 병행 랜딩: `docs/tasks/qoin_spend/` (Qoin 사용 — 커밋 `0c96b3a`·`70e3356`, 이 계층화의 CF·이력·Rules 패턴을 **재사용**해 올라탔다. §22)
 - 요구사항 출처: `docs/backlog.md` 의 `qoin_accrual_rate_hierarchy` 절 **H1~H7 (사용자 확정, 재논의 대상 아님)**
 - 감사 추적 기준: `docs/processes/audit_trail.md` §4 (6개 체크리스트 — §13 에서 전건 통과)
+
+---
+
+## 0. 사용자 확인이 필요한 결정사항 (먼저 읽을 것)
+
+> 설계 본체는 §1~§21 에서 H1~H7 / Q1~Q3 / N1~N8 / S1~S6 을 **전건 확정**했다. 아래는 그중 **아직 열린 1건**과, 설계자가 닫았지만 **되돌림 비용이 있어 지금이 가장 싼 3건**, 그리고 2026-11-02 `qoin_spend` 정합 점검의 **결정 불요** 결론만 모은 것이다. 각 항목의 근거는 괄호 안 절을 본다.
+
+### §0.1 지금 결정이 필요한 것 — **1건**
+
+| # | 질문 | 권고안 | 대안 | 근거 |
+|---|---|---|---|---|
+| **D-A** | **결제 시점 매장 `status` 게이트**(미승인·재제출 중 매장이 callable 직접 호출로 결제·적립되는 구멍)를 이 계층화 배포 창에 넣을지 | **별도 task 로 분리** (`brand_authorization_hardening/spec.md` §9 Q-S1). 1차 결제부터 있던 Qoin 무관 구멍이고, 결제 거부는 "돈이 멈추는 방향" 이라 매장 `status` 한 건이라도 틀어지면 정상 결제가 막힌다. 계층화 창(Rules·CF·앱·마이그레이션)에 결제 경로를 섞으면 실패 시 원인 분리가 어렵다 | ⓐ 이번 배포에 포함(단일 창) ⓑ `rejected` 만 차단하는 축소판만 포함 | §21.5 · §21.10 · `brand_authorization_hardening/spec.md` §9 |
+
+### §0.2 설계자 확정 — 되돌리려면 비용이 드는 3건 (다르게 원하면 지금이 가장 싸다)
+
+| # | 확정 내용(=권고 유지) | 다르게 하려면(대안의 대가) | 근거 |
+|---|---|---|---|
+| **D-B** | **매장 적립 스위치를 다시 켜면 상위(브랜드) 요율로 적립** — 끄기 전 숫자를 보존하지 않는다 | 스위치에 "끄기 전 숫자" 를 딸려 저장 → 필드 2개의 정합성 유지 비용이 되돌아온다 | §20.6.1 · §20.13-1 |
+| **D-C** | **브랜드 단계에도 스위치를 둔다** (상위가 하위를 이긴다 — N4/A안) | 빼면 브랜드 단위 적립 중단(R05)이 사라지고, "일부만 멈추기" 운영 지침(§20.3.1)도 흔들린다 | §20.3.1 · §20.13-2 |
+| **D-D** | **0 을 적립률 입력값으로 완전 금지** (0% 는 스위치로 대체 — Q1) | 0 저장 허용 시 "적립 안 함" 출처가 2개가 되어 Q1 이 고친 문제가 부분 재발 | §20.2.1 · §20.13-3 |
+
+### §0.3 `qoin_spend` 정합 — **결정 불요 (확인 결과)**
+
+2026-11-02 점검 결론: `qoin_spend` 는 이 계층화가 만든 공유 인프라(① `config/qoin/qoinRateHistory` 이력 컬렉션 ② `onQoinConfigWritten` 트리거 ③ `config/{docId}` Rules 블록 ④ `setQoinAccrualRate` 의 "값+이력 동일 트랜잭션" CF 패턴)를 **그대로 재사용**해 올라탔다. **충돌·중복·회귀 없음.** 다만 이 spec 본문(§5.2·§7.4·§8·§9)이 `qoin_spend` 랜딩 **전** 기준이라 몇몇 필드 enum·필드 수 서술이 **낡았다** — 교정 주석을 **§22** 에 모았다(코드는 이미 정합, 문서만 갱신). 사용자 결정 불요.
+
+---
 
 ## 개요
 
@@ -2503,3 +2531,84 @@ UI 는 브랜드 쓰기를 항상 일괄 CF 로 보내므로 admin 직접 호출
 **1건.** `brand_authorization_hardening/spec.md` §9 의 **Q-S1** (결제 시점 매장 `status` 게이트를 이번 배포에 넣을지). 설계자 추천은 **별도 task**다. 근거는 §21.5 와 보안 task §9.
 
 그 외는 전건 설계자 확정이다 — S2 의 포인터 수명주기(§21.2)는 운영 판단이 아니라 기술 설계로 닫혔으므로 질문하지 않는다.
+
+---
+
+# 22. `qoin_spend` 정합 재확인 (2026-11-02, architect)
+
+> **이 절이 §1~§21 보다 최신이다.** §5.2·§7.4·§8·§9·§20.5 의 서술과 이 절이 **필드 enum·필드 수·Rules 분기** 에서 충돌하면 **이 절의 "랜딩 현실" 표를 따른다.** §1~§21 의 **설계 의도·근거는 불변**이며, 이 절은 그 의도가 `qoin_spend` 랜딩 후 코드에 어떻게 반영돼 있는지를 실측으로 못박고 낡은 서술만 교정한다.
+>
+> 입력: `qoin_spend` 커밋 `0c96b3a`(feat)·`70e3356`(test), `docs/tasks/qoin_spend/spec.md`. 실측 대상: `functions/src/{onQoinConfigWritten,setQoinSpendPolicy,setQoinAccrualRate,applyBrandQoinRate,setQoinAccrualEnabled}.ts`, `firestore.rules`.
+
+## 22.0 결론 — 충돌·중복·회귀 없음
+
+`qoin_spend` 는 **이 계층화가 먼저 만든 4개 공유 인프라에 올라탔다.** 새 컬렉션·새 트리거·새 Rules 블록을 만들지 않았고, 이 계층화의 패턴을 **그대로 복제**했다. 따라서 두 기능은 같은 표면을 **공동 점유**하며, 이는 의도된 재사용이다(계층화 §20.5.1 의 "컬렉션을 늘리지 않는다" 원칙이 `qoin_spend` 에도 그대로 적용됐다).
+
+| 공유 인프라 | 계층화가 만든 것 | `qoin_spend` 가 한 것 | 판정 |
+|---|---|---|---|
+| ① 이력 컬렉션 `config/qoin/qoinRateHistory` | 전역 적립률·스위치 이력 (§5.2·§20.5) | 같은 컬렉션에 사용정책 3필드 이력을 **같은 스키마**로 기록 (`setQoinSpendPolicy`) | 재사용 ✅ |
+| ② 트리거 `onQoinConfigWritten` | `accrualRate`/`enabled` Console 편집 감시 (§7.4) | `FIELDS` 에 `spendEnabled`/`minSpendUnit`/`minCashFloor` **추가** (2→5필드) | 확장 ✅ |
+| ③ Rules `config/{docId}` 블록 | `accrualRate` create/update/delete 차단 (§8) | `qoinSpendPolicyFields()` 헬퍼로 3필드 동일 차단 | 확장 ✅ |
+| ④ CF 패턴 "값+이력 동일 트랜잭션" | `setQoinAccrualRate` (§7.3) | `setQoinSpendPolicy` 가 **패턴 복제** (주석에 명시) | 재사용 ✅ |
+
+**회귀 0 근거**: `qoin_spend` 는 계층화의 CF 파일(`setQoinAccrualRate`/`applyBrandQoinRate`/`setQoinAccrualEnabled`/`migrateQoinZeroRates`, 커밋 `f089751`)을 **수정하지 않았다**. 적립 경로(`onOrderQoinSettled` 의 earn 분기)와 사용 경로(spend)는 트랜잭션·멱등 ID 가 분리돼 있다(`earn_{orderId}` vs `spend_{orderId}`/`spendRefund_{orderId}` — `qoin_spend/spec.md` §5.5). 계층화의 적립률 해석(§6/§20.3.1)에 `qoin_spend` 가 손대지 않았다.
+
+## 22.1 공유 이력 컬렉션 — `field` enum 이 늘었다 (§5.2 교정)
+
+`config/qoin/qoinRateHistory` 와 `{brands,stores}/{id}/qoinRateHistory` 는 **여러 기능의 설정 변경 이력을 한 컬렉션에서** 받는다. `field` 값으로 구분한다. 랜딩 현실의 전체 enum:
+
+| `field` 값 | 범위 | 쓰는 CF / 트리거 | 출처 |
+|---|---|---|---|
+| `accrualRate` | global·brand·store | `setQoinAccrualRate` · `applyBrandQoinRate` · `onQoinConfigWritten` | 계층화 |
+| `globalEnabled` | global (`config.enabled` 비상 정지) | `setQoinAccrualRate`(enabled 경유) · `onQoinConfigWritten` | 계층화 |
+| `accrualEnabled` | brand·store (적립 스위치) | `setQoinAccrualEnabled` | 계층화 |
+| `spendEnabled` | global | `setQoinSpendPolicy` · `onQoinConfigWritten` | **qoin_spend** |
+| `minSpendUnit` | global | `setQoinSpendPolicy` · `onQoinConfigWritten` | **qoin_spend** |
+| `minCashFloor` | global | `setQoinSpendPolicy` · `onQoinConfigWritten` | **qoin_spend** |
+
+- **§5.2 의 `field: 'accrualRate' | 'enabled'` 는 낡았다.** 실제는 ⓐ `'enabled'` 가 아니라 `'globalEnabled'`(전역 비상 정지) + `'accrualEnabled'`(브랜드·매장 스위치, §20.5.1)로 **분리**됐고, ⓑ 위 3개 `qoin_spend` 값이 **같은 컬렉션에 공존**한다.
+- **공유 스키마는 양 기능이 동일하다**(실측): `scope`/`targetId`/`targetName`/`field`/`before`/`beforeState`('absent'|'value'|'invalid')/`beforeRaw`/`after`/`changedBy`/`changedByRole`/`changedAt`/`reason`/`source`/`op`. `qoin_spend` 의 `setQoinSpendPolicy` 가 이 15필드를 그대로 쓴다 → **admin 이력 화면이 두 기능을 한 목록·한 collection-group 쿼리로** 본다.
+- **영향 없음 확인**: admin 이력 화면이 적립률만 보여주려면 `field in ('accrualRate','globalEnabled','accrualEnabled')` 로 **클라이언트 필터**하면 된다(새 인덱스 불요 — 이미 `changedAt desc` 단일 정렬). collection-group read Rules(`match /{path=**}/qoinRateHistory/{id}: read if isAdmin()`, §8)는 `qoin_spend` 이력에도 그대로 맞다.
+
+## 22.2 `onQoinConfigWritten` — FIELDS 2→5 (§7.4 교정)
+
+랜딩 현실(`functions/src/onQoinConfigWritten.ts`):
+
+- `FIELDS = ['accrualRate','enabled','spendEnabled','minSpendUnit','minCashFloor']` — **5필드.** §7.4 가 적은 "`accrualRate` 또는 `enabled` 만" 은 2필드 시절 서술이다.
+- `enabled` 의 이력 `field` 는 `'globalEnabled'` 로 매핑된다(§22.1).
+- **중복 방지(§7.4 의 핵심 설계)는 유지·강화됐다**: callable 이 방금 남긴 이력과 `(field, after, 이벤트시각 ±2분)` 으로 대조해 skip. `setQoinSpendPolicy` 이력도 `source: 'callable'` 이므로 이 dedup 에 **자동으로 포함**된다 → Console 이 아닌 callable 경로로 사용정책을 바꿔도 이력이 2건 생기지 않는다.
+- **F3 행위자 기록**(§19.3)은 `enabled` 에만 적용(`app_direct` + `enabledChangedBy`). 사용정책 3필드는 callable 전용(직접 쓰기 Rules 차단)이라 Console 편집만 `source: 'direct'`/`changedBy: null` 로 남는다 — 적립률과 동일 처리.
+- 이력 문서 ID 가 `{source}_{eventId}_{field}` 로 고정돼 5필드가 한 이벤트에서 바뀌어도 **필드당 1건**, 이벤트 재전달에도 중복 없음(ALREADY_EXISTS 무시).
+
+## 22.3 Rules `config/{docId}` — 사용정책 3필드도 CF 전담 (§8·§9 교정)
+
+랜딩 현실(`firestore.rules` `match /config/{docId}`):
+
+- `accrualRate` 차단에 더해 **`qoinSpendPolicyFields() = ['spendEnabled','minSpendUnit','minCashFloor']`** 를 create·update 양쪽에서 동일 차단. `delete: if false`.
+- `enabled` 직접 쓰기는 유지하되(비상 정지는 CF 장애 중에도 꺼야 함) **`enabledChangedAt == request.time` + `enabledChangedBy == uid()` 를 강제**(§19.3 F3 의 랜딩형). 이는 §8 표의 "`enabled` 는 admin 허용" 을 **구체화**한 것이지 뒤집은 게 아니다.
+- **§9/§20.5.6 쓰기 경로 전수표에 행을 추가해야 정확하다**(설계 의도 불변, 표만 확장): `config/{docId}` 의 사용정책 3필드 create·update 차단(✅ `qoinSpendPolicyFields()`), `setQoinSpendPolicy` CF(✅ admin 재검증+경계+이력 동일 트랜잭션). 단 이는 **`qoin_spend` 의 보호 대상**이므로 전수 관리 책임은 `qoin_spend/spec.md` §8 에 있다. 계층화의 "보호 대상 2필드(`qoinAccrualRate`+`qoinAccrualEnabled`)" 범위는 **변동 없다.**
+
+## 22.4 이 절이 바꾸지 않는 것 (경계 명시)
+
+- 적립률 **계층 해석**(§6/§20.3.1 진리표), **스위치 2단**(브랜드·매장, N4/A안), **일괄 적용 원자성·포인터**(§19.5/§21.1~§21.2), **원장 `accrualRateSource`**(§5.3) — 전부 불변. `qoin_spend` 는 이 중 어느 것도 읽거나 쓰지 않는다.
+- `qoin_spend` 의 **사용(spend) 로직·환불 복원·금액 게이트**는 이 계층화 범위 밖이다(`qoin_spend/spec.md`). 두 기능의 유일한 접점은 §22.0 의 4개 공유 인프라뿐이다.
+
+## 22.5 작업 분배 — 이 정합 패스의 결론
+
+| 역할 | 판정 | 사유 |
+|---|---|---|
+| **designer** | **호출 불요** | 공유 인프라는 백엔드(이력·트리거·Rules)다. 화면 변경 없음. 계층화 admin 화면(§12)·`qoin_spend` 화면은 각 task 에서 이미 확정 |
+| **developer** | **호출 불요 (코드 변경 0)** | §22.0~§22.3 은 **코드가 이미 정합**임을 실측 확인한 결과다. 충돌·중복이 발견되지 않았으므로 수정할 코드가 없다. 교정은 **이 spec 문서**(§0·§22)에 한정 |
+| **tester** | **선택(권장, 비차단)** | 두 기능이 공유 표면을 **공동 점유**하게 됐으나, 그 결합을 명시적으로 검증한 테스트는 아직 없다. `qoin_spend`(불변식 9/9 PASS)·계층화(test_report) 는 각자 통과했다. 아래 §22.6 결합 케이스를 1회 회귀로 넣으면 "한 기능 변경이 공유 컬렉션/트리거에서 다른 기능을 깨뜨리지 않는다" 를 못박을 수 있다 |
+
+## 22.6 tester 선택 회귀 — 공유 표면 결합 케이스 (권장, 비차단)
+
+| # | 케이스 | 기대 |
+|---|---|---|
+| 1 | `onQoinConfigWritten` 가 한 쓰기에서 `accrualRate` + `spendEnabled` 동시 변경을 받음 | `qoinRateHistory` 에 `field: 'accrualRate'` 1건 + `field: 'spendEnabled'` 1건, **각각 doc ID `{source}_{eventId}_{field}`** |
+| 2 | `setQoinSpendPolicy` callable 직후 같은 값이 `onQoinConfigWritten` 로 재감지 | **dedup 성립** — 중복 이력 0건(`source:'callable'` ±2분 매칭) |
+| 3 | admin 이력 화면 collection-group 쿼리가 적립률·사용정책 이력을 **한 목록**으로 읽음 | Rules `read if isAdmin()` 통과, `field` 클라이언트 필터로 분리 가능, 새 인덱스 미요구 |
+| 4 | Rules 하네스: `config/qoin` update 로 `spendEnabled`/`minSpendUnit`/`minCashFloor` 직접 쓰기 | **전부 거부** (admin 포함). `accrualRate`·`qoinSpendPolicyFields()` 동시 차단 회귀 |
+| 5 | 적립(earn)·사용(spend) 가 같은 주문에서 공존 시 | 멱등 ID 분리(`earn_*` vs `spend_*`)로 상호 간섭 0 — 계층화 적립률 해석은 spend 와 무관 |
+
+> 1순위는 #1·#2(공유 트리거의 필드당 멱등·dedup)와 #4(공유 Rules 블록). #3·#5 는 각 task 테스트가 부분 커버하므로 여력 있을 때.
