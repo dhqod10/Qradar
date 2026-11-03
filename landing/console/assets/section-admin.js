@@ -10,13 +10,13 @@
    ========================================================================== */
 
 import {
-  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, runBackfillSearchKeywords, findUsersByEmail, findUserByUid, setUserSuspension, adminDeleteUser, LIST_LIMIT,
+  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, listQoinHistoryOf, setQoinAccrualRate, setQoinAccrualEnabled, applyBrandQoinRate, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, runBackfillSearchKeywords, findUsersByEmail, findUserByUid, setUserSuspension, adminDeleteUser, LIST_LIMIT,
 } from './console-data.js';
 import {
-  esc, safeUrl, fmtDateTime, fmtShortDateTime, fmtClock, shortUid, fmtKrw, fmtRatePct, normalizeStatus, STATUS_LABEL, validateReason, classifyError, writeErrorText,
+  esc, safeUrl, fmtDateTime, fmtShortDateTime, fmtClock, shortUid, fmtKrw, fmtRatePct, normalizeStatus, STATUS_LABEL, validateReason, classifyError, writeErrorText, RATE_MIN, RATE_MAX, parseRateCell, parseSwitchCell, resolveEffectiveQoinRate, qoinRateText, toDate,
 } from './console-format.js';
 import {
-  S, root, hooks, $, skel, letter, banner, emptyBlock, errorBlock, statusBadge, uidCell, thumb, kv, tableHtml, skelRows, headHtml, detailSkeleton, flashOnce, makeLoader, toast,
+  S, root, hooks, $, skel, letter, banner, openDialog, emptyBlock, errorBlock, statusBadge, uidCell, thumb, kv, tableHtml, skelRows, headHtml, detailSkeleton, flashOnce, makeLoader, toast, field, setFieldError, targetBlock,
 } from './console-ui.js';
 
 export const meta = { role: 'admin', defaultHash: '#/dashboard' };
@@ -226,13 +226,6 @@ const TOOLS = {
     dry: () => runBackfillGeohash(true),
     commit: () => runBackfillGeohash(false),
   },
-  qoin: {
-    h2: 'Qoin 적립 소급',
-    desc: '적립이 누락된 주문(미해결 이슈)에 당시 요율로 Qoin 을 사후 적립해요. 고객 잔액이 실제로 바뀌니 미리보기를 꼭 먼저 확인하세요.',
-    confirm: '미리보기에서 확인한 대상에게 Qoin 을 실제로 적립할까요? 고객 잔액이 바뀌고 되돌릴 수 없어요.',
-    dry: () => runBackfillQoinAccrual(true),
-    commit: () => runBackfillQoinAccrual(false),
-  },
   search: {
     h2: '매장 검색 키워드 백필',
     desc: '검색에 쓰는 키워드(매장명·브랜드명·카테고리)를 기존 매장에 채워요. 여러 번 실행해도 안전해요(멱등).',
@@ -256,14 +249,249 @@ const toolPanel = (id) => {
   </div>`;
 };
 
+/* ── Qoin 적립 소급 — 폼 → 미리보기(dryRun) → 2차 확인 → 실제 실행 (qoin_accrual_backfill_admin_ui) ──
+   쓰기는 전부 callable 이 한다 (UI 는 Firestore 에 직접 쓰지 않는다). 입력은 서버 스키마 1:1. */
+
+const QOIN_SKIP_LABEL = {
+  already_earned: '이미 적립됨', already_applied: '이미 반영됨', no_completedAt: '완료 시각 없음',
+  rate_unrecoverable: '당시 요율 복원 불가', disabled_period: '적립 꺼져 있던 기간', invalid_total: '결제 금액 비정상',
+  store_unresolvable: '매장 확인 불가', order_not_found: '주문 없음', not_completed: '완료되지 않은 주문',
+  no_user: '고객 정보 없음', self_dealing: '자기적립 제외', zero_amount: '적립액 0', failed: '처리 실패',
+};
+const QOIN_OUTCOME_LABEL = { credited: '적립', would_credit: '적립 예정', already_applied: '이미 반영', skipped: '건너뜀', failed: '실패' };
+const QOIN_SOURCES = [
+  ['issues', '누락 이슈 전체'], ['orderIds', '주문 ID 지정'], ['storeRange', '매장 + 기간'], ['range', '기간 전체'],
+];
+const QOIN_MAX_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
+
+function qoinPanelHtml() {
+  const inp = 'class="a-input"';
+  return `<div class="a-section" id="qn-root">
+    <h2 class="a-h2">Qoin 적립 소급</h2>
+    <p class="a-muted" style="margin:-8px 0 16px">적립이 누락된 완료 주문에 당시 요율로 Qoin 을 사후 적립해요. 고객 잔액이 실제로 바뀌니 미리보기를 꼭 먼저 확인하세요. 이미 적립된 주문은 건너뛰어요(멱등).</p>
+    <div class="a-field"><label class="a-label" for="qn-source">대상</label>
+      <select id="qn-source" ${inp}>${QOIN_SOURCES.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select></div>
+    <div id="qn-g-orderIds" hidden><div class="a-field"><label class="a-label" for="qn-orderIds">주문 ID 목록 (줄바꿈 또는 쉼표 구분, 최대 500개)</label>
+      <textarea class="a-textarea" id="qn-orderIds" rows="4"></textarea></div></div>
+    <div id="qn-g-storeId" hidden><div class="a-field"><label class="a-label" for="qn-storeId">매장 ID</label>
+      <input ${inp} id="qn-storeId" type="text" autocomplete="off"></div></div>
+    <div id="qn-g-range" hidden style="display:none;gap:12px;flex-wrap:wrap">
+      <div class="a-field"><label class="a-label" for="qn-from">시작 일시</label><input ${inp} id="qn-from" type="datetime-local"></div>
+      <div class="a-field"><label class="a-label" for="qn-to">종료 일시 (시작 후 31일 이내)</label><input ${inp} id="qn-to" type="datetime-local"></div>
+    </div>
+    <div class="a-field"><label class="a-label" for="qn-limit">건수 상한 (1~500)</label>
+      <input ${inp} id="qn-limit" type="number" min="1" max="500" step="1" value="200"></div>
+    <div class="a-field"><label style="display:flex;gap:8px;align-items:center"><input id="qn-cdp" type="checkbox"> 적립이 꺼져 있던 기간의 주문도 소급</label></div>
+    <details id="qn-adv" style="margin:8px 0 12px"><summary class="a-muted" style="cursor:pointer">고급: 강제 요율</summary>
+      <div class="a-field" style="margin-top:8px"><label class="a-label" for="qn-rate">강제 요율 % (0.1~20, 0.1% 단위)</label>
+        <input ${inp} id="qn-rate" type="text" inputmode="decimal" autocomplete="off" placeholder="비워두면 당시 요율로 복원"></div>
+      <div id="qn-rate-warn"></div></details>
+    <div class="a-field"><label class="a-label" for="qn-reason">사유 (실제 실행 시 필수, 200자 이내)</label>
+      <input ${inp} id="qn-reason" type="text" maxlength="200" autocomplete="off"></div>
+    <div id="qn-err" class="a-field-err" hidden></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="a-btn" id="qn-dry">미리보기</button>
+      <button type="button" class="a-btn primary" id="qn-commit" disabled>실제 실행</button>
+    </div>
+    <div id="qn-msg" style="margin-top:12px"></div>
+    <div id="qn-sum" style="margin-top:12px"></div>
+    <details id="qn-rawwrap" style="display:none;margin-top:12px"><summary class="a-muted" style="cursor:pointer">전체 응답 JSON</summary>
+      <pre id="qn-out" style="white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.55;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></pre></details>
+  </div>`;
+}
+
+function wireQoin(alive) {
+  const el = (id) => $(`#qn-${id}`);
+  const dryBtn = el('dry'); const commitBtn = el('commit');
+  const msg = el('msg'); const sum = el('sum'); const errBox = el('err');
+  let previewSig = null;   // 미리보기에 성공한 입력 서명 (reason 제외 — reason 은 실행 시점에 받는다)
+  let previewEligible = 0;
+  let busy = false;
+
+  /** 폼 → { params, error }. params 는 서버 스키마 키만. reason 은 별도(선택). */
+  const readForm = () => {
+    const source = el('source').value;
+    const p = { source };
+    const lim = el('limit').value.trim();
+    const limN = Number(lim);
+    if (lim === '' || !Number.isInteger(limN) || limN < 1 || limN > 500) return { error: '건수 상한은 1~500 사이 정수여야 해요.' };
+    p.limit = limN;
+    if (source === 'orderIds') {
+      const ids = [...new Set(el('orderIds').value.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean))];
+      if (ids.length === 0) return { error: '주문 ID 를 한 개 이상 입력하세요.' };
+      if (ids.length > 500) return { error: '주문 ID 는 최대 500개까지예요.' };
+      if (ids.some((x) => x.includes('/'))) return { error: '주문 ID 에 "/" 를 넣을 수 없어요.' };
+      p.orderIds = ids;
+    }
+    if (source === 'storeRange') {
+      const sid = el('storeId').value.trim();
+      if (!sid || sid.includes('/')) return { error: '매장 ID 를 입력하세요 ("/" 불가).' };
+      p.storeId = sid;
+    }
+    if (source === 'storeRange' || source === 'range') {
+      const f = Date.parse(el('from').value); const t = Date.parse(el('to').value);
+      if (!Number.isFinite(f) || !Number.isFinite(t)) return { error: '시작/종료 일시를 모두 입력하세요.' };
+      if (t <= f) return { error: '종료 일시는 시작 일시 이후여야 해요.' };
+      if (t - f > QOIN_MAX_RANGE_MS) return { error: '기간은 31일을 넘을 수 없어요.' };
+      p.from = f; p.to = t;
+    }
+    if (el('cdp').checked) p.creditDisabledPeriod = true;
+    const rateRaw = el('rate').value.trim().replace(/%$/, '').trim();
+    if (rateRaw !== '') {
+      const pct = Number(rateRaw);
+      const tenths = pct * 10;
+      if (!Number.isFinite(pct) || Math.abs(tenths - Math.round(tenths)) > 1e-6 || Math.round(tenths) < 1 || Math.round(tenths) > 200) {
+        return { error: '강제 요율은 0.1%~20% 사이, 0.1% 단위여야 해요.' };
+      }
+      p.overrideRate = Math.round(tenths) / 1000;
+    }
+    return { params: p };
+  };
+
+  const reasonVal = () => el('reason').value.trim();
+  const sigNow = () => { const r = readForm(); return r.params ? JSON.stringify(r.params) : null; };
+
+  const refresh = () => {
+    const showSrc = el('source').value;
+    el('g-orderIds').hidden = showSrc !== 'orderIds';
+    el('g-storeId').hidden = showSrc !== 'storeRange';
+    el('g-range').style.display = (showSrc === 'storeRange' || showSrc === 'range') ? 'flex' : 'none';
+    el('rate-warn').innerHTML = el('rate').value.trim() === '' ? ''
+      : banner('warn', '주의', '강제 요율은 "당시 요율"이 아니라 입력한 값으로 적립되고, 원장에 강제 지정(admin_override)으로 영구 기록돼요.');
+    const r = readForm();
+    errBox.hidden = !r.error || previewSig === null && !dirtyShown; errBox.textContent = r.error || '';
+    const same = previewSig !== null && r.params && JSON.stringify(r.params) === previewSig;
+    if (previewSig !== null && !same && !busy) {
+      msg.innerHTML = banner('warn', '', '입력이 바뀌었어요. 다시 미리보기 하세요.');
+    }
+    const reasonOk = reasonVal().length > 0;
+    commitBtn.disabled = busy || !(same && previewEligible > 0 && reasonOk);
+    commitBtn.title = same && previewEligible > 0 && !reasonOk ? '사유를 입력하면 실행할 수 있어요.' : '';
+  };
+  let dirtyShown = false;
+
+  const setBusy = (btn, on, idle) => {
+    busy = on;
+    btn.innerHTML = on ? '<span class="a-spin"></span> 실행 중…' : idle;
+    dryBtn.disabled = on;
+    if (on) commitBtn.disabled = true;
+  };
+
+  const skipRows = (counts) => {
+    const ent = Object.entries(counts || {});
+    if (ent.length === 0) return '<span class="a-muted">없음</span>';
+    return ent.map(([k, n]) => `${esc(QOIN_SKIP_LABEL[k] || k)} ${n}건`).join(' · ');
+  };
+  const sampleTable = (results) => {
+    const rows = (results || []).slice(0, 50);
+    if (rows.length === 0) return '';
+    const body = rows.map((r) => `<tr><td>${esc(r.orderId)}</td><td>${esc(QOIN_OUTCOME_LABEL[r.outcome] || r.outcome || '-')}${r.skipReason ? ` (${esc(QOIN_SKIP_LABEL[r.skipReason] || r.skipReason)})` : ''}</td><td>${r.rate != null ? esc(fmtRatePct(r.rate)) : '-'}</td><td>${r.amount != null ? esc(`${r.amount} Q`) : '-'}</td><td>${esc(r.reconstruction?.method ?? '-')}</td></tr>`);
+    return `<div class="a-muted" style="margin:12px 0 6px">샘플 ${rows.length}${(results || []).length > rows.length ? ` / ${(results || []).length}` : ''}건</div>${tableHtml(['주문 ID', '결과', '요율', '금액', '요율 복원'], body)}`;
+  };
+  const renderSummary = (d, isDry) => {
+    const n = isDry ? (d.wouldCredit ?? d.eligible ?? 0) : (d.credited ?? d.eligible ?? 0);
+    let html = '';
+    if (isDry && n === 0) html += emptyBlock('소급할 대상이 없어요', '조건에 맞는 적립 대상이 없습니다.');
+    html += kv([
+      [isDry ? '소급 대상' : '적립 완료', `${n}건`],
+      [isDry ? '소급 예정 Qoin 합계' : '적립된 Qoin 합계', `${d.totalQoin ?? 0} Q`],
+      ['스캔', `${d.scanned ?? 0}건`],
+      ['건너뜀 사유', skipRows(d.skippedCounts), true],
+    ]);
+    if (d.truncated) html += banner('warn', '일부만 조회됨', '대상이 한 번에 다 담기지 않았어요 — 범위를 좁히거나 실행 후 다시 미리보기 하세요.');
+    html += sampleTable(d.results);
+    sum.innerHTML = html;
+    el('out').textContent = JSON.stringify(d, null, 2);
+    el('rawwrap').style.display = 'block';
+  };
+
+  const showErr = (e, target) => {
+    const t = writeErrorText(e).text;
+    const isTimeout = /timeout|deadline|시간/i.test(`${e?.code || ''} ${e?.message || ''} ${t}`);
+    const hint = isTimeout ? ' 반영 여부를 확인하지 못했어요 — 같은 입력으로 다시 미리보기 하면 이미 적립된 건은 건너뛰어요(멱등).' : '';
+    return banner('error', '실패', `${t}${hint}`);
+  };
+
+  const doPreview = async () => {
+    const r = readForm();
+    dirtyShown = true;
+    if (r.error) { refresh(); return; }
+    const params = { ...r.params, dryRun: true };
+    if (reasonVal()) params.reason = reasonVal();
+    msg.innerHTML = ''; sum.innerHTML = ''; previewSig = null; previewEligible = 0;
+    setBusy(dryBtn, true, '미리보기');
+    try {
+      const d = await runBackfillQoinAccrual(params);
+      if (!alive()) return;
+      previewSig = JSON.stringify(r.params);
+      previewEligible = d?.wouldCredit ?? d?.eligible ?? 0;
+      renderSummary(d || {}, true);
+      msg.innerHTML = banner('', '미리보기', previewEligible > 0
+        ? '아래가 실행 시 반영될 내용이에요. 사유를 입력하고 "실제 실행"을 눌러주세요.' : '실행할 대상이 없어요.');
+    } catch (e) {
+      if (!alive()) return;
+      msg.innerHTML = showErr(e);
+    } finally {
+      if (alive()) { setBusy(dryBtn, false, '미리보기'); refresh(); }
+    }
+  };
+
+  const doCommit = () => {
+    const r = readForm();
+    const reason = reasonVal();
+    if (!r.params || JSON.stringify(r.params) !== previewSig || !reason || previewEligible <= 0) { refresh(); return; }
+    const p = r.params;
+    const srcLabel = QOIN_SOURCES.find(([v]) => v === p.source)?.[1] || p.source;
+    const fmtT = (ms) => fmtDateTime(new Date(ms));
+    const rows = [
+      ['대상', srcLabel],
+      ...(p.orderIds ? [['주문', `${p.orderIds.length}건`]] : []),
+      ...(p.storeId ? [['매장 ID', p.storeId]] : []),
+      ...(p.from ? [['기간', `${fmtT(p.from)} ~ ${fmtT(p.to)}`]] : []),
+      ['건수 상한', `${p.limit}건`],
+      ['꺼진 기간 포함', p.creditDisabledPeriod ? '예' : '아니오'],
+      ['강제 요율', p.overrideRate != null ? `${(p.overrideRate * 100).toFixed(1)}%` : '없음 (당시 요율 복원)'],
+      ['미리보기 대상', `${previewEligible}건`],
+      ['사유', reason],
+    ];
+    const params = { ...p, dryRun: false, reason };
+    openDialog({
+      title: 'Qoin 을 실제로 적립할까요?',
+      bodyHtml: `${banner('warn', '되돌릴 수 없어요', '고객 잔액이 실제로 바뀌어요. 아래 범위가 맞는지 확인하세요.')}${kv(rows)}`,
+      confirmLabel: '실제 적립', confirmClass: 'primary', busyLabel: '적립 중…',
+      onConfirm: async () => {
+        const d = await runBackfillQoinAccrual(params);
+        if (alive()) {
+          previewSig = null; previewEligible = 0;
+          renderSummary(d || {}, false);
+          let m = banner('success', '완료', `${d?.credited ?? 0}건 적립했어요.`);
+          if (d?.historyId) m += banner('', '이력', `실행 이력이 기록됐어요 (ID: ${d.historyId}).`);
+          if (d?.historyWarning) m += banner('warn', '이력 기록 실패', '적립은 완료됐지만 실행 이력 기록에 실패했어요 — 운영 기록을 수동으로 확인하세요.');
+          msg.innerHTML = m;
+          toast('소급 적립을 실행했어요.');
+          refresh();
+        }
+      },
+      onError: (e, api) => { api.showMsg(showErr(e)); },
+    });
+  };
+
+  const root = el('root');
+  root.addEventListener('input', () => { dirtyShown = true; refresh(); });
+  root.addEventListener('change', () => { dirtyShown = true; refresh(); });
+  dryBtn.onclick = doPreview;
+  commitBtn.onclick = doCommit;
+  refresh();
+}
+
 function viewTools(alive) {
   const v = $('#view');
   v.innerHTML = `${headHtml({ title: '백필 도구', desc: '누락된 데이터를 사후 보정하는 운영 도구예요. 항상 미리보기로 대상을 확인한 뒤 실행하세요.', refresh: false })}
     ${toolPanel('geo')}
-    ${toolPanel('qoin')}
+    ${qoinPanelHtml()}
     ${toolPanel('search')}`;
   wireTool('geo', alive);
-  wireTool('qoin', alive);
+  wireQoin(alive);
   wireTool('search', alive);
 }
 
@@ -556,6 +784,7 @@ async function viewBrandDetail(id, alive) {
         <div class="a-card"><h2>브랜드 정보</h2><div style="margin-bottom:16px">${thumb(b.logoUrl, b.name, true)}</div>
           ${kv([['브랜드 이름', b.name], ['소개', b.description], ['제출자 UID', uidCell(b.submittedBy), true], ['제출 시각', fmtDateTime(b.submittedAt)], ['이전 처리 시각', b.approvedAt ? fmtDateTime(b.approvedAt) : '-']])}</div>
         <div class="a-card" id="biz"><h2>사업자 정보</h2>${kv([['', skel('70%', 14), true], ['', skel('50%', 14), true], ['', skel('60%', 14), true]])}</div>
+        ${st === 'approved' ? '<div id="qoin-policy"></div>' : ''}
         ${st === 'rejected' ? `<div class="a-card"><h2>기존 반려 사유</h2><p style="margin:0;white-space:pre-wrap">${esc(b.rejectedReason || '-')}</p></div>` : ''}
       </div><aside class="a-panel a-card" id="panel"></aside></div>`;
 
@@ -601,6 +830,7 @@ async function viewBrandDetail(id, alive) {
       panel();
     };
     loadBiz();
+    if (st === 'approved') mountQoinPolicy($('#qoin-policy'), { scope: 'brand', id, alive });
   }
   load();
 }
@@ -681,6 +911,7 @@ async function viewStoreDetail(id, alive) {
           ${kv([['매장 이름', s.name], ['주소', s.address], ['사업자등록번호', s.businessRegistrationNumber],
             ['카테고리', Array.isArray(s.menuCategories) ? s.menuCategories.join(', ') : ''], ['전화번호', s.phone], ['영업시간', hours]])}</div>
         <div class="a-card" id="blink"><h2>연결 브랜드</h2></div>
+        ${st === 'approved' ? '<div id="qoin-policy"></div>' : ''}
         <div class="a-card"><h2>제출 정보</h2>
           ${kv([['점주 UID', uidCell(s.ownerId), true], ['제출자 UID', uidCell(s.submittedBy), true], ['제출 시각', fmtDateTime(s.submittedAt)],
             ['처리 시각', st === 'rejected' ? (s.rejectedAt ? `${fmtDateTime(s.rejectedAt)} (반려)` : '-') : fmtDateTime(s.approvedAt)], ['처리자 UID', uidCell(s.approvedBy), true]])}</div>
@@ -735,6 +966,7 @@ async function viewStoreDetail(id, alive) {
       blink(); panel();
     }
     blink(); panel(); resolveLink();
+    if (st === 'approved') mountQoinPolicy($('#qoin-policy'), { scope: 'store', id, alive });
   }
   load();
 }
@@ -851,7 +1083,7 @@ function viewStoreList(alive) {
         : st === 'rejected' ? `반려 ${shortUid(s.approvedBy)} · ${fmtShortDateTime(s.rejectedAt)}` : '-';
       return `<tr><td><strong>${esc(s.name || '(이름 없음)')}</strong></td><td class="a-ell" title="${esc(s.address)}">${esc(s.address || '-')}</td>
         <td>${brandLinkCell(brandLinkOf(s.brandId, data.map))}</td><td>${statusBadge(st)}</td><td class="a-num">${esc(meta)}</td>
-        <td>${st === 'pending' ? `<a href="#/stores/pending/${encodeURIComponent(s.id)}">승인 상세 →</a>` : ''}</td></tr>`;
+        <td>${st === 'pending' ? `<a href="#/stores/pending/${encodeURIComponent(s.id)}">승인 상세 →</a>` : st === 'approved' ? `<a href="#/stores/pending/${encodeURIComponent(s.id)}">Qoin 설정 →</a>` : ''}</td></tr>`;
     })) + `<div class="a-pager"><span>총 ${all.length}건${hit.length !== all.length ? ` (검색 결과 ${hit.length}건)` : ''}${data.truncated ? ' · 일부만 불러왔어요' : ''}</span>
       <span style="margin-left:auto;display:flex;gap:12px;align-items:center"><button type="button" class="a-btn sm" id="pg-prev" ${f.page === 0 ? 'disabled' : ''}>이전</button>
       <span class="a-num">${f.page + 1} / ${pages}</span><button type="button" class="a-btn sm" id="pg-next" ${f.page >= pages - 1 ? 'disabled' : ''}>다음</button></span></div>`;
@@ -872,10 +1104,337 @@ function viewStoreList(alive) {
 }
 
 /* ============================================================================
-   A9 Qoin 현황 (읽기 전용 — 입력·토글·변경 버튼 없음)
+   Qoin 적립 정책 편집 (qoin_policy_admin_ui) — 전역 / 브랜드 / 매장
+   - 모든 쓰기는 callable(setQoinAccrualRate · setQoinAccrualEnabled · applyBrandQoinRate) 경유. Firestore 직접 쓰기 없음.
+     값과 qoinRateHistory 는 서버가 같은 트랜잭션에 쓴다.
+   - 입력은 % (0.1% 격자) → 소수로 변환. 서버가 같은 경계로 재검증한다.
+   - spend(사용) 정책·비상 정지(config/qoin.enabled) 조작은 이 화면에 없다 (게이트 OFF / D0-2 A).
    ========================================================================== */
 
-const HIST_FIELD = { accrualRate: '적립률', globalEnabled: '비상 정지' };
+const QP_BULK_STALE_MS = 5 * 60 * 1000;
+const QP_REASON_MAX = 200;
+const hasOwn = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+
+/** 사용자가 입력한 % 문자열 → 소수 요율. @returns {{ok:true, rate:number}|{ok:false, msg:string}} */
+function parsePctInput(raw) {
+  const s = String(raw ?? '').trim().replace(/%$/, '').trim();
+  if (s === '' || !/^\d+(\.\d+)?$/.test(s)) return { ok: false, msg: '숫자로 입력해주세요 (예: 3 또는 2.5)' };
+  const pct = Number(s);
+  const tenths = pct * 10;
+  if (Math.abs(tenths - Math.round(tenths)) > 1e-9) return { ok: false, msg: '0.1% 단위로 입력해주세요' };
+  const rate = Math.round(tenths) / 1000;
+  if (rate < RATE_MIN || rate > RATE_MAX) return { ok: false, msg: `${fmtRatePct(RATE_MIN)} ~ ${fmtRatePct(RATE_MAX)} 사이여야 해요 (0% 는 적립 스위치로 꺼주세요)` };
+  return { ok: true, rate };
+}
+
+/** 서버 오류 문구 — 영어 서버 메시지를 그대로 노출하지 않는다. */
+function qpErrText(e) {
+  const t = writeErrorText(e);
+  const k = classifyError(e);
+  if ((k.kind === 'precondition' || k.kind === 'invalid') && !/[가-힣]/.test(k.message || '')) {
+    return '요청을 처리할 수 없어요. 새로고침 후 상태를 확인하고 다시 시도해주세요.';
+  }
+  return t.text;
+}
+
+const qpReasonField = () => field({ id: 'qp-reason', label: '변경 사유', required: true, multiline: true, rows: 3, max: QP_REASON_MAX, help: '이력에 남아요 (최대 200자).' });
+const qpRateText = (cell, fallback = '상위 설정 따름') => (cell.kind === 'valid' ? fmtRatePct(cell.value) : cell.kind === 'invalid' ? '확인 필요 (값 이상)' : fallback);
+
+/**
+ * 적립률 변경 모달 (1단계 입력 → 2단계 확인). o: { scope, targetId, title, targetName, current:{kind,value}, absentText, allowClear, trigger, onDone }
+ */
+function openQoinRateDialog(o) {
+  const ask = { clear: false, pct: '', reason: '' };
+  let step = 1; let parsed = null;
+  const curText = qpRateText(o.current, o.absentText);
+  const form = () => `${targetBlock(o.targetName, esc(o.title))}
+    <p class="a-ask-sub" style="margin:0 0 12px">현재: <b>${esc(curText)}</b></p>
+    ${field({ id: 'qp-pct', label: '새 적립률 (%)', required: true, ph: '예: 3.0', attrs: 'inputmode="decimal" autocomplete="off"', help: `${fmtRatePct(RATE_MIN)} ~ ${fmtRatePct(RATE_MAX)}, 0.1% 단위` })}
+    ${o.allowClear ? `<label class="a-sw-row" style="display:flex;gap:8px;align-items:center;margin:0 0 12px"><input type="checkbox" id="qp-clear"> <span>개별 값 삭제 — 상위 설정을 따라요</span></label>` : ''}
+    ${qpReasonField()}`;
+  const restore = (api) => {
+    api.setBody(form());
+    const pct = api.q('#qp-pct'); const cl = api.q('#qp-clear'); const rs = api.q('#qp-reason');
+    pct.value = ask.pct; rs.value = ask.reason;
+    const sync = () => { if (cl) { pct.disabled = cl.checked; } };
+    if (cl) { cl.checked = ask.clear; cl.onchange = sync; sync(); }
+  };
+  const toConfirm = (api) => {
+    const cl = api.q('#qp-clear'); const clear = !!cl && cl.checked;
+    const pctRaw = api.q('#qp-pct').value; const reasonRaw = api.q('#qp-reason').value;
+    ask.clear = clear; ask.pct = pctRaw; ask.reason = reasonRaw;
+    let bad = false;
+    if (!clear) {
+      const p = parsePctInput(pctRaw);
+      if (!p.ok) { setFieldError('qp-pct', p.msg); bad = true; } else { setFieldError('qp-pct', ''); parsed = p.rate; }
+    } else { setFieldError('qp-pct', ''); parsed = null; }
+    const r = validateReason(reasonRaw);
+    if (!r.ok) { setFieldError('qp-reason', '변경 사유를 입력해주세요'); bad = true; }
+    else if ([...r.value].length > QP_REASON_MAX) { setFieldError('qp-reason', `${QP_REASON_MAX}자 이내로 입력해주세요`); bad = true; }
+    else setFieldError('qp-reason', '');
+    if (bad) return false;
+    ask.reason = r.value;
+    const after = clear ? o.inheritText || '상위 설정 따름' : fmtRatePct(parsed);
+    api.setBody(`${targetBlock(o.targetName, esc(o.title))}
+      <p class="a-ask">${esc(o.title)}을(를) <b>${esc(curText)}</b> → <b>${esc(after)}</b> (으)로 바꿀까요?</p>
+      ${banner('warn', '확인', '이후 적립부터 새 요율이 적용돼요. 이미 적립된 Qoin 은 바뀌지 않아요.')}
+      <p class="a-cap" style="margin-top:12px">사유: ${esc(r.value)}</p>`);
+    api.showMsg('');
+    api.setLabel('변경 확정');
+    const back = api.addFootButton('qp-back', '이전', () => { step = 1; restore(api); api.setLabel('다음'); back.remove(); });
+    step = 2;
+    return false;
+  };
+  openDialog({
+    title: o.title, confirmLabel: '다음', busyLabel: '변경 중…', trigger: o.trigger, focus: '#qp-pct',
+    bodyHtml: form(),
+    dirty: () => true,
+    onOpen: (api) => restore(api),
+    onConfirm: async (api) => {
+      if (step === 1) return toConfirm(api);
+      const res = await setQoinAccrualRate(o.scope, o.targetId, ask.clear ? { clear: true, reason: ask.reason } : { rate: parsed, reason: ask.reason });
+      toast(res && res.changed === false ? '이미 같은 값이라 변경 없이 끝났어요.' : '적립률을 변경했어요.');
+      if (o.onDone) o.onDone();
+      return undefined;
+    },
+    onError: (e, api) => { api.showMsg(banner('error', '실패', qpErrText(e))); },
+  });
+}
+
+/** 적립 스위치 변경 모달. o: { scope, targetId, targetName, enabledNow:boolean, trigger, onDone } */
+function openQoinSwitchDialog(o) {
+  const next = !o.enabledNow;
+  const body = `${targetBlock(o.targetName, '적립 스위치')}
+    <p class="a-ask">${next ? '적립을 다시 켤까요?' : '적립을 끌까요?'}</p>
+    ${next
+    ? banner('', '안내', '켜면 이후 주문부터 다시 Qoin 이 적립돼요.')
+    : banner('warn', '주의', `이후 주문부터 적립이 멈춰요${o.scope === 'brand' ? ' (산하 모든 매장)' : ''}. 이미 적립된 Qoin 의 회수는 그대로 동작해요.`)}
+    <div style="height:12px"></div>${qpReasonField()}`;
+  openDialog({
+    title: next ? '적립 켜기' : '적립 끄기', confirmLabel: next ? '켜기 확정' : '끄기 확정', confirmClass: next ? 'primary' : 'reject-confirm', busyLabel: '변경 중…',
+    trigger: o.trigger, focus: '#qp-reason', bodyHtml: body, dirty: () => true,
+    onConfirm: async (api) => {
+      const r = validateReason(api.q('#qp-reason').value);
+      if (!r.ok) { setFieldError('qp-reason', '변경 사유를 입력해주세요'); return false; }
+      if ([...r.value].length > QP_REASON_MAX) { setFieldError('qp-reason', `${QP_REASON_MAX}자 이내로 입력해주세요`); return false; }
+      const res = await setQoinAccrualEnabled(o.scope, o.targetId, next, r.value);
+      toast(res && res.changed === false ? '이미 같은 상태라 변경 없이 끝났어요.' : next ? '적립을 켰어요.' : '적립을 껐어요.');
+      if (o.onDone) o.onDone();
+      return undefined;
+    },
+    onError: (e, api) => { api.showMsg(banner('error', '실패', qpErrText(e))); },
+  });
+}
+
+/** 브랜드 일괄 적용 모달 (입력 → 영향 고지/확인). o: { brandId, brand, current, trigger, onDone } */
+function openBrandBulkDialog(o) {
+  const ask = { clear: false, pct: '', mode: 'preserve', reason: '' };
+  let step = 1; let parsed = null;
+  const curText = qpRateText(o.current, '전역 기본값 따름');
+  const brandOff = o.brand.qoinAccrualEnabled === false;
+  const form = () => `${targetBlock(o.brand.name, '브랜드 일괄 적용')}
+    <p class="a-ask-sub" style="margin:0 0 12px">현재 브랜드 적립률: <b>${esc(curText)}</b></p>
+    ${field({ id: 'qp-pct', label: '브랜드 적립률 (%)', required: true, ph: '예: 3.0', attrs: 'inputmode="decimal" autocomplete="off"', help: `${fmtRatePct(RATE_MIN)} ~ ${fmtRatePct(RATE_MAX)}, 0.1% 단위` })}
+    <label class="a-sw-row" style="display:flex;gap:8px;align-items:center;margin:0 0 12px"><input type="checkbox" id="qp-clear"> <span>브랜드 값 삭제 — 전역 기본값을 따라요</span></label>
+    <div class="a-field"><span class="a-label">산하 매장의 개별 적립률</span>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="radio" name="qp-mode" value="preserve"> <span><b>유지</b> — 개별 값이 있는 매장은 그 값을 계속 써요</span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="radio" name="qp-mode" value="overwrite"> <span><b>덮어쓰기</b> — 개별 값을 삭제해 모든 매장이 브랜드 값을 따라요</span></label></div>
+    ${qpReasonField()}`;
+  const restore = (api) => {
+    api.setBody(form());
+    const pct = api.q('#qp-pct'); const cl = api.q('#qp-clear'); const rs = api.q('#qp-reason');
+    pct.value = ask.pct; rs.value = ask.reason; cl.checked = ask.clear;
+    api.el.querySelectorAll('input[name="qp-mode"]').forEach((r) => { r.checked = r.value === ask.mode; });
+    const sync = () => { pct.disabled = cl.checked; };
+    cl.onchange = sync; sync();
+  };
+  const toConfirm = (api) => {
+    const clear = api.q('#qp-clear').checked;
+    ask.clear = clear; ask.pct = api.q('#qp-pct').value; ask.reason = api.q('#qp-reason').value;
+    ask.mode = api.el.querySelector('input[name="qp-mode"]:checked')?.value || 'preserve';
+    let bad = false;
+    if (!clear) {
+      const p = parsePctInput(ask.pct);
+      if (!p.ok) { setFieldError('qp-pct', p.msg); bad = true; } else { setFieldError('qp-pct', ''); parsed = p.rate; }
+    } else { setFieldError('qp-pct', ''); parsed = null; }
+    const r = validateReason(ask.reason);
+    if (!r.ok) { setFieldError('qp-reason', '변경 사유를 입력해주세요'); bad = true; }
+    else if ([...r.value].length > QP_REASON_MAX) { setFieldError('qp-reason', `${QP_REASON_MAX}자 이내로 입력해주세요`); bad = true; }
+    else setFieldError('qp-reason', '');
+    if (bad) return false;
+    ask.reason = r.value;
+    const after = clear ? '전역 기본값 따름' : fmtRatePct(parsed);
+    api.setBody(`${targetBlock(o.brand.name, '브랜드 일괄 적용')}
+      <p class="a-ask">브랜드 적립률을 <b>${esc(curText)}</b> → <b>${esc(after)}</b> (으)로 바꾸고, 산하 매장은 <b>${ask.mode === 'overwrite' ? '개별 값을 삭제' : '개별 값을 유지'}</b>할까요?</p>
+      <div id="qp-impact">${banner('', '영향 범위', '산하 매장 수를 확인하는 중이에요…')}</div>
+      ${ask.mode === 'overwrite' ? banner('warn', '되돌릴 수 없어요', '삭제된 매장별 개별 적립률은 복구되지 않아요 (이력에는 남아요).') : ''}
+      ${brandOff ? banner('warn', '브랜드 적립 중단 중', '이 브랜드의 적립 스위치가 꺼져 있어 산하 전체 적립이 멈춰 있어요. 이 작업은 스위치를 바꾸지 않아요.') : ''}
+      <p class="a-cap" style="margin-top:12px">사유: ${esc(r.value)}</p>`);
+    api.showMsg('');
+    api.setLabel('일괄 적용 확정');
+    const back = api.addFootButton('qp-back', '이전', () => { step = 1; restore(api); api.setLabel('다음'); back.remove(); });
+    step = 2;
+    listAllStores().then(({ rows }) => {
+      const mine = rows.filter((s) => s.brandId === o.brandId);
+      const ind = mine.filter((s) => hasOwn(s, 'qoinAccrualRate')).length;
+      const el = api.q('#qp-impact'); if (!el) return;
+      el.innerHTML = banner('', '영향 범위', `산하 매장 ${mine.length}개 중 개별 적립률이 있는 매장 ${ind}개${ask.mode === 'overwrite' ? ' — 이 값이 삭제돼요' : ' — 그대로 유지돼요'}.`);
+    }).catch(() => { const el = api.q('#qp-impact'); if (el) el.innerHTML = banner('warn', '영향 범위', '산하 매장 수를 확인하지 못했어요. 그래도 적용할 수 있어요.'); });
+    return false;
+  };
+  openDialog({
+    title: '브랜드 적립률 일괄 적용', confirmLabel: '다음', busyLabel: '적용 중… (매장이 많으면 오래 걸려요)', trigger: o.trigger, focus: '#qp-pct', wide: true,
+    bodyHtml: form(), dirty: () => true,
+    onOpen: (api) => restore(api),
+    onConfirm: async (api) => {
+      if (step === 1) return toConfirm(api);
+      try {
+        const res = await applyBrandQoinRate(o.brandId, { ...(ask.clear ? { clear: true } : { rate: parsed }), mode: ask.mode, reason: ask.reason });
+        toast(res?.status === 'partial' ? '일괄 적용이 중간에 멈췄어요. 재개해주세요.'
+          : res && res.changed === false ? '변경 사항이 없어요.' : `일괄 적용을 완료했어요${typeof res?.clearedCount === 'number' && ask.mode === 'overwrite' ? ` (매장 개별 값 ${res.clearedCount}개 삭제)` : ''}.`);
+      } finally { if (o.onDone) o.onDone(); }
+      return undefined;
+    },
+    onError: (e, api) => { api.showMsg(banner('error', '실패', `${qpErrText(e)} 브랜드 화면에서 일괄 적용 상태를 확인해주세요.`)); },
+  });
+}
+
+/** 중단된 일괄 적용 재개 확인. */
+function openBulkResumeDialog(o) {
+  openDialog({
+    title: '일괄 적용 재개', confirmLabel: '재개', busyLabel: '재개 중…', trigger: o.trigger,
+    bodyHtml: `${targetBlock(o.name, '중단된 일괄 적용')}<p class="a-ask">남은 매장의 개별 적립률 삭제를 이어서 진행할까요?</p>
+      ${banner('', '안내', '이미 처리된 매장은 건너뛰어요 (여러 번 눌러도 안전해요).')}`,
+    onConfirm: async () => {
+      try {
+        const res = await applyBrandQoinRate(o.brandId, { mode: 'overwrite', resumeHistoryId: o.historyId, reason: '일괄 적용 재개' });
+        toast(res?.status === 'partial' ? '아직 일부가 남았어요. 다시 재개해주세요.' : '일괄 적용을 마쳤어요.');
+      } finally { if (o.onDone) o.onDone(); }
+      return undefined;
+    },
+    onError: (e, api) => { api.showMsg(banner('error', '실패', qpErrText(e))); },
+  });
+}
+
+const QP_HIST_FIELD = { accrualRate: '적립률', accrualEnabled: '적립 스위치', globalEnabled: '비상 정지' };
+function qpHistVal(field, v) {
+  if (field === 'accrualEnabled') return v === true ? '켜짐' : v === false ? '꺼짐' : '켜짐(기본)';
+  if (field === 'accrualRate') return typeof v === 'number' ? fmtRatePct(v) : '상위 설정 따름';
+  return histVal(field, v);
+}
+function qpHistTable(rows) {
+  if (rows.length === 0) return emptyBlock('변경 이력이 없어요', '');
+  return tableHtml(['변경 시각', '항목', '변경 전 → 후', '처리자', '사유'], rows.map((r) => {
+    const reason = typeof r.reason === 'string' ? r.reason : '';
+    const bulk = r.op === 'bulkApply' ? ` (일괄${r.bulkMode === 'overwrite' ? '·덮어쓰기' : r.bulkMode === 'preserve' ? '·유지' : ''}${typeof r.affected === 'number' ? ` ${r.affected}개` : ''})` : '';
+    return `<tr><td class="a-num">${esc(fmtDateTime(r.changedAt))}</td><td>${esc((QP_HIST_FIELD[r.field] || '(알 수 없는 항목)') + bulk)}</td>
+      <td class="a-num">${esc(qpHistVal(r.field, r.before))} → ${esc(qpHistVal(r.field, r.after))}</td><td>${uidCell(r.changedBy)}</td>
+      <td class="a-ell" title="${esc(reason)}">${esc(reason.length > 200 ? `${reason.slice(0, 200)}…` : reason || '-')}</td></tr>`;
+  }));
+}
+
+/** 일괄 적용 포인터 상태 → 'locked'(진행 중) | 'resume'(중단/방치) | null */
+function bulkPointerState(b) {
+  const st = b?.qoinBulkStatus;
+  if (st === 'partial') return 'resume';
+  if (st !== 'in_progress') return null;
+  const at = toDate(b.qoinBulkAt);
+  if (!at || Date.now() - at.getTime() > QP_BULK_STALE_MS) return 'resume';
+  return 'locked';
+}
+
+/**
+ * 브랜드 / 매장 상세에 붙이는 Qoin 적립 정책 카드. box 안을 스스로 읽고(fresh) 그린다. 쓰기 성공 후 스스로 다시 그린다.
+ * scope: 'brand' | 'store'
+ */
+function mountQoinPolicy(box, { scope, id, alive }) {
+  const isBrand = scope === 'brand';
+  const parentPath = [isBrand ? 'brands' : 'stores', id];
+  async function render() {
+    box.innerHTML = `<div class="a-card" aria-busy="true"><h2>Qoin 적립 설정</h2>${skel('60%', 16)}<div style="height:10px"></div>${skel('40%', 16)}</div>`;
+    let doc; let brand = null; let cfg = null; let hist = null; let histErr = null; let parentFail = false;
+    try {
+      doc = await (isBrand ? getBrand(id) : getStore(id));
+      if (doc && !isBrand && doc.brandId) { try { brand = await getBrand(doc.brandId); } catch (e) { parentFail = true; console.error('[admin] 소속 브랜드 조회 실패', e?.code || e); } }
+      try { cfg = await getQoinConfig(); } catch (e) { console.error('[admin] config/qoin 조회 실패', e?.code || e); }
+      try { hist = await listQoinHistoryOf(parentPath, 20); } catch (e) { histErr = e; console.error('[admin] Qoin 이력 조회 실패', e?.code || e); }
+    } catch (e) {
+      console.error('[admin] Qoin 설정 조회 실패', e?.code || e);
+      if (!alive()) return;
+      box.innerHTML = `<div class="a-card"><h2>Qoin 적립 설정</h2>${errorBlock(e)}</div>`;
+      $('[data-retry]', box).onclick = render; return;
+    }
+    if (!alive()) return;
+    if (!doc) { box.innerHTML = ''; return; }
+
+    const rateCell = parseRateCell(doc.qoinAccrualRate, hasOwn(doc, 'qoinAccrualRate'));
+    const swState = parseSwitchCell(doc.qoinAccrualEnabled, hasOwn(doc, 'qoinAccrualEnabled'));
+    const globalCell = cfg ? cfg.rate : { kind: 'absent', value: null };
+    const bulkState = isBrand ? bulkPointerState(doc) : bulkPointerState(brand);
+    const locked = bulkState === 'locked';
+    const parentUnknown = !isBrand && !!doc.brandId && parentFail;
+    const writeBlocked = locked || parentUnknown;
+
+    let effRow;
+    if (isBrand) {
+      const eff = resolveEffectiveQoinRate({ store: { kind: 'absent' }, brand: rateCell, global: globalCell, brandSwitch: swState });
+      const t = qoinRateText(eff);
+      effRow = ['실제 적용', `${t.text} · ${t.sub}`];
+    } else if (parentUnknown) {
+      effRow = ['실제 적용', '소속 브랜드를 확인하지 못해 계산하지 않았어요'];
+    } else {
+      const brandCell = brand ? parseRateCell(brand.qoinAccrualRate, hasOwn(brand, 'qoinAccrualRate')) : { kind: 'absent', value: null };
+      const brandSw = brand ? parseSwitchCell(brand.qoinAccrualEnabled, hasOwn(brand, 'qoinAccrualEnabled')) : 'enabled';
+      const eff = resolveEffectiveQoinRate({ store: rateCell, brand: brandCell, global: globalCell, storeSwitch: swState, brandSwitch: brandSw, hasBrand: !!doc.brandId });
+      const t = qoinRateText(eff);
+      effRow = ['실제 적용', `${t.text} · ${t.sub}`];
+    }
+    const absentText = isBrand ? `전역 기본값 따름${globalCell.kind === 'valid' ? ` (${fmtRatePct(globalCell.value)})` : ''}`
+      : `상위(브랜드/전역) 설정 따름`;
+    const swText = swState === 'enabled' ? '적립 중' : swState === 'disabled' ? '적립 중단' : '확인 필요 (값 이상)';
+    const swOn = swState !== 'disabled';
+
+    let bulkBanner = '';
+    if (isBrand && bulkState === 'locked') bulkBanner = banner('warn', '진행 중', '일괄 적용이 진행 중이에요. 끝날 때까지 이 브랜드의 설정은 바꿀 수 없어요.');
+    else if (isBrand && bulkState === 'resume') bulkBanner = banner('warn', '일괄 적용이 중단됐어요', '일부 매장의 개별 적립률이 아직 남아 있을 수 있어요. 재개하거나, 값을 바꾸면 이 안내가 닫혀요.',
+      `<div class="a-b-actions"><button type="button" class="a-btn sm" id="qp-resume">이어서 재개…</button></div>`);
+    else if (!isBrand && bulkState === 'locked') bulkBanner = banner('warn', '진행 중', '소속 브랜드의 일괄 적용이 진행 중이에요. 끝날 때까지 이 매장의 설정은 바꿀 수 없어요.');
+    else if (parentUnknown) bulkBanner = banner('warn', '확인 필요', '소속 브랜드 상태를 확인하지 못해 변경을 잠갔어요. 새로고침 후 다시 시도해주세요.');
+
+    const dis = writeBlocked ? 'disabled' : '';
+    box.innerHTML = `<div class="a-card"><h2>Qoin 적립 설정</h2>
+      ${bulkBanner}
+      ${kv([[isBrand ? '브랜드 적립률' : '매장 적립률', qpRateText(rateCell, absentText)], ['적립 스위치', swText], effRow])}
+      <div class="a-btns" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="a-btn" id="qp-rate" ${dis}>적립률 변경…</button>
+        <button type="button" class="a-btn" id="qp-sw" ${dis}>${swOn ? '적립 끄기…' : '적립 켜기…'}</button>
+        ${isBrand ? `<button type="button" class="a-btn" id="qp-bulk" ${dis}>산하 매장 일괄 적용…</button>` : ''}</div>
+      <p class="a-note">${isBrand ? '브랜드 값은 개별 값이 없는 모든 매장에 적용돼요.' : '개별 값을 삭제하면 브랜드(없으면 전역) 설정을 따라요.'} 변경은 이력에 남아요.</p>
+      <h3 class="a-h2" style="margin-top:20px">변경 이력 (최근 20건)</h3>
+      <div id="qp-hist">${histErr ? errorBlock(histErr) : qpHistTable(hist || [])}</div></div>`;
+    const hr = $('[data-retry]', $('#qp-hist', box) || box); if (histErr && hr) hr.onclick = render;
+
+    const done = () => { if (alive()) render(); };
+    const targetName = doc.name || '(이름 없음)';
+    $('#qp-rate', box).onclick = (e) => openQoinRateDialog({
+      scope, targetId: id, title: isBrand ? '브랜드 적립률' : '매장 적립률', targetName, current: rateCell, absentText,
+      allowClear: true, inheritText: isBrand ? '전역 기본값 따름' : '상위 설정 따름', trigger: e.currentTarget, onDone: done,
+    });
+    $('#qp-sw', box).onclick = (e) => openQoinSwitchDialog({ scope, targetId: id, targetName, enabledNow: swOn, trigger: e.currentTarget, onDone: done });
+    if (isBrand) {
+      $('#qp-bulk', box).onclick = (e) => openBrandBulkDialog({ brandId: id, brand: doc, current: rateCell, trigger: e.currentTarget, onDone: done });
+      const rs = $('#qp-resume', box);
+      if (rs) rs.onclick = (e) => openBulkResumeDialog({ brandId: id, name: targetName, historyId: doc.qoinBulkHistoryId, trigger: e.currentTarget, onDone: done });
+    }
+  }
+  render();
+}
+
+/* ============================================================================
+   A9 Qoin 현황 (전역 적립률 편집 가능 · 비상 정지는 조회 전용)
+   ========================================================================== */
+
+const HIST_FIELD = { accrualRate: '적립률', accrualEnabled: '적립 스위치', globalEnabled: '비상 정지' };
 function histVal(field, v) {
   if (field === 'accrualRate') return typeof v === 'number' ? fmtRatePct(v) : '미설정';
   if (field === 'globalEnabled') return v === true ? '적립 중' : v === false ? '비상 정지' : '-';
@@ -884,9 +1443,11 @@ function histVal(field, v) {
 
 function viewQoin(alive) {
   const v = $('#view');
-  v.innerHTML = `${headHtml({ title: 'Qoin 현황', tag: '읽기 전용' })}
-    ${banner('', '', '이 화면은 조회만 할 수 있어요. 적립률 변경과 비상 정지는 앱에서 처리해주세요.')}
+  v.innerHTML = `${headHtml({ title: 'Qoin 현황' })}
+    ${banner('', '', '전역 적립률은 여기서 바꿀 수 있어요. 브랜드·매장별 적립률과 적립 스위치는 각 상세 화면에서 바꿔요. 비상 정지는 조회만 가능해요.')}
     <div id="q-warn"></div><div id="q-cards"></div>
+    <div class="a-btns" style="margin-top:16px"><button type="button" class="a-btn" id="q-edit" disabled>전역 적립률 변경…</button></div>
+    <div class="a-section" style="margin-top:32px"><h2 class="a-h2">브랜드별 적립 설정</h2><div id="q-brands"></div></div>
     <div class="a-section" style="margin-top:32px"><h2 class="a-h2">전역 적립률 변경 이력 (최근 20건)</h2><div id="q-hist"></div></div>`;
   const stamp = () => { const st = $('#stamp'); if (st && alive()) st.textContent = `마지막 갱신 ${fmtClock()}`; };
 
@@ -909,9 +1470,37 @@ function viewQoin(alive) {
       $('[data-retry]', box).onclick = loadHist;
     }
   }
-  const loadCards = () => loadQoinInto($('#q-cards'), alive, { warnBox: $('#q-warn'), onOk: stamp });
-  $('#refresh').onclick = () => { loadCards(); loadHist(); };
-  loadCards(); loadHist();
+  let lastCfg = null;
+  const editBtn = $('#q-edit');
+  const loadCards = () => {
+    editBtn.disabled = true; lastCfg = null;
+    return loadQoinInto($('#q-cards'), alive, { warnBox: $('#q-warn'), onOk: (cfg) => { lastCfg = cfg; stamp(); } })
+      .then((r) => { if (alive() && (r === 'ok' || r === 'empty')) editBtn.disabled = false; });
+  };
+  async function loadBrands() {
+    const box = $('#q-brands'); box.innerHTML = skelRows(3);
+    try {
+      const map = await loadBrandMap();
+      if (!alive()) return;
+      const rows = [...map.entries()].filter(([, b]) => b.status === 'approved').sort((a, b) => String(a[1].name).localeCompare(String(b[1].name), 'ko'));
+      box.innerHTML = rows.length === 0 ? emptyBlock('승인된 브랜드가 없어요', '')
+        : tableHtml(['브랜드', ''], rows.map(([bid, b]) => `<tr><td><strong>${esc(b.name || '(이름 없음)')}</strong></td><td><a href="#/brands/${encodeURIComponent(bid)}">Qoin 설정 →</a></td></tr>`));
+    } catch (e) {
+      console.error('[admin] 브랜드 목록 조회 실패', e?.code || e);
+      if (!alive()) return;
+      box.innerHTML = errorBlock(e);
+      $('[data-retry]', box).onclick = loadBrands;
+    }
+  }
+  editBtn.onclick = (e) => {
+    const cell = lastCfg ? lastCfg.rate : { kind: 'absent', value: null };
+    openQoinRateDialog({
+      scope: 'global', targetId: null, title: '전역 적립률', targetName: '전역 기본 적립률', current: cell, absentText: '미설정',
+      allowClear: false, trigger: e.currentTarget, onDone: () => { if (alive()) { loadCards(); loadHist(); } },
+    });
+  };
+  $('#refresh').onclick = () => { loadCards(); loadHist(); loadBrands(); };
+  loadCards(); loadHist(); loadBrands();
 }
 
 /* ============================================================================

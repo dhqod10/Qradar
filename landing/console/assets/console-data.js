@@ -347,10 +347,18 @@ export async function runBackfillGeohash(dryRun) {
   return res?.data ?? null;
 }
 
-/** Qoin 적립 소급 백필 — qoin_accrual_backfill. source='issues' = 미해결 적립누락 이슈 전체. */
-export async function runBackfillQoinAccrual(dryRun, source = 'issues') {
+/** Qoin 적립 소급 백필 — qoin_accrual_backfill. 서버(backfillQoinAccrual) 지원 키만 전송한다.
+ *  params: { dryRun, source, orderIds?, storeId?, from?, to?, limit?, creditDisabledPeriod?, overrideRate?, reason? }
+ *  하위호환: (dryRun:boolean, source='issues') 형태 호출도 허용. */
+const QOIN_BACKFILL_KEYS = ['source', 'orderIds', 'storeId', 'from', 'to', 'limit', 'creditDisabledPeriod', 'overrideRate', 'reason'];
+export async function runBackfillQoinAccrual(arg, legacySource = 'issues') {
+  const p = typeof arg === 'object' && arg !== null ? arg : { dryRun: arg, source: legacySource };
+  const payload = { dryRun: p.dryRun === true ? true : false };
+  for (const k of QOIN_BACKFILL_KEYS) {
+    if (p[k] !== undefined && p[k] !== null) payload[k] = p[k];
+  }
   const call = httpsCallable(functions, 'backfillQoinAccrual', { timeout: BACKFILL_TIMEOUT_MS });
-  const res = await withTimeout(call({ dryRun: dryRun === true ? true : false, source }), BACKFILL_TIMEOUT_MS + 5000);
+  const res = await withTimeout(call(payload), BACKFILL_TIMEOUT_MS + 5000);
   return res?.data ?? null;
 }
 
@@ -382,6 +390,43 @@ export async function findUserByUid(uid) {
 export async function setUserSuspension(targetUid, action, reason) {
   const call = httpsCallable(functions, 'setUserSuspension', { timeout: KEY_TIMEOUT_MS });
   const res = await call({ targetUid, action, reason: reason && reason.length ? reason : undefined });
+  return res?.data ?? null;
+}
+
+/* ── Qoin 적립 정책 쓰기 (qoin_policy_admin_ui) ────────────────────────────────
+   전부 admin 전용 callable. 값 쓰기와 qoinRateHistory 기록은 서버가 같은 트랜잭션으로 처리한다 —
+   콘솔은 Firestore 에 직접 쓰지 않는다. spend 정책(setQoinSpendPolicy)은 게이트 OFF 라 배선하지 않는다. */
+
+const optReason = (r) => (typeof r === 'string' && r.trim().length ? r.trim() : undefined);
+
+/** 적립률 설정 — setQoinAccrualRate. scope 'global'|'brand'|'store'. rate(소수 0.001~0.2) XOR clear(true). 전역은 clear 불가(서버 거부). */
+export async function setQoinAccrualRate(scope, targetId, { rate, clear, reason } = {}) {
+  const payload = { scope };
+  if (scope !== 'global') payload.targetId = targetId;
+  if (clear === true) payload.clear = true; else payload.rate = rate;
+  const r = optReason(reason); if (r) payload.reason = r;
+  const call = httpsCallable(functions, 'setQoinAccrualRate', { timeout: KEY_TIMEOUT_MS });
+  const res = await withTimeout(call(payload), KEY_TIMEOUT_MS + 5000);
+  return res?.data ?? null;
+}
+
+/** 적립 스위치 — setQoinAccrualEnabled. scope 'brand'|'store' (전역 없음). enabled=false 만 저장, true 는 필드 삭제(서버). */
+export async function setQoinAccrualEnabled(scope, targetId, enabled, reason) {
+  const payload = { scope, targetId, enabled: enabled === true };
+  const r = optReason(reason); if (r) payload.reason = r;
+  const call = httpsCallable(functions, 'setQoinAccrualEnabled', { timeout: KEY_TIMEOUT_MS });
+  const res = await withTimeout(call(payload), KEY_TIMEOUT_MS + 5000);
+  return res?.data ?? null;
+}
+
+/** 브랜드 일괄 적용 — applyBrandQoinRate. 신규: { rate | clear, mode }. 재개: { resumeHistoryId } (mode 는 overwrite 고정). */
+export async function applyBrandQoinRate(brandId, { rate, clear, mode, reason, resumeHistoryId } = {}) {
+  const payload = { brandId, mode };
+  if (resumeHistoryId) payload.resumeHistoryId = resumeHistoryId;
+  else if (clear === true) payload.clear = true; else payload.rate = rate;
+  const r = optReason(reason); if (r) payload.reason = r;
+  const call = httpsCallable(functions, 'applyBrandQoinRate', { timeout: BACKFILL_TIMEOUT_MS });
+  const res = await withTimeout(call(payload), BACKFILL_TIMEOUT_MS + 5000);
   return res?.data ?? null;
 }
 
