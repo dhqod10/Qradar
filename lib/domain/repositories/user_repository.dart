@@ -42,4 +42,9 @@ abstract class UserRepository {
     required NotificationCategory category,
     required bool enabled,
   });
+
+  // ── 전화번호 수집 (existing_user_phone_collection) ─────────────────────
+
+  /// 본인 `users/{uid}.phone` 을 갱신한다 (숫자만 문자열). 값은 로그에 남기지 않는다.
+  Future<void> updateMyPhone({required String uid, required String phone});
 }

@@ -115,4 +115,14 @@ class UserRemoteDataSource {
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
+  // ── 전화번호 수집 (existing_user_phone_collection) ────────────────────────
+
+  /// 본인 phone 갱신. 허용 필드: `phone`, `updatedAt` (Rules isSelfProfileUpdate 화이트리스트).
+  Future<void> updateMyPhone({required String uid, required String phone}) async {
+    await _doc(uid).update({
+      'phone': phone,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

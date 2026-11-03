@@ -86,4 +86,8 @@ class UserRepositoryImpl implements UserRepository {
         key: category.asString,
         enabled: enabled,
       );
+
+  @override
+  Future<void> updateMyPhone({required String uid, required String phone}) =>
+      _dataSource.updateMyPhone(uid: uid, phone: phone);
 }

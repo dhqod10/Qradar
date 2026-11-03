@@ -152,6 +152,7 @@ Future<(ProviderContainer, _Repo, _SpyLaunch)> _pump(
               provider: 'google',
               email: 'a@b.c',
               displayName: '고객',
+              phone: '01012345678',
             ),
           ),
         ),

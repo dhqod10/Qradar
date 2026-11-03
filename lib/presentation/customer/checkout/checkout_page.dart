@@ -15,6 +15,7 @@ import 'package:qradar/presentation/customer/checkout/providers/client_update_pr
 import 'package:qradar/presentation/customer/checkout/update_required_page.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_blocked_sheet.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_price_changed_sheet.dart';
+import 'package:qradar/presentation/customer/checkout/widgets/phone_collection_sheet.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/checkout/payment_result_page.dart'
@@ -58,6 +59,20 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
 
     final profile = ref.read(currentUserProfileProvider).asData?.value;
     if (profile == null) return;
+
+    // 전화번호 게이트 (existing_user_phone_collection): 비어 있으면 결제를 시작하지 않는다 (fail-closed).
+    // 저장에 성공해도 자동 결제하지 않고, 사용자가 금액을 확인한 뒤 다시 탭하게 한다.
+    if ((profile.phone ?? '').isEmpty) {
+      final saved = await showPhoneCollectionSheet(context, profile.uid);
+      if (saved == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('전화번호를 저장했어요. 결제하기를 눌러 계속해 주세요.'),
+          ),
+        );
+      }
+      return;
+    }
 
     setState(() => _processing = true);
 

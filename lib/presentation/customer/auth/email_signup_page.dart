@@ -3,30 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/core/utils/phone_validator.dart';
 import 'package:qradar/presentation/common/role_router.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
+import 'package:qradar/presentation/common/widgets/phone_input.dart';
 import 'package:qradar/presentation/customer/auth/auth_error_message.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
-
-/// 한국 휴대폰 번호 (숫자만 10~11자리).
-final RegExp _phonePattern = RegExp(r'^01[016789]\d{7,8}$');
-
-InputDecoration _decoration(String label, {String? hintText, String? errorText}) {
-  OutlineInputBorder border(Color? color) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: color == null ? const BorderSide() : BorderSide(color: color),
-      );
-  return InputDecoration(
-    labelText: label,
-    hintText: hintText,
-    errorText: errorText,
-    errorStyle: const TextStyle(color: AppColors.error, fontSize: 12),
-    border: border(null),
-    focusedBorder: border(AppColors.primary),
-    errorBorder: border(AppColors.error),
-    focusedErrorBorder: border(AppColors.error),
-  );
-}
 
 class EmailSignupPage extends HookConsumerWidget {
   const EmailSignupPage({super.key});
@@ -64,7 +46,7 @@ class EmailSignupPage extends HookConsumerWidget {
       nameError.value = name.isEmpty ? '이름을 입력해주세요.' : null;
       phoneError.value = phone.isEmpty
           ? '전화번호를 입력해주세요.'
-          : (_phonePattern.hasMatch(phone)
+          : (isValidKoreanMobile(phone)
               ? null
               : '올바른 휴대폰 번호를 입력해주세요. (예: 01012345678)');
       if (nameError.value != null || phoneError.value != null) return;
@@ -114,7 +96,7 @@ class EmailSignupPage extends HookConsumerWidget {
               autofillHints: const [AutofillHints.name],
               inputFormatters: [LengthLimitingTextInputFormatter(20)],
               onChanged: (_) => nameError.value = null,
-              decoration: _decoration('이름', errorText: nameError.value),
+              decoration: formFieldDecoration('이름', errorText: nameError.value),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -123,12 +105,9 @@ class EmailSignupPage extends HookConsumerWidget {
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.telephoneNumber],
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(11),
-              ],
+              inputFormatters: phoneInputFormatters(),
               onChanged: (_) => phoneError.value = null,
-              decoration: _decoration(
+              decoration: formFieldDecoration(
                 '전화번호',
                 hintText: '01012345678',
                 errorText: phoneError.value,

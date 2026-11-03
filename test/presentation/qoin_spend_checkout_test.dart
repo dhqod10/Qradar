@@ -153,6 +153,7 @@ Future<(_SpyLaunch, _SpyVerify)> _pump(
               provider: 'google',
               email: 'a@b.c',
               displayName: '고객',
+              phone: '01012345678',
               qoinBalance: balance,
             ),
           ),
