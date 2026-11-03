@@ -38,6 +38,9 @@ export { issueBrandKey } from "./issueBrandKey";
 export { deleteStore } from "./deleteStore";
 // account_deletion — customer 본인 탈퇴 (소프트 삭제/익명화, Admin SDK 전담)
 export { deleteMyAccount } from "./deleteMyAccount";
+// admin_user_moderation — 계정 정지/해제 + 관리자 강제탈퇴(customer 전용)
+export { setUserSuspension } from "./setUserSuspension";
+export { adminDeleteUser } from "./adminDeleteUser";
 // payment_server_authority — 임시 마이그레이션 (완료 후 정리 커밋으로 삭제: 배포 ⑪)
 export { migrateStoreApprovalMeta } from "./migrateStoreApprovalMeta";
 export { migrateBrandPrivateProfile } from "./migrateBrandPrivateProfile";

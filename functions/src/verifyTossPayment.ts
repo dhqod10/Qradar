@@ -33,6 +33,7 @@ import { evaluatePriceAuthority, resolveMenusForPricing, resolvePriceMode, store
 import { MergedMenu } from "./menuVisibility";
 import { makeFirestoreGateReader, recordGateRejection } from "./paymentGateReader";
 import { findSelfDealing, validBrandId } from "./selfDealing";
+import { buyerBlockReason, ownerBlockReason } from "./userStateGuard";
 import { writeOrderSignal } from "./orderSignals";
 import { allocatePickupNumber, kstDateKey } from "./pickupCounter";
 import { parseQoinToUse, resolveSpendPolicy, SPEND_REJECT_TOKEN, SpendPolicy } from "./qoinSpend";
@@ -210,6 +211,30 @@ export async function handleVerifyTossPayment(
       );
     }
 
+    // 2-0. 유저 상태 가드 (admin_user_moderation) — Toss confirm 전. 결제자 본인이 정지/탈퇴면 거절 (모드 스위치 없이 상시).
+    //   정지의 본 집행은 Auth disabled + 토큰 revoke 이고 이건 토큰 잔여창을 닫는 명시적 거절이다. 문서가 없으면 판정 안 함(기존 동작).
+    {
+      let buyerReason: ReturnType<typeof buyerBlockReason>;
+      try {
+        const buyerSnap = await db.collection("users").doc(uid).get();
+        buyerReason = buyerBlockReason(buyerSnap.exists ? (buyerSnap.data() as Record<string, unknown>) : null);
+      } catch (e) {
+        console.error("[verifyTossPayment] user state read failed", e);
+        throw new HttpsError("unavailable", buildRejectionMessage("READ_FAILED"));
+      }
+      if (buyerReason !== null) {
+        await recordGateRejection(db, {
+          uid,
+          storeId: typeof data.cart.storeId === "string" ? data.cart.storeId : "",
+          reason: buyerReason,
+          detail: {},
+          amount: data.amount,
+        });
+        console.warn("[verifyTossPayment] USER_STATE REJECT", buyerReason);
+        throw new HttpsError(GATE_HTTPS_CODE[buyerReason], buildRejectionMessage(buyerReason), { reason: buyerReason });
+      }
+    }
+
     // 2-a. 자기거래 가드 (prelaunch_security_bundle Layer1-A) — Toss confirm 전. 거절하면 돈이 움직이지 않는다.
     //   잠정(사용자 검토 대기) D-1: 모드 스위치 없이 **상시 enforce** — ownerId 동일성 비교라 정상 손님 오탐이 구조적으로 없다.
     //   신뢰원은 stores/{id}.ownerId/.brandId 뿐 (cart 값 미사용). 매장 문서가 없으면 건너뛴다 (STORE_NOT_FOUND 는 2-b 의 몫 — 기존 동작 유지).
@@ -243,6 +268,29 @@ export async function handleVerifyTossPayment(
         });
         console.warn("[verifyTossPayment] SELF_DEALING REJECT", matchedBy);
         throw new HttpsError(GATE_HTTPS_CODE.SELF_DEALING, buildRejectionMessage("SELF_DEALING"), { reason: "SELF_DEALING" });
+      }
+    }
+
+    // 2-a'. 매장 점주 정지/탈퇴 → 매장 판매 중단 (admin_user_moderation §0-2). ownerId 유저 1회 read, fan-out 쓰기 없음.
+    if (signalStore?.ownerId && signalStore.ownerId !== uid) {
+      let ownerReason: ReturnType<typeof ownerBlockReason>;
+      try {
+        const ownerSnap = await db.collection("users").doc(signalStore.ownerId).get();
+        ownerReason = ownerBlockReason(ownerSnap.exists ? (ownerSnap.data() as Record<string, unknown>) : null);
+      } catch (e) {
+        console.error("[verifyTossPayment] store owner state read failed", e);
+        throw new HttpsError("unavailable", buildRejectionMessage("READ_FAILED"));
+      }
+      if (ownerReason !== null) {
+        await recordGateRejection(db, {
+          uid,
+          storeId: data.cart.storeId,
+          reason: ownerReason,
+          detail: { storeOwnerId: signalStore.ownerId },
+          amount: data.amount,
+        });
+        console.warn("[verifyTossPayment] STORE_OWNER_STATE REJECT", ownerReason);
+        throw new HttpsError(GATE_HTTPS_CODE[ownerReason], buildRejectionMessage(ownerReason), { reason: ownerReason });
       }
     }
 

@@ -33,5 +33,8 @@ abstract class UserEntity with _$UserEntity {
     /// Qoin 잔액. Cloud Function 만 쓴다 (고객 쓰기 불가). 필드 부재 → 0.
     /// **clamp 하지 않는다** — 원장 불변식(`qoinBalance == Σ amount`) 의 감사 수단.
     @Default(0) int qoinBalance,
+    /// 계정 정지 여부 (admin_user_moderation). **읽기 전용** — Cloud Function 만 쓴다. 사유 등 메타는 앱에 매핑하지 않는다.
+    /// 부재 → false. 판독용 신호일 뿐이며 진짜 집행은 Firebase Auth disabled + 토큰 revoke 다.
+    @Default(false) bool suspended,
   }) = _UserEntity;
 }

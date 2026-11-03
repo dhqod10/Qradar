@@ -1365,6 +1365,40 @@ await run('PK-11 점주가 pickupCounters create', 'deny', () => setDoc(doc(asOw
 await run('PK-12 admin 이 pickupCounters write', 'deny', () => setDoc(doc(asAdmin, 'stores', S_A, 'pickupCounters', '20261103'), { current: 1 }));
 await run('PK-13 점주가 pickupCounters delete', 'deny', () => deleteDoc(doc(asOwner, 'stores', S_A, 'pickupCounters', '20261103')));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// admin_user_moderation — users 정지 필드 CF 전담 가드 + userModerationHistory 클라 거부
+// ═══════════════════════════════════════════════════════════════════════════
+const UM_NEW = 'umNewUser00000000000000000000';
+const asUmNew = env.authenticatedContext(UM_NEW).firestore();
+const MOD_TARGET = 'modTargetUser000000000000000000';
+await seed((db) => setDoc(doc(db, 'users', MOD_TARGET), { uid: MOD_TARGET, role: 'customer', displayName: 'm', suspended: true, suspendedAt: Timestamp.now(), suspendedBy: 'adm' }));
+await seed((db) => setDoc(doc(db, 'userModerationHistory', 'mh1'), { uid: MOD_TARGET, action: 'suspend' }));
+await run('UM-1 본인이 suspended 를 해제 시도(update)', 'deny', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { suspended: false }));
+await run('UM-2 본인이 suspended:true 로 set', 'deny', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { suspended: true }));
+await run('UM-3 admin 도 suspended update 불가 (CF 전담)', 'deny', () =>
+  updateDoc(doc(asAdmin, 'users', MOD_TARGET), { suspended: false }));
+await run('UM-3b admin 이 suspensionReason/suspendedBy update', 'deny', () =>
+  updateDoc(doc(asAdmin, 'users', MOD_TARGET), { suspensionReason: 'x', suspendedBy: 'a' }));
+await run('UM-3c admin 이 suspendedAt 삭제 시도', 'deny', () =>
+  updateDoc(doc(asAdmin, 'users', MOD_TARGET), { suspendedAt: deleteField(), displayName: 'z' }));
+await run('UM-4 신규 가입 create 에 suspended 포함', 'deny', () =>
+  setDoc(doc(asUmNew, 'users', UM_NEW), { uid: UM_NEW, role: 'customer', suspended: true }));
+await run('UM-4b 회귀: 정상 신규 가입 create (정지 필드 없음)', 'allow', () =>
+  setDoc(doc(asUmNew, 'users', UM_NEW), { uid: UM_NEW, role: 'customer', displayName: 'n' }));
+await run('UM-5 회귀: 본인 일반 프로필 update', 'allow', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { displayName: 'dhqod13b' }));
+await run('UM-5b 회귀: admin 일반 필드 update', 'allow', () =>
+  updateDoc(doc(asAdmin, 'users', MOD_TARGET), { displayName: 'adminEdited' }));
+await run('UM-6 admin read userModerationHistory', 'allow', () => getDoc(doc(asAdmin, 'userModerationHistory', 'mh1')));
+await run('UM-6b 고객 read userModerationHistory', 'deny', () => getDoc(doc(asCustomer, 'userModerationHistory', 'mh1')));
+await run('UM-6c 점주 read userModerationHistory', 'deny', () => getDoc(doc(asOwner, 'userModerationHistory', 'mh1')));
+await run('UM-7 고객 create userModerationHistory', 'deny', () => setDoc(doc(asCustomer, 'userModerationHistory', 'forge'), { uid: CUSTOMER }));
+await run('UM-7b admin create userModerationHistory', 'deny', () => setDoc(doc(asAdmin, 'userModerationHistory', 'forge2'), { uid: MOD_TARGET }));
+await run('UM-7c admin update userModerationHistory', 'deny', () => updateDoc(doc(asAdmin, 'userModerationHistory', 'mh1'), { action: 'unsuspend' }));
+await run('UM-7d admin delete userModerationHistory', 'deny', () => deleteDoc(doc(asAdmin, 'userModerationHistory', 'mh1')));
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {

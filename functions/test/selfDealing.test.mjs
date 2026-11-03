@@ -108,13 +108,13 @@ test('A: 브랜드 보유자 → 거절 (matchedBy brandHolder)', async () => {
   assert.equal(r.spy.confirm, 0);
   assert.equal(db.state.rejections[0].detail.matchedBy, 'brandHolder');
 });
-test('A: 타인 매장(개인) → 통과, users read 0, 주문 커밋', async () => {
+test('A: 타인 매장(개인) → 통과, users read 2(결제자+점주 상태 가드), 주문 커밋', async () => {
   const db = fakeDb({ stores: { s1: { ownerId: 'u2', brandId: null } } });
   const r = await run(db, req());
   assert.equal(r.err, null);
   assert.deepEqual(r.result, { orderId: 'idem1', status: 'paid' });
   assert.equal(r.spy.confirm, 1);
-  assert.equal(db.state.userReads, 0);
+  assert.equal(db.state.userReads, 2); // admin_user_moderation: 결제자 + 점주 정지/탈퇴 판독
   assert.equal(db.state.rejections.length, 0);
   assert.equal(db.state.committed, true);
 });

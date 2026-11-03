@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/presentation/common/q_logo.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
+import 'package:qradar/presentation/customer/auth/auth_error_message.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/common/role_router.dart';
 import 'package:qradar/presentation/customer/auth/email_login_page.dart';
@@ -99,7 +100,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
               return;
             }
           }
-          showErrorDialog(context, '로그인이 실패하였습니다.');
+          showErrorDialog(
+            context,
+            isAccountDisabledError(e)
+                ? kAccountRestrictedMessage
+                : '로그인이 실패하였습니다.',
+          );
         },
       );
     });

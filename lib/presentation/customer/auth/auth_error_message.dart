@@ -3,6 +3,13 @@
 /// raw 메시지 (예: `[firebase_auth/invalid-credential] The supplied auth ...`)
 /// 가 그대로 다이얼로그에 노출되는 것을 방지한다. 매핑되지 않은 코드는
 /// 기본 메시지로 fallback.
+/// 정지된 계정(Firebase Auth disabled)으로 로그인 시도 시 안내 문구 (admin_user_moderation).
+const String kAccountRestrictedMessage = '이용이 제한된 계정이에요. 고객센터에 문의해 주세요.';
+
+/// 오류가 Firebase Auth `user-disabled` (정지 계정) 인가.
+bool isAccountDisabledError(Object error) =>
+    error.toString().toLowerCase().contains('user-disabled');
+
 String authFriendlyMessage(Object error) {
   final raw = error.toString();
   // FirebaseAuthException 의 toString 패턴: "[firebase_auth/{code}] {message}"
@@ -19,13 +26,12 @@ String authFriendlyMessage(Object error) {
     return '올바른 이메일 형식이 아니에요.';
   }
   if (lower.contains('user-disabled')) {
-    return '사용이 중지된 계정이에요.';
+    return kAccountRestrictedMessage;
   }
   if (lower.contains('too-many-requests')) {
     return '시도가 너무 많아요. 잠시 후 다시 시도해주세요.';
   }
-  if (lower.contains('network-request-failed') ||
-      lower.contains('network')) {
+  if (lower.contains('network-request-failed') || lower.contains('network')) {
     return '네트워크 연결을 확인해주세요.';
   }
   if (lower.contains('email-already-in-use')) {

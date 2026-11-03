@@ -47,6 +47,10 @@ abstract class UserModel with _$UserModel {
     @JsonKey(includeFromJson: false, includeToJson: false)
     @Default(0)
     int qoinBalance,
+    /// 계정 정지 여부 (admin_user_moderation, CF 전담 쓰기, 읽기 전용). JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false)
+    @Default(false)
+    bool suspended,
   }) = _UserModel;
 
   factory UserModel.fromJson(Map<String, dynamic> json) =>
@@ -70,6 +74,7 @@ extension UserModelX on UserModel {
         notificationPermissionLaterCount: notificationPermissionLaterCount,
         notificationSettings: notificationSettings,
         qoinBalance: qoinBalance,
+        suspended: suspended,
       );
 }
 
@@ -119,6 +124,7 @@ class UserModelFactory {
         data['notificationSettings'],
       ),
       qoinBalance: parseQoinBalance(data['qoinBalance']),
+      suspended: data['suspended'] == true,
     );
   }
 

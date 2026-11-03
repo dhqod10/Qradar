@@ -25,7 +25,9 @@ mixin _$UserEntity {
  int get notificationPermissionLaterCount;/// 알림 카테고리별 on/off (부재 시 기본값 fallback).
  NotificationSettingsEntity get notificationSettings;/// Qoin 잔액. Cloud Function 만 쓴다 (고객 쓰기 불가). 필드 부재 → 0.
 /// **clamp 하지 않는다** — 원장 불변식(`qoinBalance == Σ amount`) 의 감사 수단.
- int get qoinBalance;
+ int get qoinBalance;/// 계정 정지 여부 (admin_user_moderation). **읽기 전용** — Cloud Function 만 쓴다. 사유 등 메타는 앱에 매핑하지 않는다.
+/// 부재 → false. 판독용 신호일 뿐이며 진짜 집행은 Firebase Auth disabled + 토큰 revoke 다.
+ bool get suspended;
 /// Create a copy of UserEntity
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -36,16 +38,16 @@ $UserEntityCopyWith<UserEntity> get copyWith => _$UserEntityCopyWithImpl<UserEnt
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is UserEntity&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings)&&(identical(other.qoinBalance, qoinBalance) || other.qoinBalance == qoinBalance));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is UserEntity&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings)&&(identical(other.qoinBalance, qoinBalance) || other.qoinBalance == qoinBalance)&&(identical(other.suspended, suspended) || other.suspended == suspended));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,phone,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings,qoinBalance);
+int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,phone,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings,qoinBalance,suspended);
 
 @override
 String toString() {
-  return 'UserEntity(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, phone: $phone, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings, qoinBalance: $qoinBalance)';
+  return 'UserEntity(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, phone: $phone, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings, qoinBalance: $qoinBalance, suspended: $suspended)';
 }
 
 
@@ -56,7 +58,7 @@ abstract mixin class $UserEntityCopyWith<$Res>  {
   factory $UserEntityCopyWith(UserEntity value, $Res Function(UserEntity) _then) = _$UserEntityCopyWithImpl;
 @useResult
 $Res call({
- String uid, String? email, String? displayName, String? photoUrl, String? phone, String provider, UserRole role, DateTime? createdAt, String? brandId, String? fcmToken, DateTime? fcmTokenUpdatedAt, bool notificationPermissionPrompted, int notificationPermissionLaterCount, NotificationSettingsEntity notificationSettings, int qoinBalance
+ String uid, String? email, String? displayName, String? photoUrl, String? phone, String provider, UserRole role, DateTime? createdAt, String? brandId, String? fcmToken, DateTime? fcmTokenUpdatedAt, bool notificationPermissionPrompted, int notificationPermissionLaterCount, NotificationSettingsEntity notificationSettings, int qoinBalance, bool suspended
 });
 
 
@@ -73,7 +75,7 @@ class _$UserEntityCopyWithImpl<$Res>
 
 /// Create a copy of UserEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? phone = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,Object? qoinBalance = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? phone = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,Object? qoinBalance = null,Object? suspended = null,}) {
   return _then(_self.copyWith(
 uid: null == uid ? _self.uid : uid // ignore: cast_nullable_to_non_nullable
 as String,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
@@ -90,7 +92,8 @@ as DateTime?,notificationPermissionPrompted: null == notificationPermissionPromp
 as bool,notificationPermissionLaterCount: null == notificationPermissionLaterCount ? _self.notificationPermissionLaterCount : notificationPermissionLaterCount // ignore: cast_nullable_to_non_nullable
 as int,notificationSettings: null == notificationSettings ? _self.notificationSettings : notificationSettings // ignore: cast_nullable_to_non_nullable
 as NotificationSettingsEntity,qoinBalance: null == qoinBalance ? _self.qoinBalance : qoinBalance // ignore: cast_nullable_to_non_nullable
-as int,
+as int,suspended: null == suspended ? _self.suspended : suspended // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 /// Create a copy of UserEntity
@@ -184,10 +187,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String uid,  String? email,  String? displayName,  String? photoUrl,  String? phone,  String provider,  UserRole role,  DateTime? createdAt,  String? brandId,  String? fcmToken,  DateTime? fcmTokenUpdatedAt,  bool notificationPermissionPrompted,  int notificationPermissionLaterCount,  NotificationSettingsEntity notificationSettings,  int qoinBalance)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String uid,  String? email,  String? displayName,  String? photoUrl,  String? phone,  String provider,  UserRole role,  DateTime? createdAt,  String? brandId,  String? fcmToken,  DateTime? fcmTokenUpdatedAt,  bool notificationPermissionPrompted,  int notificationPermissionLaterCount,  NotificationSettingsEntity notificationSettings,  int qoinBalance,  bool suspended)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _UserEntity() when $default != null:
-return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.phone,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance);case _:
+return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.phone,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance,_that.suspended);case _:
   return orElse();
 
 }
@@ -205,10 +208,10 @@ return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.pho
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String uid,  String? email,  String? displayName,  String? photoUrl,  String? phone,  String provider,  UserRole role,  DateTime? createdAt,  String? brandId,  String? fcmToken,  DateTime? fcmTokenUpdatedAt,  bool notificationPermissionPrompted,  int notificationPermissionLaterCount,  NotificationSettingsEntity notificationSettings,  int qoinBalance)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String uid,  String? email,  String? displayName,  String? photoUrl,  String? phone,  String provider,  UserRole role,  DateTime? createdAt,  String? brandId,  String? fcmToken,  DateTime? fcmTokenUpdatedAt,  bool notificationPermissionPrompted,  int notificationPermissionLaterCount,  NotificationSettingsEntity notificationSettings,  int qoinBalance,  bool suspended)  $default,) {final _that = this;
 switch (_that) {
 case _UserEntity():
-return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.phone,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance);case _:
+return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.phone,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance,_that.suspended);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -225,10 +228,10 @@ return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.pho
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String uid,  String? email,  String? displayName,  String? photoUrl,  String? phone,  String provider,  UserRole role,  DateTime? createdAt,  String? brandId,  String? fcmToken,  DateTime? fcmTokenUpdatedAt,  bool notificationPermissionPrompted,  int notificationPermissionLaterCount,  NotificationSettingsEntity notificationSettings,  int qoinBalance)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String uid,  String? email,  String? displayName,  String? photoUrl,  String? phone,  String provider,  UserRole role,  DateTime? createdAt,  String? brandId,  String? fcmToken,  DateTime? fcmTokenUpdatedAt,  bool notificationPermissionPrompted,  int notificationPermissionLaterCount,  NotificationSettingsEntity notificationSettings,  int qoinBalance,  bool suspended)?  $default,) {final _that = this;
 switch (_that) {
 case _UserEntity() when $default != null:
-return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.phone,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance);case _:
+return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.phone,_that.provider,_that.role,_that.createdAt,_that.brandId,_that.fcmToken,_that.fcmTokenUpdatedAt,_that.notificationPermissionPrompted,_that.notificationPermissionLaterCount,_that.notificationSettings,_that.qoinBalance,_that.suspended);case _:
   return null;
 
 }
@@ -240,7 +243,7 @@ return $default(_that.uid,_that.email,_that.displayName,_that.photoUrl,_that.pho
 
 
 class _UserEntity implements UserEntity {
-  const _UserEntity({required this.uid, this.email, this.displayName, this.photoUrl, this.phone, required this.provider, this.role = UserRole.customer, this.createdAt, this.brandId, this.fcmToken, this.fcmTokenUpdatedAt, this.notificationPermissionPrompted = false, this.notificationPermissionLaterCount = 0, this.notificationSettings = const NotificationSettingsEntity(), this.qoinBalance = 0});
+  const _UserEntity({required this.uid, this.email, this.displayName, this.photoUrl, this.phone, required this.provider, this.role = UserRole.customer, this.createdAt, this.brandId, this.fcmToken, this.fcmTokenUpdatedAt, this.notificationPermissionPrompted = false, this.notificationPermissionLaterCount = 0, this.notificationSettings = const NotificationSettingsEntity(), this.qoinBalance = 0, this.suspended = false});
   
 
 @override final  String uid;
@@ -269,6 +272,9 @@ class _UserEntity implements UserEntity {
 /// Qoin 잔액. Cloud Function 만 쓴다 (고객 쓰기 불가). 필드 부재 → 0.
 /// **clamp 하지 않는다** — 원장 불변식(`qoinBalance == Σ amount`) 의 감사 수단.
 @override@JsonKey() final  int qoinBalance;
+/// 계정 정지 여부 (admin_user_moderation). **읽기 전용** — Cloud Function 만 쓴다. 사유 등 메타는 앱에 매핑하지 않는다.
+/// 부재 → false. 판독용 신호일 뿐이며 진짜 집행은 Firebase Auth disabled + 토큰 revoke 다.
+@override@JsonKey() final  bool suspended;
 
 /// Create a copy of UserEntity
 /// with the given fields replaced by the non-null parameter values.
@@ -280,16 +286,16 @@ _$UserEntityCopyWith<_UserEntity> get copyWith => __$UserEntityCopyWithImpl<_Use
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UserEntity&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings)&&(identical(other.qoinBalance, qoinBalance) || other.qoinBalance == qoinBalance));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UserEntity&&(identical(other.uid, uid) || other.uid == uid)&&(identical(other.email, email) || other.email == email)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.photoUrl, photoUrl) || other.photoUrl == photoUrl)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.role, role) || other.role == role)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.brandId, brandId) || other.brandId == brandId)&&(identical(other.fcmToken, fcmToken) || other.fcmToken == fcmToken)&&(identical(other.fcmTokenUpdatedAt, fcmTokenUpdatedAt) || other.fcmTokenUpdatedAt == fcmTokenUpdatedAt)&&(identical(other.notificationPermissionPrompted, notificationPermissionPrompted) || other.notificationPermissionPrompted == notificationPermissionPrompted)&&(identical(other.notificationPermissionLaterCount, notificationPermissionLaterCount) || other.notificationPermissionLaterCount == notificationPermissionLaterCount)&&(identical(other.notificationSettings, notificationSettings) || other.notificationSettings == notificationSettings)&&(identical(other.qoinBalance, qoinBalance) || other.qoinBalance == qoinBalance)&&(identical(other.suspended, suspended) || other.suspended == suspended));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,phone,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings,qoinBalance);
+int get hashCode => Object.hash(runtimeType,uid,email,displayName,photoUrl,phone,provider,role,createdAt,brandId,fcmToken,fcmTokenUpdatedAt,notificationPermissionPrompted,notificationPermissionLaterCount,notificationSettings,qoinBalance,suspended);
 
 @override
 String toString() {
-  return 'UserEntity(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, phone: $phone, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings, qoinBalance: $qoinBalance)';
+  return 'UserEntity(uid: $uid, email: $email, displayName: $displayName, photoUrl: $photoUrl, phone: $phone, provider: $provider, role: $role, createdAt: $createdAt, brandId: $brandId, fcmToken: $fcmToken, fcmTokenUpdatedAt: $fcmTokenUpdatedAt, notificationPermissionPrompted: $notificationPermissionPrompted, notificationPermissionLaterCount: $notificationPermissionLaterCount, notificationSettings: $notificationSettings, qoinBalance: $qoinBalance, suspended: $suspended)';
 }
 
 
@@ -300,7 +306,7 @@ abstract mixin class _$UserEntityCopyWith<$Res> implements $UserEntityCopyWith<$
   factory _$UserEntityCopyWith(_UserEntity value, $Res Function(_UserEntity) _then) = __$UserEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String uid, String? email, String? displayName, String? photoUrl, String? phone, String provider, UserRole role, DateTime? createdAt, String? brandId, String? fcmToken, DateTime? fcmTokenUpdatedAt, bool notificationPermissionPrompted, int notificationPermissionLaterCount, NotificationSettingsEntity notificationSettings, int qoinBalance
+ String uid, String? email, String? displayName, String? photoUrl, String? phone, String provider, UserRole role, DateTime? createdAt, String? brandId, String? fcmToken, DateTime? fcmTokenUpdatedAt, bool notificationPermissionPrompted, int notificationPermissionLaterCount, NotificationSettingsEntity notificationSettings, int qoinBalance, bool suspended
 });
 
 
@@ -317,7 +323,7 @@ class __$UserEntityCopyWithImpl<$Res>
 
 /// Create a copy of UserEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? phone = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,Object? qoinBalance = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? uid = null,Object? email = freezed,Object? displayName = freezed,Object? photoUrl = freezed,Object? phone = freezed,Object? provider = null,Object? role = null,Object? createdAt = freezed,Object? brandId = freezed,Object? fcmToken = freezed,Object? fcmTokenUpdatedAt = freezed,Object? notificationPermissionPrompted = null,Object? notificationPermissionLaterCount = null,Object? notificationSettings = null,Object? qoinBalance = null,Object? suspended = null,}) {
   return _then(_UserEntity(
 uid: null == uid ? _self.uid : uid // ignore: cast_nullable_to_non_nullable
 as String,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
@@ -334,7 +340,8 @@ as DateTime?,notificationPermissionPrompted: null == notificationPermissionPromp
 as bool,notificationPermissionLaterCount: null == notificationPermissionLaterCount ? _self.notificationPermissionLaterCount : notificationPermissionLaterCount // ignore: cast_nullable_to_non_nullable
 as int,notificationSettings: null == notificationSettings ? _self.notificationSettings : notificationSettings // ignore: cast_nullable_to_non_nullable
 as NotificationSettingsEntity,qoinBalance: null == qoinBalance ? _self.qoinBalance : qoinBalance // ignore: cast_nullable_to_non_nullable
-as int,
+as int,suspended: null == suspended ? _self.suspended : suspended // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 

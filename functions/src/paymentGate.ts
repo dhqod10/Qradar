@@ -33,6 +33,10 @@ export type GateReason =
   | "READ_FAILED"
   // [prelaunch_security_bundle] 자기거래 가드 (selfDealing.ts) — 게이트 판정이 아니라 별도 가드지만 거절 기록·토큰 문법을 공유한다.
   | "SELF_DEALING"
+  // [admin_user_moderation] 유저 상태 가드 (userStateGuard.ts) — 결제자 본인 정지/탈퇴, 매장 점주 정지. Toss confirm 전이라 돈이 안 움직인다.
+  | "USER_SUSPENDED"
+  | "USER_DELETED"
+  | "STORE_OWNER_SUSPENDED"
   // [qoin_spend] Qoin 사용 거절 (qoinSpend.ts 판정). Toss confirm **전**이라 돈이 안 움직인다. 토큰 문법은 메뉴 id 를 싣지 않는 사유와 같다.
   | "QOIN_SPEND_DISABLED"
   | "QOIN_INSUFFICIENT_BALANCE"
@@ -71,6 +75,9 @@ export const GATE_HTTPS_CODE: Record<GateReason, "failed-precondition" | "not-fo
   OPTION_UNAVAILABLE: "failed-precondition",
   READ_FAILED: "unavailable",
   SELF_DEALING: "permission-denied",
+  USER_SUSPENDED: "permission-denied",
+  USER_DELETED: "permission-denied",
+  STORE_OWNER_SUSPENDED: "failed-precondition",
   QOIN_SPEND_DISABLED: "failed-precondition",
   QOIN_INSUFFICIENT_BALANCE: "failed-precondition",
   QOIN_BELOW_CASH_FLOOR: "failed-precondition",
@@ -91,6 +98,9 @@ const GATE_TEXT: Record<GateReason, string> = {
   OPTION_UNAVAILABLE: "선택한 옵션이 바뀌었어요. 카트에서 옵션을 다시 골라주세요",
   READ_FAILED: "일시적인 오류예요. 잠시 후 다시 시도해주세요",
   SELF_DEALING: "본인 매장은 주문할 수 없어요",
+  USER_SUSPENDED: "이용이 제한된 계정이에요. 고객센터에 문의해 주세요",
+  USER_DELETED: "탈퇴한 계정이에요",
+  STORE_OWNER_SUSPENDED: "지금은 이 매장이 주문을 받을 수 없어요. 잠시 후 다시 시도해주세요",
   QOIN_SPEND_DISABLED: "지금은 Qoin 을 결제에 쓸 수 없어요",
   QOIN_INSUFFICIENT_BALANCE: "Qoin 잔액이 부족해요",
   QOIN_BELOW_CASH_FLOOR: "Qoin 을 최대로 쓸 수 없는 주문이에요",

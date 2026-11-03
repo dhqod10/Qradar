@@ -68,7 +68,8 @@ function qoinOf(user: RawDoc | null): number {
 
 export async function runDeleteMyAccount(
   ports: AccountPorts,
-  args: { uid: string; reason: string | null; dryRun: boolean }
+  /** actorUid: 관리자 강제탈퇴(adminDeleteUser) 시 admin uid. 생략하면 본인(uid) — self-탈퇴 동작은 불변. */
+  args: { uid: string; reason: string | null; dryRun: boolean; actorUid?: string }
 ): Promise<DeleteAccountResult> {
   const { uid, dryRun } = args;
   const user = await ports.readUser(uid);
@@ -113,7 +114,8 @@ export async function runDeleteMyAccount(
       uid,
       provider: typeof user?.provider === "string" ? user.provider : null,
       snapshot: user,
-      deletedBy: uid,
+      deletedBy: args.actorUid ?? uid,
+      ...(args.actorUid !== undefined && args.actorUid !== uid ? { byAdmin: true } : {}),
       deletedAt: FieldValue.serverTimestamp(),
       reason: args.reason ?? "",
       forfeitedQoin: qoinOf(user),

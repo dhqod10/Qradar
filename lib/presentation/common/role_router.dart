@@ -5,9 +5,11 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/user_role.dart';
 import 'package:qradar/presentation/admin/admin_scaffold.dart';
 import 'package:qradar/presentation/brand/brand_scaffold.dart';
+import 'package:qradar/presentation/common/account_suspended_view.dart';
 import 'package:qradar/presentation/common/notification/notification_navigator.dart';
 import 'package:qradar/presentation/common/notification/pending_notification_holder.dart';
 import 'package:qradar/presentation/common/scaffold_with_nav.dart';
+import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/auth/login_page.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/owner/owner_scaffold.dart';
@@ -28,9 +30,13 @@ class RoleRouter extends ConsumerWidget {
 
     return profile.when(
       loading: () => const _Loading(),
-      error: (e, st) => _ErrorView(error: e, stack: st),
+      error: (e, st) => _ProfileLoadError(error: e),
       data: (user) {
         if (user == null) return const LoginPage();
+
+        // 계정 정지 (admin_user_moderation) — 역할 분기·알림 deep link 소비보다 먼저.
+        // pending 알림을 소비하지 않고 반환해 정지 유저가 알림 탭으로 다른 화면에 가지 못한다.
+        if (user.suspended) return const AccountSuspendedView();
 
         // 앱 종료 상태에서 알림 탭으로 진입한 경우의 deep link 처리.
         // SplashScreen 의 pushReplacement 로 스택이 교체된 뒤인 이 시점에
@@ -74,43 +80,96 @@ class _Loading extends StatelessWidget {
   }
 }
 
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.error, required this.stack});
+/// 프로필 스트림 오류 화면. raw 예외·stack 은 노출하지 않는다.
+///
+/// 토큰 무효화(정지 revoke 등) 직후 users 스트림이 permission-denied 로 끊기는 경로가 정확히 여기다 —
+/// 이 경우 자동으로 로그아웃해 LoginPage 로 보낸다. 그 외(일시 장애)는 재시도/로그아웃 선택지를 준다.
+class _ProfileLoadError extends ConsumerStatefulWidget {
+  const _ProfileLoadError({required this.error});
 
   final Object error;
-  final StackTrace stack;
+
+  @override
+  ConsumerState<_ProfileLoadError> createState() => _ProfileLoadErrorState();
+}
+
+class _ProfileLoadErrorState extends ConsumerState<_ProfileLoadError> {
+  bool _autoSignOut = false;
+  bool _busy = false;
+
+  bool get _isPermissionDenied =>
+      widget.error.toString().toLowerCase().contains('permission-denied');
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isPermissionDenied) {
+      _autoSignOut = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _signOut());
+    }
+  }
+
+  Future<void> _signOut() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      // 성공하면 authProvider 가 null → 프로필 스트림 재계산 → Router 가 LoginPage 를 렌더한다.
+      await ref.read(authProvider.notifier).signOut();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _autoSignOut = false; // 자동 경로 실패 시 수동 버튼 노출
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_autoSignOut) return const _Loading();
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '프로필 로드 실패',
-                  style: TextStyle(
-                    color: AppColors.error,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '정보를 불러오지 못했어요',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textHeading,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(height: 12),
-                SelectableText(
-                  error.toString(),
-                  style: const TextStyle(color: AppColors.textDark, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '잠시 후 다시 시도해 주세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textBody, fontSize: 14),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _busy
+                    ? null
+                    : () => ref.invalidate(currentUserProfileProvider),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
                 ),
-                const SizedBox(height: 16),
-                SelectableText(
-                  stack.toString(),
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                child: const Text('다시 시도'),
+              ),
+              TextButton(
+                onPressed: _busy ? null : _signOut,
+                child: const Text(
+                  '로그아웃',
+                  style: TextStyle(color: AppColors.primaryBright),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

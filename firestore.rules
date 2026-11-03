@@ -105,6 +105,18 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(qoinManagedFields());
     }
 
+    // [admin_user_moderation] users 정지 필드 집합 — setUserSuspension CF(Admin SDK) 전담. admin 포함 모든 클라이언트 쓰기 차단.
+    //   Auth disabled / 이력과 따로 놀지 않도록 플래그만 직접 편집하는 경로를 닫는다. 필드 목록은 여기 1곳.
+    function moderationManagedFields() {
+      return ['suspended', 'suspendedAt', 'suspendedBy', 'suspensionReason'];
+    }
+    function touchesModerationManaged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(moderationManagedFields());
+    }
+    function hasModerationManagedOnCreate() {
+      return request.resource.data.keys().hasAny(moderationManagedFields());
+    }
+
     // create 문서에 위 필드가 들어 있는가? (create 경로 차단용)
     function hasQoinManagedOnCreate() {
       return request.resource.data.keys().hasAny(qoinManagedFields());
@@ -141,14 +153,16 @@ service cloud.firestore {
                     && uid() == userId
                     && request.resource.data.get('role', 'customer') == 'customer'
                     && !('brandId' in request.resource.data)
-                    && !('qoinBalance' in request.resource.data);
+                    && !('qoinBalance' in request.resource.data)
+                    && !hasModerationManagedOnCreate();
 
       // delete 는 admin 만
       allow delete: if isAdmin();
 
       // update: admin 전권 또는 본인의 제한된 self 업데이트
-      allow update: if isAdmin()
-                    || isSelfProfileUpdate(userId);
+      allow update: if !touchesModerationManaged()
+                    && (isAdmin()
+                        || isSelfProfileUpdate(userId));
 
       // ── 내부 함수: 본인 프로필 update ───────────────────────────────────────
       // 변경 가능 필드: role (허용된 전이만), displayName, photoUrl, fcmToken ...
@@ -709,6 +723,12 @@ service cloud.firestore {
     // accountDeletionHistory/{uid_millis} — 회원 탈퇴 이력 (deleteMyAccount CF 전담 write, 재진입점). snapshot 에 PII 포함 → admin read 전용.
     // [account_deletion] 클라이언트(본인 포함)는 읽기·쓰기 모두 불가. users.delete 는 admin 전용 그대로.
     match /accountDeletionHistory/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // userModerationHistory/{uid_millis} — 계정 정지/해제 이력 (setUserSuspension CF 전담 write). admin read 전용.
+    match /userModerationHistory/{id} {
       allow read: if isAdmin();
       allow write: if false;
     }

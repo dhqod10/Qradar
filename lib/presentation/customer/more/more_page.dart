@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:qradar/core/constants/support_contact.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 // DEV_ONLY_SEED — order_flow_phase1. 시드 제거 시 다음 import 와 사용처(앱 버전 텍스트 래퍼) 삭제.
 import 'package:qradar/dev/seed/dev_seed_trigger.dart';
@@ -11,9 +12,6 @@ import 'package:qradar/presentation/customer/auth/providers/user_profile_provide
 import 'package:qradar/presentation/customer/more/account_deletion/account_deletion_page.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_brand_section.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_owner_section.dart';
-
-/// 고객센터 연락처 — owner/brand 탈퇴 안내 다이얼로그에 노출. **placeholder, 운영 확정 후 이 한 곳만 교체한다.**
-const String _supportContact = '고객센터 문의: (추후 입력)';
 
 class MorePage extends ConsumerWidget {
   const MorePage({super.key});
@@ -106,7 +104,7 @@ void _onTapDeleteAccount(BuildContext context, WidgetRef ref) {
   }
   showErrorDialog(
     context,
-    '매장·브랜드 운영자 계정은 앱에서 직접 탈퇴할 수 없어요. 탈퇴를 원하시면 고객센터로 문의해 주세요.\n$_supportContact',
+    '매장·브랜드 운영자 계정은 앱에서 직접 탈퇴할 수 없어요. 탈퇴를 원하시면 고객센터로 문의해 주세요.\n$kSupportContact',
     title: '탈퇴 안내',
   );
 }
