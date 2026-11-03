@@ -10,7 +10,7 @@
    ========================================================================== */
 
 import {
-  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, runBackfillSearchKeywords, LIST_LIMIT,
+  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, runBackfillSearchKeywords, findUsersByEmail, findUserByUid, setUserSuspension, adminDeleteUser, LIST_LIMIT,
 } from './console-data.js';
 import {
   esc, safeUrl, fmtDateTime, fmtShortDateTime, fmtClock, shortUid, fmtKrw, fmtRatePct, normalizeStatus, STATUS_LABEL, validateReason, classifyError, writeErrorText,
@@ -24,6 +24,7 @@ export const meta = { role: 'admin', defaultHash: '#/dashboard' };
 const NAV = [
   { group: '운영', items: [
     { key: 'dashboard', href: '#/dashboard', label: '대시보드' },
+    { key: 'users', href: '#/users', label: '회원 관리' },
     { key: 'tools', href: '#/tools', label: '백필 도구' },
   ] },
   { group: '승인 큐', items: [
@@ -61,6 +62,7 @@ export function match(parts, alive) {
   if (p0 === 'qoin') return { key: 'qoin', run: () => viewQoin(alive) };
   if (p0 === 'dashboard') return { key: 'dashboard', run: () => viewDashboard(alive) };
   if (p0 === 'tools') return { key: 'tools', run: () => viewTools(alive) };
+  if (p0 === 'users') return { key: 'users', run: () => viewUsers(alive) };
   return null;
 }
 
@@ -313,6 +315,176 @@ function wireTool(id, alive) {
 
   dryBtn.onclick = () => run(true);
   commitBtn.onclick = () => { if (window.confirm(t.confirm)) run(false); };
+}
+
+/* ============================================================================
+   회원 관리 — 조회 + 정지/해제(전 역할) + 강제 탈퇴(customer, admin_user_moderation)
+   조회는 admin Firestore 직접 쿼리. 정지/해제·강제탈퇴는 서버가 권한·집행·멱등 재판정.
+   ========================================================================== */
+
+function viewUsers(alive) {
+  const v = $('#view');
+  v.innerHTML = `${headHtml({ title: '회원 관리', desc: '이메일 또는 UID 로 회원을 조회해 정지/해제(전 역할)하거나 강제 탈퇴(고객)해요.', refresh: false })}
+    <div class="a-section">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="u-q" type="text" placeholder="이메일 또는 UID" autocomplete="off"
+          style="flex:1;min-width:220px;min-height:44px;padding:0 14px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--surface);color:var(--text-body)">
+        <button type="button" class="a-btn primary" id="u-search">조회</button>
+      </div>
+      <div id="u-msg" style="margin-top:12px"></div>
+      <div id="u-result" style="margin-top:4px"></div>
+    </div>`;
+
+  const input = $('#u-q');
+  const msg = $('#u-msg');
+  const result = $('#u-result');
+
+  const search = async () => {
+    const raw = (input.value || '').trim();
+    msg.innerHTML = '';
+    result.innerHTML = '';
+    if (!raw) { msg.innerHTML = banner('', '', '이메일 또는 UID 를 입력해주세요.'); return; }
+    const btn = $('#u-search');
+    btn.disabled = true; btn.innerHTML = '<span class="a-spin"></span> 조회 중…';
+    try {
+      const rows = raw.includes('@') ? await findUsersByEmail(raw) : [await findUserByUid(raw)].filter(Boolean);
+      if (!alive()) return;
+      if (rows.length === 0) {
+        result.innerHTML = emptyBlock('일치하는 회원이 없어요', '이메일 완전일치/UID 로만 조회돼요. (탈퇴·익명화된 계정은 이메일로 안 잡혀요)');
+      } else {
+        result.innerHTML = rows.map((u) => userCardHtml(u)).join('');
+        rows.forEach((u) => wireUserCard(u, alive));
+      }
+    } catch (e) {
+      if (!alive()) return;
+      msg.innerHTML = banner('error', '조회 실패', writeErrorText(e).text);
+    } finally {
+      if (alive()) { btn.disabled = false; btn.textContent = '조회'; }
+    }
+  };
+
+  $('#u-search').onclick = search;
+  input.onkeydown = (e) => { if (e.key === 'Enter') search(); };
+}
+
+const roleLabelKo = (r) => ({ customer: '고객', owner: '점주', brand: '브랜드', admin: '관리자' }[r] || (r || '알 수 없음'));
+
+function userCardHtml(u) {
+  const id = `u-${u.uid}`;
+  const suspended = u.suspended === true;
+  const deleted = u.deleted === true;
+  const isCustomer = u.role === 'customer';
+  const isAdmin = u.role === 'admin';
+  const statusPill = deleted
+    ? '<span class="a-badge">탈퇴함</span>'
+    : (suspended ? '<span class="a-badge rejected">정지됨</span>' : '<span class="a-badge approved">정상</span>');
+  const qoin = typeof u.qoinBalance === 'number' ? `${fmtKrw(u.qoinBalance)} Q` : '-';
+
+  // 정지/해제: admin·탈퇴 계정 제외
+  const modBlock = (isAdmin || deleted) ? `<p class="a-muted" style="margin:8px 0 0">${isAdmin ? '관리자 계정은 정지할 수 없어요.' : '이미 탈퇴한 계정이에요.'}</p>` : `
+    <div style="margin-top:12px">
+      <input id="${id}-reason" type="text" placeholder="사유 (선택, 내부 기록용)" autocomplete="off"
+        style="width:100%;min-height:40px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);color:var(--text-body);margin-bottom:8px">
+      <button type="button" class="a-btn ${suspended ? '' : 'primary'}" id="${id}-mod">${suspended ? '정지 해제' : '계정 정지'}</button>
+    </div>`;
+
+  // 강제 탈퇴: customer 만
+  const delBlock = deleted ? '' : (isCustomer ? `
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <div class="a-muted" style="margin-bottom:8px">강제 탈퇴 — 되돌릴 수 없어요. 미리보기로 확인 후 실행하세요.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="a-btn" id="${id}-del-dry">탈퇴 미리보기</button>
+        <button type="button" class="a-btn" style="border-color:var(--error);color:var(--error)" id="${id}-del-go" disabled>강제 탈퇴 실행</button>
+      </div>
+      <div id="${id}-del-msg" style="margin-top:10px"></div>
+    </div>` : `<p class="a-muted" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">강제 탈퇴는 고객 계정만 가능해요. (점주·브랜드는 소유 매장 정리가 필요해 Phase 2)</p>`);
+
+  return `<div class="a-card" style="padding:18px;margin-bottom:14px">
+    <div class="a-head" style="margin-bottom:8px"><h2 class="a-h2" style="margin:0">${esc(u.displayName || '(이름 없음)')}</h2>${statusPill}</div>
+    ${kv([
+      ['이메일', u.email || '-'],
+      ['역할', roleLabelKo(u.role)],
+      ['UID', `<span style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(u.uid)}</span>`, true],
+      ['보유 Qoin', qoin],
+    ])}
+    <div id="${id}-msg" style="margin-top:10px"></div>
+    ${modBlock}
+    ${delBlock}
+  </div>`;
+}
+
+function wireUserCard(u, alive) {
+  const id = `u-${u.uid}`;
+  const cardMsg = $(`#${id}-msg`);
+  const reasonOf = () => { const el = $(`#${id}-reason`); return el ? (el.value || '').trim() : ''; };
+
+  // 정지 / 해제
+  const modBtn = $(`#${id}-mod`);
+  if (modBtn) {
+    const suspended = u.suspended === true;
+    modBtn.onclick = async () => {
+      const action = suspended ? 'unsuspend' : 'suspend';
+      const ok = window.confirm(suspended
+        ? `${u.email || u.uid} 의 정지를 해제할까요?`
+        : `${u.email || u.uid} 를 정지할까요? 로그인·결제가 즉시 차단되고, 점주면 매장 판매도 중단돼요.`);
+      if (!ok) return;
+      modBtn.disabled = true; modBtn.innerHTML = '<span class="a-spin"></span> 처리 중…';
+      try {
+        await setUserSuspension(u.uid, action, reasonOf());
+        if (!alive()) return;
+        cardMsg.innerHTML = banner('success', '완료', suspended ? '정지를 해제했어요.' : '계정을 정지했어요.');
+        toast(suspended ? '정지 해제됨' : '정지됨');
+        modBtn.disabled = true; modBtn.textContent = suspended ? '해제됨' : '정지됨';
+      } catch (e) {
+        if (!alive()) return;
+        cardMsg.innerHTML = banner('error', '실패', writeErrorText(e).text);
+        modBtn.disabled = false; modBtn.textContent = suspended ? '정지 해제' : '계정 정지';
+      }
+    };
+  }
+
+  // 강제 탈퇴 (customer)
+  const dry = $(`#${id}-del-dry`);
+  const go = $(`#${id}-del-go`);
+  const delMsg = $(`#${id}-del-msg`);
+  if (dry && go) {
+    let canDelete = false;
+    dry.onclick = async () => {
+      delMsg.innerHTML = '';
+      dry.disabled = true; dry.innerHTML = '<span class="a-spin"></span> 확인 중…';
+      try {
+        const d = await adminDeleteUser(u.uid, reasonOf(), true);
+        if (!alive()) return;
+        const inflight = d?.inFlightOrders ?? 0;
+        const qForfeit = d?.qoinToForfeit ?? 0;
+        canDelete = d?.canDelete === true;
+        delMsg.innerHTML = banner(canDelete ? '' : 'warn', '미리보기',
+          `진행 중 주문 ${inflight}건 · 소멸 예정 Qoin ${fmtKrw(qForfeit)}Q · ${canDelete ? '탈퇴 가능' : '탈퇴 불가(진행 중 주문 완료 후)'}`);
+        go.disabled = !canDelete;
+      } catch (e) {
+        if (!alive()) return;
+        delMsg.innerHTML = banner('error', '실패', writeErrorText(e).text);
+      } finally {
+        if (alive()) { dry.disabled = false; dry.textContent = '탈퇴 미리보기'; }
+      }
+    };
+    go.onclick = async () => {
+      if (!canDelete) return;
+      if (!window.confirm(`${u.email || u.uid} 를 정말 강제 탈퇴할까요? 되돌릴 수 없어요.`)) return;
+      go.disabled = true; go.innerHTML = '<span class="a-spin"></span> 실행 중…'; dry.disabled = true;
+      try {
+        await adminDeleteUser(u.uid, reasonOf(), false);
+        if (!alive()) return;
+        delMsg.innerHTML = banner('success', '완료', '강제 탈퇴를 실행했어요. (익명화 + 계정 삭제)');
+        toast('강제 탈퇴됨');
+        go.textContent = '탈퇴 완료';
+      } catch (e) {
+        if (!alive()) return;
+        delMsg.innerHTML = banner('error', '실패', writeErrorText(e).text);
+        go.disabled = false; go.textContent = '강제 탈퇴 실행'; dry.disabled = false;
+      }
+    };
+  }
 }
 
 /* ============================================================================

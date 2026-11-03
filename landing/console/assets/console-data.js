@@ -361,6 +361,40 @@ export async function runBackfillSearchKeywords(dryRun) {
   return res?.data ?? null;
 }
 
+/* ── 회원 관리 (admin_user_moderation) ─────────────────────────────────────────
+   조회는 admin Firestore 직접 쿼리(users.read: isAdmin()). 정지/해제·강제탈퇴는
+   서버(callable)가 Auth 집행·권한·멱등을 전부 재판정한다. */
+
+/** 이메일 완전일치로 users 조회 (익명화된 계정은 email 이 지워져 안 잡힌다). */
+export async function findUsersByEmail(email) {
+  const q = query(collection(db, 'users'), where('email', '==', email), limit(10));
+  const snap = await withTimeout(getDocsFromServer(q), READ_TIMEOUT_MS);
+  return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+}
+
+/** uid 로 users 1건 조회. */
+export async function findUserByUid(uid) {
+  const snap = await withTimeout(getDocFromServer(doc(db, 'users', uid)), READ_TIMEOUT_MS);
+  return snap.exists() ? { uid: snap.id, ...snap.data() } : null;
+}
+
+/** 계정 정지/해제 — setUserSuspension. action 은 'suspend' | 'unsuspend'. */
+export async function setUserSuspension(targetUid, action, reason) {
+  const call = httpsCallable(functions, 'setUserSuspension', { timeout: KEY_TIMEOUT_MS });
+  const res = await call({ targetUid, action, reason: reason && reason.length ? reason : undefined });
+  return res?.data ?? null;
+}
+
+/** 관리자 강제 탈퇴 — adminDeleteUser (customer 전용). dryRun:true 는 미리보기(쓰기 0). */
+export async function adminDeleteUser(targetUid, reason, dryRun) {
+  const call = httpsCallable(functions, 'adminDeleteUser', { timeout: BACKFILL_TIMEOUT_MS });
+  const res = await withTimeout(
+    call({ targetUid, reason: reason && reason.length ? reason : undefined, dryRun: dryRun === true }),
+    BACKFILL_TIMEOUT_MS + 5000,
+  );
+  return res?.data ?? null;
+}
+
 /* ============================================================================
    공통 헬퍼 (역할별 콘솔)
    ========================================================================== */
