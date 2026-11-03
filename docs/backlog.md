@@ -904,3 +904,16 @@ Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order
 
 ### ⬜ `setQoinSpendPolicy` 관리자 UI + 이력 표시
 현재 Qoin 사용정책(`spendEnabled`/`minSpendUnit`/`minCashFloor`) 변경 수단이 **admin 화면 없이 callable `setQoinSpendPolicy` 또는 Console 직접편집**뿐이다(운영 불편 + Console 편집은 `source:'direct'` 이력만). 적립률 계층화의 Qoin admin 허브에 **사용정책 1페이지 추가**: 값 편집(검증 포함 — minCashFloor 없이 spendEnabled:true 거부) + `config/qoin/qoinRateHistory`의 사용정책 이력(`field` = spendEnabled/minSpendUnit/minCashFloor) 표시. 앱 모델이 신규 3종 `field`를 걸러 admin 이력 화면에 안 보이는 것도 함께 해소. 사용자 확인됨(2026-11-02).
+
+## 결제 저장 실패 시 Toss 자동취소 부재 (order_pickup_number 후속, 2026-11-03)
+
+### ⬜ Qoin 미사용 결제에서 confirm 성공 후 주문 저장 실패 시 Toss 자동취소
+`verifyTossPayment` 는 Toss confirm(결제 승인) 이후 `orders`/`orderLogs` 저장을 하는데, **Qoin 예약이 없는 결제**에서 이 저장이 실패하면 **결제는 됐는데 주문 기록이 없는** 상태가 되고 Toss 자동취소가 없다(`undoQoinReservation` 은 Qoin 예약이 있을 때만 동작). batch 시절부터 존재하던 문제이나, order_pickup_number 로 batch→transaction 전환 후 **경합 재시도 소진 abort 가능성이 소폭 높아짐**. 대책: 저장 실패 경로에서 Toss cancel 호출(멱등) 또는 미아 결제 탐지·수동복구 큐. 우선순위: 결제 정합성이라 런칭 전 검토 권장.
+
+### ⬜ OrderLogModel 필드 불일치 (total/paidAt vs totalPrice/createdAt)
+`OrderLogModel` 은 `total`/`paidAt` 을 읽는데 서버(verifyTossPayment)는 `totalPrice`/`createdAt` 으로 쓴다. **현재 소비처가 없어 영향 없음**이나, orderLogs 를 실제로 쓰게 되면 null 이 되므로 정합 필요.
+
+## 이메일 가입 후속 (signup_profile_fields 후속, 2026-11-03)
+
+### ⬜ 기존 유저(이름 없는) 이름·전화 입력 유도 + 소셜 가입 전화 수집
+signup_profile_fields 는 **신규 이메일 가입**만 이름·전화를 받는다. (a) 이미 가입한 이름 없는 이메일 유저에게 비차단 soft prompt 로 입력 유도, (b) 소셜(kakao/naver) 가입자 전화 수집 — 둘 다 이번 범위 제외. Rules/모델의 phone update 경로는 이미 열려 있음. 약관/개인정보 동의 UI(현재 고지 1줄만)는 B 범위 미성년자·법적요건 확정 시 재검토.
