@@ -378,7 +378,7 @@ function userCardHtml(u) {
   const statusPill = deleted
     ? '<span class="a-badge">탈퇴함</span>'
     : (suspended ? '<span class="a-badge rejected">정지됨</span>' : '<span class="a-badge approved">정상</span>');
-  const qoin = typeof u.qoinBalance === 'number' ? `${fmtKrw(u.qoinBalance)} Q` : '-';
+  const qoin = typeof u.qoinBalance === 'number' ? `${u.qoinBalance.toLocaleString('ko-KR')} Q` : '-';
 
   // 정지/해제: admin·탈퇴 계정 제외
   const modBlock = (isAdmin || deleted) ? `<p class="a-muted" style="margin:8px 0 0">${isAdmin ? '관리자 계정은 정지할 수 없어요.' : '이미 탈퇴한 계정이에요.'}</p>` : `
@@ -459,7 +459,7 @@ function wireUserCard(u, alive) {
         const qForfeit = d?.qoinToForfeit ?? 0;
         canDelete = d?.canDelete === true;
         delMsg.innerHTML = banner(canDelete ? '' : 'warn', '미리보기',
-          `진행 중 주문 ${inflight}건 · 소멸 예정 Qoin ${fmtKrw(qForfeit)}Q · ${canDelete ? '탈퇴 가능' : '탈퇴 불가(진행 중 주문 완료 후)'}`);
+          `진행 중 주문 ${inflight}건 · 소멸 예정 Qoin ${(qForfeit || 0).toLocaleString('ko-KR')}Q · ${canDelete ? '탈퇴 가능' : '탈퇴 불가(진행 중 주문 완료 후)'}`);
         go.disabled = !canDelete;
       } catch (e) {
         if (!alive()) return;
