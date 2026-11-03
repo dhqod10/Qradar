@@ -27,6 +27,8 @@
 - "🛠 CF" — Cloud Function 만 가능 (Admin SDK)
 - "🔒 클라이언트 차단" — `allow X: if false` 또는 명시적 거부
 
+**참고 (User 는 status enum 이 없다)**: 회원 탈퇴(`deleteMyAccount` CF, account_deletion)는 `users.deleted: true` 플래그 + 익명화로 표현한다 (하드 삭제 아님). Order 의 진행 중 status(`paid`/`accepted`/`making`/`ready`)가 1건이라도 있으면 탈퇴가 차단된다 (`deleteStore` 와 같은 집합). 소셜 재가입 시 `deleted` 문서는 신규 상태로 재초기화된다.
+
 ---
 
 ## 2. Order Lifecycle

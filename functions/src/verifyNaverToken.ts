@@ -20,6 +20,7 @@ import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import axios from "axios";
+import { reactivateIfDeleted } from "./accountReactivation";
 
 const naverClientSecret = defineSecret("NAVER_CLIENT_SECRET");
 const naverClientId = defineString("NAVER_CLIENT_ID");
@@ -155,6 +156,13 @@ export const verifyNaverToken = onCall(
 
     // 5. Firebase Custom Token 발급 (uid 유도 불변)
     const uid = `naver_${naverUid}`;
+    // 탈퇴(익명화)된 동일 uid 재가입 → 깨끗한 신규 상태로 재초기화 (account_deletion §0-9). 실패하면 로그인도 막는다 (deleted 문서 방치 금지).
+    try {
+      await reactivateIfDeleted(admin.firestore(), uid, "naver");
+    } catch (err) {
+      console.error("[verifyNaverToken] reactivate failed", uid, err);
+      throw new HttpsError("internal", "계정 복구에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    }
     const customToken = await admin.auth().createCustomToken(uid, {
       provider: "naver",
     });

@@ -917,3 +917,17 @@ Web 앱 Firebase 등록(`...web:d44f3e33`), `.firebaserc` 신규(default→order
 
 ### ⬜ 기존 유저(이름 없는) 이름·전화 입력 유도 + 소셜 가입 전화 수집
 signup_profile_fields 는 **신규 이메일 가입**만 이름·전화를 받는다. (a) 이미 가입한 이름 없는 이메일 유저에게 비차단 soft prompt 로 입력 유도, (b) 소셜(kakao/naver) 가입자 전화 수집 — 둘 다 이번 범위 제외. Rules/모델의 phone update 경로는 이미 열려 있음. 약관/개인정보 동의 UI(현재 고지 1줄만)는 B 범위 미성년자·법적요건 확정 시 재검토.
+
+## 회원 탈퇴 후속 (account_deletion 후속, 2026-11-03)
+
+### ⬜ _supportContact 실제 값 확정 (출시 전 필수)
+owner/brand 가 탈퇴 시도 시 뜨는 "앱에서 탈퇴 불가, 고객센터 문의" 다이얼로그의 연락처가 현재 placeholder 상수(`more_page.dart`의 `_supportContact`). **출시 전 실제 이메일/링크로 1줄 교체** 필요.
+
+### ⬜ reactivateIfDeleted 단위 테스트 추가
+소셜 재가입 시 `deleted` 문서 재초기화(`accountReactivation.ts`) 경로에 자동 테스트가 없다. 코드는 리뷰로 확인됐으나, 재초기화·no-op 분기를 보호하는 단위 테스트 권장. (tester 보류 1, [중])
+
+### ⬜ 탈퇴 중단 후 재탈퇴 시 진행중주문 가드 우회 가능 (엣지)
+탈퇴가 Auth 삭제 전에 중단된 뒤 소셜 재로그인으로 재활성화 → 다시 탈퇴 시 미완료 이력으로 재진입하며 진행중주문 가드를 건너뛸 수 있음. 영향 낮음. (tester 보류 2, [저])
+
+### ⬜ deleted 사용자 결제 차단 (보안 후속, [저])
+진행중주문 가드 통과 후 Auth 삭제 전 짧은 구간 새 결제 가능 + 삭제 후 ID 토큰이 최대 1시간 유효. 결제 CF(verifyTossPayment)에서 `deleted` 사용자를 거부하는 방안 후속 검토. (tester 보류 3)

@@ -36,6 +36,8 @@ export { auditBrandLinks } from "./auditBrandLinks";
 export { lookupBrandByKey } from "./lookupBrandByKey";
 export { issueBrandKey } from "./issueBrandKey";
 export { deleteStore } from "./deleteStore";
+// account_deletion — customer 본인 탈퇴 (소프트 삭제/익명화, Admin SDK 전담)
+export { deleteMyAccount } from "./deleteMyAccount";
 // payment_server_authority — 임시 마이그레이션 (완료 후 정리 커밋으로 삭제: 배포 ⑪)
 export { migrateStoreApprovalMeta } from "./migrateStoreApprovalMeta";
 export { migrateBrandPrivateProfile } from "./migrateBrandPrivateProfile";

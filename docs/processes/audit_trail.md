@@ -70,6 +70,7 @@ qoinTransactions/{id}
 | Qoin 거래 원장 | `users/{uid}/qoinTransactions/{id}` | Qoin 1차. 당시 값 박제 |
 | brandKey 발급 이력 | `brands/{id}/keyHistory/{autoId}` | `issueBrandKey` CF 가 키 생성·`brandKeys` 유일성·`private/profile.brandKey` 와 **같은 트랜잭션**에 기록 (`changedBy` = admin uid). brandKey 는 가맹 신청의 권한 근거라 **권한 값** (payment_server_authority) |
 | 매장 삭제 이력 | `storeDeletionHistory/{storeId_createdAtMillis}` | `deleteStore` CF 가 **삭제 전에 가장 먼저** 기록 (삭제 직전 스냅샷 + `deletedBy` + `reason` + 실행 시점 `affected` + `phase`). 중간 실패 시 재진입점이기도 하다 |
+| 회원 탈퇴 이력 | `accountDeletionHistory/{uid_millis}` | `deleteMyAccount` CF 가 **익명화 전에 가장 먼저** 기록 (users 스냅샷 + `deletedBy` + `forfeitedQoin` + `affected` + `phase`). 소멸 Qoin 은 `qoinTransactions` 원장(`type:'forfeit'`) 1건 동반 |
 | 결제 게이트 거절 기록 | `paymentGateRejections/{autoId}` | 거래 이력이 아니라 **거절 이력** — 오탐(정상 손님이 막힘) 탐지용. CF 전담 write, 건수·분포를 영구 보존 (Cloud Logging 의존 금지, §4-6) |
 | 가격 변경 이력 | `priceHistory/{eventId}` | **payment_price_authority R16 (2026-10-27).** `onMenuPriceWritten` 트리거 계열이 `basePrice` / `priceOverride`+`status` / 옵션 `priceDelta` 변경의 `before`/`after`/`changedBy`/`targetId`/`scope`/`changedAt` 를 남긴다. 트리거라 **쓰기 경로를 건드리지 않고** 클라이언트 직접 쓰기도 포착한다. 이 시점 **이후**부터만 있다 — 과거 가격은 복원할 수 없다 |
 | 일괄 처리(마이그레이션) 기록 | `migrationHistory/{autoId}` | M1·M2 가 실행 시 1건 + 영향 범위(대상 수). 가격 감사 도구(`auditOrderPriceIntegrity`)도 실행마다 1건 |

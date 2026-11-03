@@ -9,7 +9,7 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "npm run build && node --test test/qoinRate.test.mjs test/paymentAuthority.test.mjs test/paymentGate.test.mjs test/priceAuthority.test.mjs test/priceAudit.test.mjs test/authorityCallables.test.mjs test/availableCategories.test.mjs test/searchKeywords.test.mjs test/selfDealing.test.mjs test/qoinSpend.test.mjs test/qoinRateReconstruct.test.mjs test/pickupNumber.test.mjs",
+    "test": "npm run build && node --test test/qoinRate.test.mjs test/paymentAuthority.test.mjs test/paymentGate.test.mjs test/priceAuthority.test.mjs test/priceAudit.test.mjs test/authorityCallables.test.mjs test/availableCategories.test.mjs test/searchKeywords.test.mjs test/selfDealing.test.mjs test/qoinSpend.test.mjs test/qoinRateReconstruct.test.mjs test/pickupNumber.test.mjs test/deleteMyAccount.test.mjs",
     "test:emulator": "npm run build && cd .. && npx --yes firebase-tools@14 emulators:exec --only firestore,functions --project order-app-5957e \"node functions/test/emulator.test.mjs\""
   },
   "engines": {

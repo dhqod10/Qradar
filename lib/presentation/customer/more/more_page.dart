@@ -4,9 +4,16 @@ import 'package:qradar/core/theme/app_colors.dart';
 // DEV_ONLY_SEED — order_flow_phase1. 시드 제거 시 다음 import 와 사용처(앱 버전 텍스트 래퍼) 삭제.
 import 'package:qradar/dev/seed/dev_seed_trigger.dart';
 import 'package:qradar/presentation/common/notification/notification_settings_page.dart';
+import 'package:qradar/domain/entities/user_role.dart';
+import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
+import 'package:qradar/presentation/customer/more/account_deletion/account_deletion_page.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_brand_section.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_owner_section.dart';
+
+/// 고객센터 연락처 — owner/brand 탈퇴 안내 다이얼로그에 노출. **placeholder, 운영 확정 후 이 한 곳만 교체한다.**
+const String _supportContact = '고객센터 문의: (추후 입력)';
 
 class MorePage extends ConsumerWidget {
   const MorePage({super.key});
@@ -51,6 +58,23 @@ class MorePage extends ConsumerWidget {
               ),
             ),
           ),
+          const SizedBox(height: 4),
+          Center(
+            child: TextButton(
+              onPressed: () => _onTapDeleteAccount(context, ref),
+              style: TextButton.styleFrom(minimumSize: const Size(0, 44)),
+              child: const Text(
+                '회원 탈퇴',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textMuted,
+                  decoration: TextDecoration.underline,
+                  decorationColor: AppColors.textMuted,
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
           // DEV_ONLY_SEED — order_flow_phase1. 시드 제거 시 아래 DevSeedTrigger 래퍼만 떼고 Text 만 남기면 됨.
           Center(
@@ -59,10 +83,7 @@ class MorePage extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Text(
                   'Qradar v0.1.0',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
               ),
             ),
@@ -71,6 +92,23 @@ class MorePage extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 회원 탈퇴 진입. customer 만 탈퇴 화면으로, 그 외 역할은 안내 다이얼로그 (Phase 2 전까지).
+void _onTapDeleteAccount(BuildContext context, WidgetRef ref) {
+  // authProvider 의 role 은 Auth 세션 기본값이라 신뢰할 수 없다 — Firestore 프로필의 role 을 본다 (서버도 재검증).
+  final role = ref.read(currentUserProfileProvider).asData?.value?.role;
+  if (role == null || role == UserRole.customer) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const AccountDeletionPage()),
+    );
+    return;
+  }
+  showErrorDialog(
+    context,
+    '매장·브랜드 운영자 계정은 앱에서 직접 탈퇴할 수 없어요. 탈퇴를 원하시면 고객센터로 문의해 주세요.\n$_supportContact',
+    title: '탈퇴 안내',
+  );
 }
 
 /// 더보기 진입 타일. `OwnerMorePage._Tile` 과 시그니처·시각 스펙 동일 (U4).

@@ -13,6 +13,7 @@ import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineString } from "firebase-functions/params";
 import axios from "axios";
+import { reactivateIfDeleted } from "./accountReactivation";
 
 // 카카오 콘솔의 숫자형 "앱 ID" (네이티브 키 아님). functions .env 로 주입 — 하드코딩 금지.
 const kakaoAppId = defineString("KAKAO_APP_ID");
@@ -121,6 +122,13 @@ export const verifyKakaoToken = onCall(
 
     // 4. Firebase Custom Token 발급
     const uid = `kakao_${kakaoUid}`;
+    // 탈퇴(익명화)된 동일 uid 재가입 → 깨끗한 신규 상태로 재초기화 (account_deletion §0-9). 실패하면 로그인도 막는다 (deleted 문서 방치 금지).
+    try {
+      await reactivateIfDeleted(admin.firestore(), uid, "kakao");
+    } catch (err) {
+      console.error("[verifyKakaoToken] reactivate failed", uid, err);
+      throw new HttpsError("internal", "계정 복구에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    }
     const customToken = await admin.auth().createCustomToken(uid, {
       provider: "kakao",
     });

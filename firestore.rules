@@ -706,6 +706,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // accountDeletionHistory/{uid_millis} — 회원 탈퇴 이력 (deleteMyAccount CF 전담 write, 재진입점). snapshot 에 PII 포함 → admin read 전용.
+    // [account_deletion] 클라이언트(본인 포함)는 읽기·쓰기 모두 불가. users.delete 는 admin 전용 그대로.
+    match /accountDeletionHistory/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // orderSignals/{orderId} — Layer2 신호수집 (prelaunch_security_bundle). 해시·마스킹형 기기/카드/IP 신호.
     // verifyTossPayment CF(Admin SDK) 전담 write, admin read 전용. 점주/고객은 못 읽는다 (점주가 고객 기기/IP 를 보는 프라이버시 역진 방지).
     match /orderSignals/{orderId} {

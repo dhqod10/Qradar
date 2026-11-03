@@ -1120,6 +1120,23 @@ for (const col of ['paymentGateRejections', 'storeDeletionHistory']) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// account_deletion — accountDeletionHistory 클라이언트 거부 + users.delete admin 전용 회귀
+// ═══════════════════════════════════════════════════════════════════════════
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await setDoc(doc(ctx.firestore(), 'accountDeletionHistory', 'ad1'), { uid: CUSTOMER, phase: 'done', snapshot: { phone: '010' } });
+});
+await run('AD1 admin read accountDeletionHistory', 'allow', () => getDoc(doc(asAdmin, 'accountDeletionHistory', 'ad1')));
+await run('AD1b 본인(고객) read accountDeletionHistory', 'deny', () => getDoc(doc(asCustomer, 'accountDeletionHistory', 'ad1')));
+await run('AD1c 점주 read accountDeletionHistory', 'deny', () => getDoc(doc(asOwner, 'accountDeletionHistory', 'ad1')));
+await run('AD2 고객 create accountDeletionHistory (위조)', 'deny', () => setDoc(doc(asCustomer, 'accountDeletionHistory', 'forge'), { uid: CUSTOMER }));
+await run('AD2b 고객 update accountDeletionHistory', 'deny', () => updateDoc(doc(asCustomer, 'accountDeletionHistory', 'ad1'), { phase: 'started' }));
+await run('AD2c 고객 delete accountDeletionHistory', 'deny', () => deleteDoc(doc(asCustomer, 'accountDeletionHistory', 'ad1')));
+await run('AD2d admin create accountDeletionHistory', 'deny', () => setDoc(doc(asAdmin, 'accountDeletionHistory', 'forge2'), { uid: CUSTOMER }));
+await run('AD2e admin delete accountDeletionHistory', 'deny', () => deleteDoc(doc(asAdmin, 'accountDeletionHistory', 'ad1')));
+await run('AD3 본인이 자기 users 문서 delete (클라 직접 탈퇴 경로 없음)', 'deny', () => deleteDoc(doc(asCustomer, 'users', CUSTOMER)));
+await run('AD3b 본인이 deleted 플래그 직접 set', 'deny', () => updateDoc(doc(asCustomer, 'users', CUSTOMER), { deleted: true }));
+
+// ═══════════════════════════════════════════════════════════════════════════
 // payment_price_authority — Rules-1 (spec §13-7, §13-8, §19-5)
 // menuOverrides: 서버가 priceOverride 를 "권위 있는 금액" 으로 쓰기 시작하므로 점주가 승인 상태를 직접 쓰는 경로를 닫는다.
 // create 와 update 는 별개의 경로다 (onlyChangedFields 는 update 전용) — 양쪽을 각각 확인한다. 정상 흐름 회귀를 함께 고정한다.
