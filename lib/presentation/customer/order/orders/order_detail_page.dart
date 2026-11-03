@@ -7,6 +7,7 @@ import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/presentation/common/order_status_badge.dart';
+import 'package:qradar/presentation/common/widgets/pickup_number_display.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_view_providers.dart';
 import 'package:qradar/presentation/customer/order/widgets/order_item_row.dart';
@@ -248,13 +249,22 @@ class _StatusSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (order.pickupNumber != null) ...[
+            PickupNumberDisplay(
+              number: order.pickupNumber,
+              variant: PickupNumberVariant.hero,
+              muted: order.status == OrderStatus.cancelled ||
+                  order.status == OrderStatus.refunded,
+            ),
+            const SizedBox(height: 12),
+          ],
           OrderStatusBadge(
             status: order.status,
             size: OrderStatusBadgeSize.large,
           ),
           const SizedBox(height: 12),
           Text(
-            '주문번호 $shortId',
+            '주문 ID $shortId',
             style: const TextStyle(
               fontSize: 13,
               color: AppColors.textMuted,

@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/cart_entity.dart';
+import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/payment_failure.dart';
 import 'package:qradar/presentation/common/scaffold_with_nav.dart';
+import 'package:qradar/presentation/common/widgets/pickup_number_display.dart';
 import 'package:qradar/presentation/customer/cart/providers/cart_providers.dart';
 import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
 import 'package:qradar/presentation/customer/checkout/payment_failure_copy.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/payment_menu_list_card.dart';
 import 'package:qradar/presentation/customer/order/orders/order_detail_page.dart';
+import 'package:qradar/presentation/customer/order/orders/providers/order_view_providers.dart';
 
 enum PaymentResultVariant { success, fail, cancelled }
 
@@ -55,7 +58,7 @@ class PaymentResultPage extends ConsumerWidget {
 
 // ── Success ───────────────────────────────────────────────────────────────────
 
-class _SuccessBody extends StatelessWidget {
+class _SuccessBody extends ConsumerWidget {
   const _SuccessBody({this.orderId, required this.onGoToLog});
   final String? orderId;
   final VoidCallback onGoToLog;
@@ -67,16 +70,25 @@ class _SuccessBody extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 픽업 번호(order_pickup_number): 기존 주문 watch 스트림 재사용. 로딩 중엔 스켈레톤, 에러/미도달/null 은 조용히 생략.
+    // 완료 문구·버튼은 어떤 경우에도 막지 않는다.
+    final id = orderId;
+    final orderAsync = (id == null || id.isEmpty)
+        ? const AsyncValue<OrderEntity?>.data(null)
+        : ref.watch(currentOrderProvider(id));
+    final pickupNumber = orderAsync.asData?.value?.pickupNumber;
+    final loading = orderAsync.isLoading;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 60),
+          const SizedBox(height: 40),
           const Icon(
             Icons.check_circle_rounded,
-            size: 80,
+            size: 64,
             color: AppColors.success,
           ),
           const SizedBox(height: 20),
@@ -89,21 +101,34 @@ class _SuccessBody extends StatelessWidget {
               color: AppColors.textHeading,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
+          if (loading) ...[
+            Container(
+              height: 108,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ] else if (pickupNumber != null) ...[
+            PickupNumberDisplay(
+              number: pickupNumber,
+              variant: PickupNumberVariant.hero,
+              caption: '매장에서 이 번호를 보여주세요',
+            ),
+            const SizedBox(height: 16),
+          ],
           const Text(
-            '주문번호',
+            '주문 ID',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           const SizedBox(height: 4),
           Text(
             _shortId,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textBody,
-            ),
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           const Spacer(),
           SizedBox(
@@ -757,12 +782,8 @@ class _PriceMismatchBodyState extends ConsumerState<_PriceMismatchBody> {
             // 시도하므로 막다른 길이 아니다.
             onPressed: _busy
                 ? null
-                : () => _runAction(
-                    context,
-                    ref,
-                    secondaryAction,
-                    widget.failure,
-                  ),
+                : () =>
+                      _runAction(context, ref, secondaryAction, widget.failure),
           ),
         ],
       ],

@@ -117,8 +117,11 @@ function fakeDb() {
         },
       };
     },
-    batch() {
-      return { set: (ref, data) => state.batchSets.push([ref._path, data]), commit: async () => { state.committed = true; } };
+    runTransaction: async (fn) => {
+      const t = { get: async () => ({ exists: false, data: () => undefined }), set: (ref, data) => state.batchSets.push([ref._path, data]) };
+      const r = await fn(t);
+      state.committed = true;
+      return r;
     },
   };
 }
@@ -422,7 +425,7 @@ test('enforce: 주문·로그 문서의 금액 필드는 서버 재계산값이�
   const reader = fakeReader({ storeMenus: { m1: MOPT([{ scope: 'store', id: 'g1' }]) }, groups: { 'store:g1': G([{ id: 'a', priceDelta: 500 }]) } });
   const r = await run({ reader }, cartReq([line('m1', { unit: 4500, qty: 2, opts: [sel('g1', 'a', 500)] })]));
   assert.equal(r.err, null);
-  for (const [p, doc] of r.db.state.batchSets) {
+  for (const [p, doc] of r.db.state.batchSets.filter(([p]) => !p.includes('/pickupCounters/'))) { // 카운터 문서는 금액 문서가 아니다
     assert.equal(doc.totalPrice, 9000, p);
     assert.equal(doc.items[0].lineTotal, 9000, p);
     assert.equal(doc.items[0].unitPriceWithOptions, 4500, p);

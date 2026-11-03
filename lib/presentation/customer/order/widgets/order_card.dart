@@ -4,6 +4,7 @@ import 'package:qradar/core/utils/price_formatter.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/presentation/common/order_status_badge.dart';
+import 'package:qradar/presentation/common/widgets/pickup_number_display.dart';
 
 class OrderCard extends StatelessWidget {
   const OrderCard({
@@ -92,12 +93,10 @@ class OrderCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              _relativeTime(order.createdAt),
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textMuted,
-              ),
+            PickupNumberDisplay(
+              number: order.pickupNumber,
+              variant: PickupNumberVariant.inline,
+              inlineSuffix: _relativeTime(order.createdAt),
             ),
           ],
         ),

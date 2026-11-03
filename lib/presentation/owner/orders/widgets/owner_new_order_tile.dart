@@ -4,6 +4,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/presentation/common/order_status_badge.dart';
+import 'package:qradar/presentation/common/widgets/pickup_number_display.dart';
 
 /// 신규(paid) 주문 카드 타일.
 ///
@@ -42,111 +43,125 @@ class OwnerNewOrderTile extends StatelessWidget {
         highlightColor: AppColors.primary.withValues(alpha: 0.02),
         borderRadius: BorderRadius.circular(16),
         child: Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated,
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                timeFmt.format(order.createdAt),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textMuted,
+              if (order.pickupNumber != null) ...[
+                PickupNumberDisplay(
+                  number: order.pickupNumber,
+                  variant: PickupNumberVariant.badge,
                 ),
-              ),
-              const Spacer(),
-              const OrderStatusBadge(
-                status: OrderStatus.paid,
-                size: OrderStatusBadgeSize.small,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            itemSummary,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textBody,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            fmt.format(order.totalPrice),
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textHeading,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
+                const SizedBox(width: 12),
+              ],
               Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: isLoading ? null : onAccept,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.onPrimary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 0,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          timeFmt.format(order.createdAt),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const Spacer(),
+                        const OrderStatusBadge(
+                          status: OrderStatus.paid,
+                          size: OrderStatusBadgeSize.small,
+                        ),
+                      ],
                     ),
-                    child: isLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.onPrimary,
-                            ),
-                          )
-                        : const Text(
-                            '주문 받기',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                    const SizedBox(height: 8),
+                    Text(
+                      itemSummary,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textBody,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      fmt.format(order.totalPrice),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textHeading,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 40,
+                            child: ElevatedButton(
+                              onPressed: isLoading ? null : onAccept,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: AppColors.onPrimary,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: isLoading
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.onPrimary,
+                                      ),
+                                    )
+                                  : const Text(
+                                      '주문 받기',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                             ),
                           ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 80,
-                height: 40,
-                child: OutlinedButton(
-                  onPressed: isLoading ? null : onReject,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.error,
-                    side: const BorderSide(color: AppColors.error),
-                    backgroundColor: AppColors.surfaceElevated,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 80,
+                          height: 40,
+                          child: OutlinedButton(
+                            onPressed: isLoading ? null : onReject,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.error,
+                              side: const BorderSide(color: AppColors.error),
+                              backgroundColor: AppColors.surfaceElevated,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text(
+                              '거절',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  child: const Text(
-                    '거절',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  ],
                 ),
               ),
             ],
           ),
-        ],
-      ),
         ),
       ),
     );

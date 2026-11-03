@@ -7,6 +7,7 @@ import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/domain/entities/refund_request_entity.dart';
 import 'package:qradar/presentation/common/order_status_badge.dart';
+import 'package:qradar/presentation/common/widgets/pickup_number_display.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/receipt_web_view.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_view_providers.dart';
@@ -58,14 +59,14 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     try {
       await ref.read(acceptOrderUseCaseProvider).call(orderId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('주문을 받았습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('주문을 받았습니다')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -77,20 +78,22 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     if (_isActionLoading) return;
     setState(() => _isActionLoading = true);
     try {
-      await ref.read(cancelPaidOrderUseCaseProvider).call(
+      await ref
+          .read(cancelPaidOrderUseCaseProvider)
+          .call(
             orderId: order.id,
             reason: reason.isEmpty ? '점주 사유' : reason,
             approvedBy: 'owner',
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('주문을 거절했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('주문을 거절했습니다')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -105,19 +108,18 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     if (_isActionLoading) return;
     setState(() => _isActionLoading = true);
     try {
-      await ref.read(processRefundUseCaseProvider).call(
-            orderId: order.id,
-            reason: order.refundRequest?.reason ?? '',
-          );
+      await ref
+          .read(processRefundUseCaseProvider)
+          .call(orderId: order.id, reason: order.refundRequest?.reason ?? '');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('환불을 승인했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('환불을 승인했습니다')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -129,19 +131,21 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     if (_isActionLoading) return;
     setState(() => _isActionLoading = true);
     try {
-      await ref.read(denyRefundRequestUseCaseProvider).call(
+      await ref
+          .read(denyRefundRequestUseCaseProvider)
+          .call(
             orderId: order.id,
             deniedReason: reason.isEmpty ? '점주 사유' : reason,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('환불 요청을 거절했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('환불 요청을 거절했습니다')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -153,14 +157,14 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     try {
       await ref.read(startMakingOrderUseCaseProvider).call(orderId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('조리를 시작했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('조리를 시작했습니다')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -172,14 +176,14 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     try {
       await ref.read(markOrderReadyUseCaseProvider).call(orderId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('준비 완료 처리했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('준비 완료 처리했습니다')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -193,14 +197,14 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     try {
       await ref.read(markOrderCompletedUseCaseProvider).call(orderId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('픽업 완료 처리했습니다')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('픽업 완료 처리했습니다')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -227,8 +231,10 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
           ),
         ),
         leading: IconButton(
-          icon:
-              const Icon(Icons.arrow_back_rounded, color: AppColors.textHeading),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.textHeading,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -256,8 +262,7 @@ class _OwnerOrderDetailPageState extends ConsumerState<OwnerOrderDetailPage> {
     if (orderAsync.hasError) {
       return _ErrorBody(
         message: orderAsync.error.toString(),
-        onRetry: () =>
-            ref.invalidate(currentOrderProvider(widget.orderId)),
+        onRetry: () => ref.invalidate(currentOrderProvider(widget.orderId)),
       );
     }
 
@@ -429,30 +434,50 @@ class _StatusSection extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          OrderStatusBadge(
-            status: order.status,
-            size: OrderStatusBadgeSize.large,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '주문번호 $shortId',
-            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            dateFormat.format(order.createdAt),
-            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            order.storeName,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textHeading,
+          if (order.pickupNumber != null) ...[
+            PickupNumberDisplay(
+              number: order.pickupNumber,
+              variant: PickupNumberVariant.badge,
+              badgeSize: 64,
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                OrderStatusBadge(
+                  status: order.status,
+                  size: OrderStatusBadgeSize.large,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '주문 ID $shortId',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  dateFormat.format(order.createdAt),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  order.storeName,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textHeading,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -501,8 +526,11 @@ class _OwnerRefundSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.warning_amber_rounded,
-                  size: 18, color: AppColors.error),
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 18,
+                color: AppColors.error,
+              ),
               const SizedBox(width: 6),
               const Text(
                 '환불 요청 접수',
@@ -554,8 +582,11 @@ class _OwnerRefundSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.do_not_disturb_on_rounded,
-                  size: 18, color: AppColors.textMuted),
+              const Icon(
+                Icons.do_not_disturb_on_rounded,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
               const SizedBox(width: 6),
               const Text(
                 '환불 거절됨',
@@ -612,10 +643,7 @@ class _OwnerRefundSection extends StatelessWidget {
 
 /// 진행 현황 타임라인. [OrderEntity.makingStartedAt] 이 set 된 시점부터 노출.
 class _TimelineSection extends StatelessWidget {
-  const _TimelineSection({
-    required this.order,
-    required this.dateFormat,
-  });
+  const _TimelineSection({required this.order, required this.dateFormat});
 
   final OrderEntity order;
   final DateFormat dateFormat;
@@ -705,10 +733,7 @@ class _TimelineRow extends StatelessWidget {
         if (timestamp != null)
           Text(
             timestamp!,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textMuted,
-            ),
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
       ],
     );
@@ -742,10 +767,12 @@ class _ItemsSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          ...order.items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: OrderItemRow(item: item),
-              )),
+          ...order.items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: OrderItemRow(item: item),
+            ),
+          ),
         ],
       ),
     );
@@ -817,10 +844,12 @@ class _PaymentInfoSection extends StatelessWidget {
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) =>
-                      ReceiptWebView(receiptUrl: info.receiptUrl!),
-                ));
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ReceiptWebView(receiptUrl: info.receiptUrl!),
+                  ),
+                );
               },
               child: const Text(
                 '영수증 보기',
@@ -852,13 +881,15 @@ class _PaymentInfoSection extends StatelessWidget {
   static Widget _infoRow(String label, String value) {
     return Row(
       children: [
-        Text(label,
-            style:
-                const TextStyle(fontSize: 13, color: AppColors.textMuted)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+        ),
         const Spacer(),
-        Text(value,
-            style:
-                const TextStyle(fontSize: 13, color: AppColors.textBody)),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 13, color: AppColors.textBody),
+        ),
       ],
     );
   }
@@ -906,8 +937,7 @@ class _NoActionInfoCard extends StatelessWidget {
       child: Text(
         _message,
         textAlign: TextAlign.center,
-        style:
-            const TextStyle(fontSize: 14, color: AppColors.textMuted),
+        style: const TextStyle(fontSize: 14, color: AppColors.textMuted),
       ),
     );
   }
@@ -946,9 +976,7 @@ class _ActionBar extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + bottomPadding),
       decoration: const BoxDecoration(
         color: AppColors.surfaceElevated,
-        border: Border(
-          top: BorderSide(color: AppColors.border),
-        ),
+        border: Border(top: BorderSide(color: AppColors.border)),
       ),
       child: _buildContent(),
     );
@@ -1224,14 +1252,16 @@ class _ErrorBody extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline_rounded,
-                size: 48, color: AppColors.error),
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 48,
+              color: AppColors.error,
+            ),
             const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style:
-                  const TextStyle(fontSize: 14, color: AppColors.textMuted),
+              style: const TextStyle(fontSize: 14, color: AppColors.textMuted),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -1241,7 +1271,8 @@ class _ErrorBody extends StatelessWidget {
                 foregroundColor: AppColors.onPrimary,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: const Text('다시 시도'),
             ),

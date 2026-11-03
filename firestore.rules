@@ -161,7 +161,7 @@ service cloud.firestore {
       function isSelfProfileUpdate(userId) {
         return isSignedIn()
           && uid() == userId
-          && onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationPermissionLaterCount', 'notificationSettings', 'updatedAt'])
+          && onlyChangedFields(['role', 'displayName', 'photoUrl', 'phone', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationPermissionLaterCount', 'notificationSettings', 'updatedAt'])
           && (
             // role 변경 없음 (다른 필드만 업데이트)
             request.resource.data.get('role', 'customer') == resource.data.get('role', 'customer')
@@ -470,6 +470,13 @@ service cloud.firestore {
                     || isStoreOwner(storeId)
                     || isBrandHolder(get(/databases/$(database)/documents/stores/$(storeId)).data.get('brandId', ''));
         allow create, update, delete: if false;
+      }
+
+      // ── stores/{storeId}/pickupCounters/{yyyyMMdd} ─────────────────────────
+      // 픽업 주문번호 매장·일별 카운터 (order_pickup_number). verifyTossPayment 트랜잭션(Admin SDK)만 읽고 쓴다.
+      // 클라이언트는 번호를 orders.pickupNumber 로 받으므로 카운터를 볼 필요가 없다 — admin 포함 전면 차단.
+      match /pickupCounters/{dateKey} {
+        allow read, write: if false;
       }
 
       // ── stores/{storeId}/subCategories/{id} ───────────────────────────────

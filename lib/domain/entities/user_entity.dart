@@ -11,6 +11,8 @@ abstract class UserEntity with _$UserEntity {
     String? email,
     String? displayName,
     String? photoUrl,
+    /// 휴대폰 번호 (숫자만, 예: 01012345678). 이메일 가입 시 입력. 읽기 전용 PII — 화면에 노출/로그 금지.
+    String? phone,
     required String provider, // 'google' | 'kakao' | 'naver' | 'email'
     @Default(UserRole.customer) UserRole role,
     DateTime? createdAt,

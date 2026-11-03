@@ -6,6 +6,16 @@ class SignUpWithEmailUseCase {
 
   SignUpWithEmailUseCase(this._repository);
 
-  Future<UserEntity> call({required String email, required String password}) =>
-      _repository.signUpWithEmail(email: email, password: password);
+  Future<UserEntity> call({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+  }) =>
+      _repository.signUpWithEmail(
+        email: email,
+        password: password,
+        name: name,
+        phone: phone,
+      );
 }

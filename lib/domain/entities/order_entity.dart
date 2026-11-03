@@ -36,5 +36,8 @@ abstract class OrderEntity with _$OrderEntity {
     DateTime? completedAt,
     DateTime? cancelledAt,
     DateTime? refundedAt,
+
+    /// 매장·일별(KST) 픽업 주문번호. 서버(verifyTossPayment) 발급, 불변. null = 번호 미부여(과거 주문).
+    int? pickupNumber,
   }) = _OrderEntity;
 }

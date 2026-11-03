@@ -31,11 +31,11 @@ function fakeDb({ existingOrder = null } = {}) {
         },
       };
     },
-    batch() {
-      return {
-        set: (ref, data) => state.batchSets.push([ref._path, data]),
-        commit: async () => { state.committed = true; },
-      };
+    runTransaction: async (fn) => {
+      const t = { get: async () => ({ exists: false, data: () => undefined }), set: (ref, data) => state.batchSets.push([ref._path, data]) };
+      const r = await fn(t);
+      state.committed = true;
+      return r;
     },
   };
   return db;

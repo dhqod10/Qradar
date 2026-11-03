@@ -28,5 +28,8 @@ abstract class OrderLogEntity with _$OrderLogEntity {
     required int total,
     required DateTime paidAt,
     @Default('') String paymentMethod,
+
+    /// orders.pickupNumber 와 동일 값. null = 미부여(과거 주문).
+    int? pickupNumber,
   }) = _OrderLogEntity;
 }

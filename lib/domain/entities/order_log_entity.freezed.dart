@@ -289,7 +289,8 @@ as int,
 /// @nodoc
 mixin _$OrderLogEntity {
 
- String get id; String get userId; String get storeId; String get storeName; List<OrderLogItem> get items; int get total; DateTime get paidAt; String get paymentMethod;
+ String get id; String get userId; String get storeId; String get storeName; List<OrderLogItem> get items; int get total; DateTime get paidAt; String get paymentMethod;/// orders.pickupNumber 와 동일 값. null = 미부여(과거 주문).
+ int? get pickupNumber;
 /// Create a copy of OrderLogEntity
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -300,16 +301,16 @@ $OrderLogEntityCopyWith<OrderLogEntity> get copyWith => _$OrderLogEntityCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is OrderLogEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.total, total) || other.total == total)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.paymentMethod, paymentMethod) || other.paymentMethod == paymentMethod));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OrderLogEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.total, total) || other.total == total)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.paymentMethod, paymentMethod) || other.paymentMethod == paymentMethod)&&(identical(other.pickupNumber, pickupNumber) || other.pickupNumber == pickupNumber));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,storeId,storeName,const DeepCollectionEquality().hash(items),total,paidAt,paymentMethod);
+int get hashCode => Object.hash(runtimeType,id,userId,storeId,storeName,const DeepCollectionEquality().hash(items),total,paidAt,paymentMethod,pickupNumber);
 
 @override
 String toString() {
-  return 'OrderLogEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, items: $items, total: $total, paidAt: $paidAt, paymentMethod: $paymentMethod)';
+  return 'OrderLogEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, items: $items, total: $total, paidAt: $paidAt, paymentMethod: $paymentMethod, pickupNumber: $pickupNumber)';
 }
 
 
@@ -320,7 +321,7 @@ abstract mixin class $OrderLogEntityCopyWith<$Res>  {
   factory $OrderLogEntityCopyWith(OrderLogEntity value, $Res Function(OrderLogEntity) _then) = _$OrderLogEntityCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId, String storeId, String storeName, List<OrderLogItem> items, int total, DateTime paidAt, String paymentMethod
+ String id, String userId, String storeId, String storeName, List<OrderLogItem> items, int total, DateTime paidAt, String paymentMethod, int? pickupNumber
 });
 
 
@@ -337,7 +338,7 @@ class _$OrderLogEntityCopyWithImpl<$Res>
 
 /// Create a copy of OrderLogEntity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? items = null,Object? total = null,Object? paidAt = null,Object? paymentMethod = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? items = null,Object? total = null,Object? paidAt = null,Object? paymentMethod = null,Object? pickupNumber = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -347,7 +348,8 @@ as String,items: null == items ? _self.items : items // ignore: cast_nullable_to
 as List<OrderLogItem>,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
 as int,paidAt: null == paidAt ? _self.paidAt : paidAt // ignore: cast_nullable_to_non_nullable
 as DateTime,paymentMethod: null == paymentMethod ? _self.paymentMethod : paymentMethod // ignore: cast_nullable_to_non_nullable
-as String,
+as String,pickupNumber: freezed == pickupNumber ? _self.pickupNumber : pickupNumber // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 
@@ -432,10 +434,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  List<OrderLogItem> items,  int total,  DateTime paidAt,  String paymentMethod)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  List<OrderLogItem> items,  int total,  DateTime paidAt,  String paymentMethod,  int? pickupNumber)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _OrderLogEntity() when $default != null:
-return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,_that.total,_that.paidAt,_that.paymentMethod);case _:
+return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,_that.total,_that.paidAt,_that.paymentMethod,_that.pickupNumber);case _:
   return orElse();
 
 }
@@ -453,10 +455,10 @@ return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  List<OrderLogItem> items,  int total,  DateTime paidAt,  String paymentMethod)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String storeId,  String storeName,  List<OrderLogItem> items,  int total,  DateTime paidAt,  String paymentMethod,  int? pickupNumber)  $default,) {final _that = this;
 switch (_that) {
 case _OrderLogEntity():
-return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,_that.total,_that.paidAt,_that.paymentMethod);case _:
+return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,_that.total,_that.paidAt,_that.paymentMethod,_that.pickupNumber);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -473,10 +475,10 @@ return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String storeId,  String storeName,  List<OrderLogItem> items,  int total,  DateTime paidAt,  String paymentMethod)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String storeId,  String storeName,  List<OrderLogItem> items,  int total,  DateTime paidAt,  String paymentMethod,  int? pickupNumber)?  $default,) {final _that = this;
 switch (_that) {
 case _OrderLogEntity() when $default != null:
-return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,_that.total,_that.paidAt,_that.paymentMethod);case _:
+return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,_that.total,_that.paidAt,_that.paymentMethod,_that.pickupNumber);case _:
   return null;
 
 }
@@ -488,7 +490,7 @@ return $default(_that.id,_that.userId,_that.storeId,_that.storeName,_that.items,
 
 
 class _OrderLogEntity implements OrderLogEntity {
-  const _OrderLogEntity({required this.id, required this.userId, required this.storeId, required this.storeName, final  List<OrderLogItem> items = const <OrderLogItem>[], required this.total, required this.paidAt, this.paymentMethod = ''}): _items = items;
+  const _OrderLogEntity({required this.id, required this.userId, required this.storeId, required this.storeName, final  List<OrderLogItem> items = const <OrderLogItem>[], required this.total, required this.paidAt, this.paymentMethod = '', this.pickupNumber}): _items = items;
   
 
 @override final  String id;
@@ -505,6 +507,8 @@ class _OrderLogEntity implements OrderLogEntity {
 @override final  int total;
 @override final  DateTime paidAt;
 @override@JsonKey() final  String paymentMethod;
+/// orders.pickupNumber 와 동일 값. null = 미부여(과거 주문).
+@override final  int? pickupNumber;
 
 /// Create a copy of OrderLogEntity
 /// with the given fields replaced by the non-null parameter values.
@@ -516,16 +520,16 @@ _$OrderLogEntityCopyWith<_OrderLogEntity> get copyWith => __$OrderLogEntityCopyW
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OrderLogEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.total, total) || other.total == total)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.paymentMethod, paymentMethod) || other.paymentMethod == paymentMethod));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OrderLogEntity&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storeId, storeId) || other.storeId == storeId)&&(identical(other.storeName, storeName) || other.storeName == storeName)&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.total, total) || other.total == total)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.paymentMethod, paymentMethod) || other.paymentMethod == paymentMethod)&&(identical(other.pickupNumber, pickupNumber) || other.pickupNumber == pickupNumber));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,storeId,storeName,const DeepCollectionEquality().hash(_items),total,paidAt,paymentMethod);
+int get hashCode => Object.hash(runtimeType,id,userId,storeId,storeName,const DeepCollectionEquality().hash(_items),total,paidAt,paymentMethod,pickupNumber);
 
 @override
 String toString() {
-  return 'OrderLogEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, items: $items, total: $total, paidAt: $paidAt, paymentMethod: $paymentMethod)';
+  return 'OrderLogEntity(id: $id, userId: $userId, storeId: $storeId, storeName: $storeName, items: $items, total: $total, paidAt: $paidAt, paymentMethod: $paymentMethod, pickupNumber: $pickupNumber)';
 }
 
 
@@ -536,7 +540,7 @@ abstract mixin class _$OrderLogEntityCopyWith<$Res> implements $OrderLogEntityCo
   factory _$OrderLogEntityCopyWith(_OrderLogEntity value, $Res Function(_OrderLogEntity) _then) = __$OrderLogEntityCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId, String storeId, String storeName, List<OrderLogItem> items, int total, DateTime paidAt, String paymentMethod
+ String id, String userId, String storeId, String storeName, List<OrderLogItem> items, int total, DateTime paidAt, String paymentMethod, int? pickupNumber
 });
 
 
@@ -553,7 +557,7 @@ class __$OrderLogEntityCopyWithImpl<$Res>
 
 /// Create a copy of OrderLogEntity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? items = null,Object? total = null,Object? paidAt = null,Object? paymentMethod = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? storeId = null,Object? storeName = null,Object? items = null,Object? total = null,Object? paidAt = null,Object? paymentMethod = null,Object? pickupNumber = freezed,}) {
   return _then(_OrderLogEntity(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -563,7 +567,8 @@ as String,items: null == items ? _self._items : items // ignore: cast_nullable_t
 as List<OrderLogItem>,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
 as int,paidAt: null == paidAt ? _self.paidAt : paidAt // ignore: cast_nullable_to_non_nullable
 as DateTime,paymentMethod: null == paymentMethod ? _self.paymentMethod : paymentMethod // ignore: cast_nullable_to_non_nullable
-as String,
+as String,pickupNumber: freezed == pickupNumber ? _self.pickupNumber : pickupNumber // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 

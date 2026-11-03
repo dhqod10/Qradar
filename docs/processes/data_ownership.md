@@ -38,7 +38,7 @@
 |---|---|---|
 | read | `self(uid) OR admin` | 모든 필드 |
 | create | `self(uid)` | **`role == 'customer'` 강제**, **`brandId` 필드 동시 포함 금지** (가입 시점 brandId 차단) |
-| update | `admin (전권) OR self(uid)` self 케이스: `onlyChangedFields(['role', 'displayName', 'photoUrl', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationPermissionLaterCount', 'notificationSettings', 'updatedAt'])` + role 전이 화이트리스트 | 변경 가능: displayName, photoUrl, fcmToken, fcmTokenUpdatedAt, notificationPermissionPrompted(OS 권한 시트 소진 = 다이얼로그 `허용` 선택 시에만 true), notificationPermissionLaterCount(`나중에` 선택 횟수, `FieldValue.increment(1)`, 부재 시 0), notificationSettings(bool map, dot-path), role(허용 전이). **`brandId` 는 화이트리스트에 없다 — 🛠 CF 전담** |
+| update | `admin (전권) OR self(uid)` self 케이스: `onlyChangedFields(['role', 'displayName', 'photoUrl', 'phone', 'fcmToken', 'fcmTokenUpdatedAt', 'notificationPermissionPrompted', 'notificationPermissionLaterCount', 'notificationSettings', 'updatedAt'])` + role 전이 화이트리스트 | 변경 가능: displayName, photoUrl, phone(휴대폰 숫자 문자열, 이메일 가입 시 create 로 기록되는 PII — read 는 self/admin 뿐), fcmToken, fcmTokenUpdatedAt, notificationPermissionPrompted(OS 권한 시트 소진 = 다이얼로그 `허용` 선택 시에만 true), notificationPermissionLaterCount(`나중에` 선택 횟수, `FieldValue.increment(1)`, 부재 시 0), notificationSettings(bool map, dot-path), role(허용 전이). **`brandId` 는 화이트리스트에 없다 — 🛠 CF 전담** |
 | delete | `admin` | — |
 | Cloud Function 전담 | **`qoinBalance` 갱신** (`onOrderQoinSettled`) — §2.11 · **`brandId` 설정** (`claimSubmittedBrand`) — 아래 | — |
 
@@ -74,7 +74,8 @@
 | update | 🔒 | 동일 (CF 만) |
 | delete | `admin` | — |
 
-**Cloud Function 전담**: `verifyTossPayment` 가 `orders/{orderId}` 생성과 동시에 `users/{uid}/orderLogs/{logId}` 도 batch write. 클라이언트는 절대 직접 생성/수정 불가.
+**Cloud Function 전담**: `verifyTossPayment` 가 `orders/{orderId}` 생성과 동시에 `users/{uid}/orderLogs/{logId}` 도 **같은 트랜잭션**으로 write (order_pickup_number 이후 batch → transaction). 클라이언트는 절대 직접 생성/수정 불가.
+- `pickupNumber` (int, 매장·일별 픽업 주문번호): `orders.pickupNumber` 와 동일 값을 생성 시 1회 기록, 불변. 과거 주문은 필드 없음(null).
 
 ### 2.3 `users/{userId}/favoriteStores/{storeId}` & `/favoriteMenuItems/{compositeId}`
 
@@ -92,6 +93,7 @@
 | create | 🔒 | **🛠 CF `verifyTossPayment` 만** |
 | update | `admin (전권 O4)` OR `isOwnerAcceptUpdate (O1)` OR `isCustomerRefundRequest (O2)` OR `isOwnerDenyRefund (O3)` OR `isOwnerStartMakingUpdate (O5)` OR `isOwnerMarkReadyUpdate (O6)` OR `isOwnerCompletePickupUpdate (O7)` | 7개 분기 — 상세는 §2.4.1 |
 | delete | `admin` | — |
+| Cloud Function 전담 필드 | `pickupNumber` — `verifyTossPayment` 가 트랜잭션 안에서 카운터(§2.5a)로 발급해 생성 시 1회 기록. 클라 create 는 `if false`, update 는 O1~O7 `onlyChangedFields` 화이트리스트에 없어 수정 불가 (admin O4 전권 제외). 불변 | order_pickup_number |
 | Cloud Function 전담 | `verifyTossPayment` (생성), `cancelTossPayment` (paid→cancelled), `processRefund` (accepted+→refunded) | PG 호출 + status 전이 동시 |
 
 #### 2.4.1 `orders.update` 7개 분기
@@ -146,6 +148,16 @@
 Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추는 사고는 `paymentGateRejections` 가 탐지한다.
 
 **브랜드 본사(brand) 의 가맹점 update**: `isStoreOwnerBrandUpdate` — `isBrandHolder(store.brandId)` 가 storeOwner 와 동일한 운영 필드 화이트리스트를 update 가능 (U-3 결정).
+
+### 2.5a `stores/{storeId}/pickupCounters/{yyyyMMdd}` (order_pickup_number)
+
+| 작업 | 허용 | 비고 |
+|---|---|---|
+| read | 🔒 (admin 포함 전면 차단) | 번호는 `orders.pickupNumber` 로 전달 — 클라이언트가 카운터를 볼 이유 없음 |
+| create / update / delete | 🔒 | **🛠 CF `verifyTossPayment` 전담** (Admin SDK, 트랜잭션) |
+
+- 문서 ID = KST 날짜(`yyyyMMdd`) → 날짜가 바뀌면 새 문서가 1부터 (자동 리셋, 스케줄러 없음). 필드: `current`(마지막 발급 번호), `updatedAt`.
+- 주문 doc 재확인 → 카운터 증가 → orders/orderLogs set 이 한 트랜잭션. 커밋 전 실패 시 카운터 불변(오펀 번호 없음), 동시 주문은 트랜잭션 재시도로 중복 없음.
 
 ### 2.6 `stores/{storeId}/subCategories/{id}`, `/menuItems/{id}`, `/menuOverrides/{id}`, `/optionGroups/{id}`
 
@@ -386,7 +398,7 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 
 | Cloud Function | 트리거 actor | 입력 | 부수 효과 | 이유 |
 |---|---|---|---|---|
-| `verifyTossPayment` | customer (결제 직후) | paymentKey, orderId, amount, idempotencyKey, cart, paymentMethod | Toss confirm API + `orders/{orderId}` create + `users/{uid}/orderLogs/{logId}` create (batch) | 1) PG 서버 검증 2) 보안상 amount/orderId 변조 차단 3) orders 컬렉션 `create: if false` |
+| `verifyTossPayment` | customer (결제 직후) | paymentKey, orderId, amount, idempotencyKey, cart, paymentMethod | Toss confirm API + `orders/{orderId}` create + `users/{uid}/orderLogs/{logId}` create + `stores/{storeId}/pickupCounters/{yyyyMMdd}` 증가 (**하나의 트랜잭션**, 픽업번호 발급) | 1) PG 서버 검증 2) 보안상 amount/orderId 변조 차단 3) orders 컬렉션 `create: if false` |
 | `cancelTossPayment` | customer / owner | orderId, reason, approvedBy ('customer' \| 'owner') | Toss cancel API + `orders/{orderId}` update (status='cancelled', cancelInfo) | 1) PG 호출 2) 권한 재검증 (storeOwner / userId) 3) status 원자성 보장 |
 | `processRefund` | owner | orderId, reason | Toss cancel API (전액) + `orders/{orderId}` update (status='refunded', refundInfo) | 동일 — PG + 권한 재검증 |
 | `verifyKakaoToken` | 비로그인 (Kakao OAuth 직후) | accessToken | Kakao API 호출 → Firebase Custom Token (`kakao_{kakaoUid}`) 발급 | Kakao OAuth → Firebase Auth 브릿지. 클라이언트가 Firebase Admin SDK 사용 불가 |

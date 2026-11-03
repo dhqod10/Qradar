@@ -4,6 +4,7 @@ import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
 import 'package:qradar/domain/entities/order_status.dart';
 import 'package:qradar/presentation/common/order_status_badge.dart';
+import 'package:qradar/presentation/common/widgets/pickup_number_display.dart';
 
 /// 조리 중 (making / ready) 주문 카드 타일.
 ///
@@ -54,59 +55,73 @@ class OwnerInProgressOrderTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 행 1: 시간 + status 배지
-              Row(
-                children: [
-                  Text(
-                    _timeFmt.format(order.createdAt),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  const Spacer(),
-                  OrderStatusBadge(
-                    status: order.status,
-                    size: OrderStatusBadgeSize.small,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // 행 2: 메뉴 요약
-              Text(
-                itemSummary,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textBody,
+              if (order.pickupNumber != null) ...[
+                PickupNumberDisplay(
+                  number: order.pickupNumber,
+                  variant: PickupNumberVariant.badge,
                 ),
-              ),
-              const SizedBox(height: 4),
-              // 행 3: 총액
-              Text(
-                _fmt.format(order.totalPrice),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textHeading,
-                ),
-              ),
-              // 행 4: 진행 시간 (makingStartedAt 있을 때)
-              if (order.makingStartedAt != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  _elapsedLabel(order.makingStartedAt!),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                  ),
-                ),
+                const SizedBox(width: 12),
               ],
-              const SizedBox(height: 12),
-              // 행 5: 액션 버튼 (full width, status 별 분기)
-              _buildActionButton(),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 행 1: 시간 + status 배지
+                    Row(
+                      children: [
+                        Text(
+                          _timeFmt.format(order.createdAt),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const Spacer(),
+                        OrderStatusBadge(
+                          status: order.status,
+                          size: OrderStatusBadgeSize.small,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // 행 2: 메뉴 요약
+                    Text(
+                      itemSummary,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textBody,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // 행 3: 총액
+                    Text(
+                      _fmt.format(order.totalPrice),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textHeading,
+                      ),
+                    ),
+                    // 행 4: 진행 시간 (makingStartedAt 있을 때)
+                    if (order.makingStartedAt != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _elapsedLabel(order.makingStartedAt!),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    // 행 5: 액션 버튼 (full width, status 별 분기)
+                    _buildActionButton(),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -141,10 +156,7 @@ class OwnerInProgressOrderTile extends StatelessWidget {
                 )
               : const Text(
                   '조리 시작',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
         ),
       );
@@ -178,10 +190,7 @@ class OwnerInProgressOrderTile extends StatelessWidget {
                 )
               : const Text(
                   '준비 완료',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
         ),
       );
@@ -213,10 +222,7 @@ class OwnerInProgressOrderTile extends StatelessWidget {
                 )
               : const Text(
                   '픽업 완료',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
         ),
       );

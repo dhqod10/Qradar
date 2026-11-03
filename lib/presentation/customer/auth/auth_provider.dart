@@ -136,10 +136,20 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
     await _onSignInSuccess();
   }
 
-  Future<void> signUpWithEmail({required String email, required String password}) async {
+  Future<void> signUpWithEmail({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+  }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
-      () => ref.read(signUpWithEmailUseCaseProvider).call(email: email, password: password),
+      () => ref.read(signUpWithEmailUseCaseProvider).call(
+            email: email,
+            password: password,
+            name: name,
+            phone: phone,
+          ),
     );
     await _onSignInSuccess();
   }

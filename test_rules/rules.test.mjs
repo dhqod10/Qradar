@@ -3,6 +3,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds }
 import { doc, getDoc, setDoc, updateDoc, increment, collection, query, where, orderBy, limit, getDocs, collectionGroup, Timestamp, serverTimestamp, deleteDoc, deleteField, writeBatch } from 'firebase/firestore';
 import fs from 'fs';
 
+const NEWUSER = 'signupNewUser1';
 const CUSTOMER = 'dUFcFv71FzVA4feodWnxv3k0MKF3';
 const OWNER    = '8gnNH8NAJNhu8sxomEkX38CMapL2';
 const OTHER    = 'otherOwnerUid000000000000000000';
@@ -54,6 +55,7 @@ const periodQuery = (db, storeId) => query(
 );
 
 const asCustomer = env.authenticatedContext(CUSTOMER).firestore();
+const asNewUser = env.authenticatedContext(NEWUSER).firestore();
 const results = [];
 const run = async (name, expect, fn) => {
   try { await (expect === 'allow' ? assertSucceeds(fn()) : assertFails(fn())); results.push([name, expect, 'PASS']); }
@@ -240,6 +242,16 @@ await run('QR9 CUSTOMER 가 본인 qoinBalance 직접 update', 'deny', () =>
   updateDoc(doc(asCustomer, 'users', CUSTOMER), { qoinBalance: 999999 }));
 await run('QR10 CUSTOMER 가 qoinBalance + displayName 동시 update', 'deny', () =>
   updateDoc(doc(asCustomer, 'users', CUSTOMER), { qoinBalance: 999999, displayName: 'x' }));
+await run('SP1 CUSTOMER 가 본인 phone update (신규 허용 필드)', 'allow', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { phone: '01012345678', updatedAt: serverTimestamp() }));
+await run('SP2 CUSTOMER 가 phone + qoinBalance 동시 update', 'deny', () =>
+  updateDoc(doc(asCustomer, 'users', CUSTOMER), { phone: '01012345678', qoinBalance: 1 }));
+await run('SP3 OWNER 가 타인(CUSTOMER) phone update', 'deny', () =>
+  updateDoc(doc(asOwner, 'users', CUSTOMER), { phone: '01099999999' }));
+await run('SP4 신규 이메일 가입 payload create (displayName+phone, role=customer)', 'allow', () =>
+  setDoc(doc(asNewUser, 'users', NEWUSER), { uid: NEWUSER, email: 'n@x.com', displayName: '홍길동', photoUrl: null, phone: '01012345678', provider: 'email', role: 'customer', createdAt: serverTimestamp() }));
+await run('SP5 타인 users 문서 read (phone PII)', 'deny', () =>
+  getDoc(doc(asOwner, 'users', CUSTOMER)));
 await run('QR10b CUSTOMER 가 qoinBalance increment', 'deny', () =>
   updateDoc(doc(asCustomer, 'users', CUSTOMER), { qoinBalance: increment(1000) }));
 await run('QR11 OWNER 가 타인(CUSTOMER) qoinBalance update', 'deny', () =>
@@ -1311,6 +1323,30 @@ await run('SK-6 회귀: 읽기(searchKeywords 가 있는 문서)는 인증 사�
   await seed((db) => setDoc(doc(db, 'stores', 'sk_read'), { ownerId: OWNER, name: 'N', status: 'approved', searchKeywords: ['n'] }));
   return getDoc(doc(asCustomer, 'stores', 'sk_read'));
 });
+
+// ── order_pickup_number: pickupNumber 는 서버(CF) 전담, pickupCounters 는 전면 차단 ──
+await seed((db) => setDoc(doc(db, 'orders', 'pk_paid'), { storeId: S_A, userId: CUSTOMER, status: 'paid', totalPrice: 4500, pickupNumber: 3 }));
+await seed((db) => setDoc(doc(db, 'orders', 'pk_acc'), { storeId: S_A, userId: CUSTOMER, status: 'accepted', totalPrice: 4500, pickupNumber: 3, refundRequest: null }));
+await seed((db) => setDoc(doc(db, 'stores', S_A, 'pickupCounters', '20261103'), { current: 3 }));
+await run('PK-1 고객이 orders 를 pickupNumber 포함으로 직접 create', 'deny', () =>
+  setDoc(doc(asCustomer, 'orders', 'pk_new'), { storeId: S_A, userId: CUSTOMER, status: 'paid', totalPrice: 4500, pickupNumber: 1 }));
+await run('PK-2 점주가 접수(O1) 전이에 pickupNumber 를 끼워 update', 'deny', () =>
+  updateDoc(doc(asOwner, 'orders', 'pk_paid'), { status: 'accepted', acceptedAt: serverTimestamp(), updatedAt: serverTimestamp(), pickupNumber: 99 }));
+await run('PK-3 점주가 pickupNumber 만 update', 'deny', () =>
+  updateDoc(doc(asOwner, 'orders', 'pk_paid'), { pickupNumber: 99, updatedAt: serverTimestamp() }));
+await run('PK-4 고객이 환불요청(O2)에 pickupNumber 를 끼워 update', 'deny', () =>
+  updateDoc(doc(asCustomer, 'orders', 'pk_acc'), { refundRequest: { reason: 'x', requestedAt: serverTimestamp() }, updatedAt: serverTimestamp(), pickupNumber: 1 }));
+await run('PK-5 회귀: 점주 접수 전이 (pickupNumber 불변) 는 통과', 'allow', () =>
+  updateDoc(doc(asOwner, 'orders', 'pk_paid'), { status: 'accepted', acceptedAt: serverTimestamp(), updatedAt: serverTimestamp() }));
+await run('PK-6 회귀: 고객이 pickupNumber 가 있는 본인 주문을 읽는다', 'allow', () =>
+  getDoc(doc(asCustomer, 'orders', 'pk_acc')));
+await run('PK-7 점주가 pickupCounters read', 'deny', () => getDoc(doc(asOwner, 'stores', S_A, 'pickupCounters', '20261103')));
+await run('PK-8 고객이 pickupCounters read', 'deny', () => getDoc(doc(asCustomer, 'stores', S_A, 'pickupCounters', '20261103')));
+await run('PK-9 admin 도 pickupCounters read 불가', 'deny', () => getDoc(doc(asAdmin, 'stores', S_A, 'pickupCounters', '20261103')));
+await run('PK-10 점주가 pickupCounters 를 조작 (update)', 'deny', () => updateDoc(doc(asOwner, 'stores', S_A, 'pickupCounters', '20261103'), { current: 0 }));
+await run('PK-11 점주가 pickupCounters create', 'deny', () => setDoc(doc(asOwner, 'stores', S_A, 'pickupCounters', '20261104'), { current: 1 }));
+await run('PK-12 admin 이 pickupCounters write', 'deny', () => setDoc(doc(asAdmin, 'stores', S_A, 'pickupCounters', '20261103'), { current: 1 }));
+await run('PK-13 점주가 pickupCounters delete', 'deny', () => deleteDoc(doc(asOwner, 'stores', S_A, 'pickupCounters', '20261103')));
 
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;

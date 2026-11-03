@@ -14,7 +14,12 @@ abstract class AuthRemoteDataSource {
   Future<UserModel> signInWithKakao();
   Future<UserModel> signInWithNaver();
   Future<UserModel> signInWithEmail({required String email, required String password});
-  Future<UserModel> signUpWithEmail({required String email, required String password});
+  Future<UserModel> signUpWithEmail({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+  });
   Future<void> signOut();
   Stream<UserModel?> get authStateChanges;
 
@@ -220,7 +225,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
-  Future<UserModel> signUpWithEmail({required String email, required String password}) async {
+  Future<UserModel> signUpWithEmail({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+  }) async {
     final result = await _firebaseAuth.createUserWithEmailAndPassword(
       email: email,
       password: password,
@@ -229,8 +239,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     return UserModel(
       uid: user.uid,
       email: user.email,
-      displayName: user.displayName,
+      displayName: name,
       photoUrl: user.photoURL,
+      phone: phone,
       provider: 'email',
     );
   }

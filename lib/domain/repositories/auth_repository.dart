@@ -11,6 +11,8 @@ abstract class AuthRepository {
   Future<UserEntity> signUpWithEmail({
     required String email,
     required String password,
+    required String name,
+    required String phone,
   });
   Future<void> signOut();
   Stream<UserEntity?> get authStateChanges;

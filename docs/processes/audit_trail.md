@@ -65,7 +65,8 @@ qoinTransactions/{id}
 | 환불 정보 | `orders/{id}.refundInfo` | 금액·사유 |
 | 매장 승인 메타 | `stores/{id}` 의 `submittedBy` / `submittedAt` / `approvedBy` / `approvedAt` / `rejectedReason` | **누가** 승인했는지 남는 드문 사례 |
 | 브랜드 권한 연결 | `users/{uid}/roleHistory/{id}` | `claimSubmittedBrand` 가 `brandId` 설정을 값과 같은 트랜잭션에 기록 (`changedBy` = 본인 uid) |
-| 주문 로그 | `users/{uid}/orderLogs/{id}` | 주문 생성 시 batch 로 함께 기록 |
+| 주문 로그 | `users/{uid}/orderLogs/{id}` | 주문 생성 시 `orders` 와 **같은 트랜잭션**으로 함께 기록 |
+| 픽업 주문번호 | `orders/{id}.pickupNumber` · `orderLogs.pickupNumber` | order_pickup_number. **식별자**(돈·권한·정책 값 아님)라 설정 변경 이력은 불필요. 생성 시 1회 박제·불변, 발급 근거는 주문 문서 자체. 카운터 `stores/{id}/pickupCounters/{yyyyMMdd}` 는 단조 증가 작업 상태 |
 | Qoin 거래 원장 | `users/{uid}/qoinTransactions/{id}` | Qoin 1차. 당시 값 박제 |
 | brandKey 발급 이력 | `brands/{id}/keyHistory/{autoId}` | `issueBrandKey` CF 가 키 생성·`brandKeys` 유일성·`private/profile.brandKey` 와 **같은 트랜잭션**에 기록 (`changedBy` = admin uid). brandKey 는 가맹 신청의 권한 근거라 **권한 값** (payment_server_authority) |
 | 매장 삭제 이력 | `storeDeletionHistory/{storeId_createdAtMillis}` | `deleteStore` CF 가 **삭제 전에 가장 먼저** 기록 (삭제 직전 스냅샷 + `deletedBy` + `reason` + 실행 시점 `affected` + `phase`). 중간 실패 시 재진입점이기도 하다 |

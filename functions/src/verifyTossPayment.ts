@@ -14,9 +14,11 @@
  *   3. Toss Server API POST /v1/payments/confirm 호출
  *   4. 응답 검증 (status === 'DONE' && totalAmount === amount && orderId 일치)
  *   5. 검증 실패 → Toss cancel + error throw
- *   6. 검증 성공 → Firestore batch:
- *      - orders/{orderId} set
- *      - users/{uid}/orderLogs/{logId} set
+ *   6. 검증 성공 → Firestore **트랜잭션** (order_pickup_number):
+ *      - orders/{orderId} 재-존재 확인 (멱등 — 있으면 재발급 없이 기존 반환)
+ *      - stores/{storeId}/pickupCounters/{yyyyMMdd} 증가 (매장·일별 픽업번호, KST)
+ *      - orders/{orderId} set (pickupNumber 포함)
+ *      - users/{uid}/orderLogs/{logId} set (pickupNumber 포함)
  *   7. 반환 { orderId, status: 'paid' }
  */
 
@@ -32,6 +34,7 @@ import { MergedMenu } from "./menuVisibility";
 import { makeFirestoreGateReader, recordGateRejection } from "./paymentGateReader";
 import { findSelfDealing, validBrandId } from "./selfDealing";
 import { writeOrderSignal } from "./orderSignals";
+import { allocatePickupNumber, kstDateKey } from "./pickupCounter";
 import { parseQoinToUse, resolveSpendPolicy, SPEND_REJECT_TOKEN, SpendPolicy } from "./qoinSpend";
 import { recordSpendIssue, reserveSpend, rollbackSpend, SpendConflictError, SpendRejectedError } from "./qoinSpendLedger";
 
@@ -498,7 +501,7 @@ export async function handleVerifyTossPayment(
     //   Qoin 사용 주문은 검증된 사용액이 `discount`, 서버 최종청구액이 `totalPrice` 로 쓰인다 (적립은 이 totalPrice = 현금 결제액 기준, D-4).
     const cartForOrder =
       serverPricing === null ? data.cart : applyServerPricing(data.cart, serverPricing, qoinToUse > 0 ? qoinToUse : 0);
-    const orderData = buildOrderData(cartForOrder, uid, paymentInfo, { approvedAt, now });
+    // orderData / logData 는 트랜잭션 안에서 픽업번호를 받은 뒤 만든다 (order_pickup_number).
 
     // users/{uid}/orderLogs/{logId} 문서 (Phase 2 OrderLogEntity 스키마 준수)
     const logDoc = db
@@ -506,17 +509,37 @@ export async function handleVerifyTossPayment(
       .doc(uid)
       .collection("orderLogs")
       .doc(logId);
-    const logData = buildOrderLogData(
-      cartForOrder,
-      { logId, orderId, paymentMethod: resolvedPaymentMethod, ...(qoinToUse > 0 ? { discount: qoinToUse } : {}) },
-      { approvedAt, now }
-    );
+    const pickupDateKey = kstDateKey(approvedAt.toDate());
+    const counterRef = db
+      .collection("stores")
+      .doc(String(cartForOrder.storeId))
+      .collection("pickupCounters")
+      .doc(pickupDateKey);
 
-    const batch = db.batch();
-    batch.set(orderDoc, orderData);
-    batch.set(logDoc, logData);
-    await batch.commit();
-    reservation = null; // 주문이 커밋됐다 — Qoin 차감은 확정. 이후의 어떤 예외도 롤백하지 않는다.
+    // 최종 쓰기는 트랜잭션: 주문 doc 재확인(동시 중복 커밋 방지) → 번호 할당 → orders / orderLogs / counter set.
+    // Toss confirm 은 위에서 이미 끝났다 (트랜잭션은 재시도될 수 있으므로 네트워크 호출을 넣지 않는다).
+    // 커밋 전 실패 시 abort → 카운터 불변. 읽기는 모두 쓰기보다 앞에 둔다.
+    const txResult = await db.runTransaction(async (tx) => {
+      const existing = await tx.get(orderDoc);
+      if (existing.exists) {
+        return { duplicate: true as const, status: (existing.data()?.status as string | undefined) ?? "paid" };
+      }
+      const pickupNumber = await allocatePickupNumber(tx, counterRef, now);
+      const orderData = buildOrderData(cartForOrder, uid, paymentInfo, { approvedAt, now }, pickupNumber);
+      const logData = buildOrderLogData(
+        cartForOrder,
+        { logId, orderId, paymentMethod: resolvedPaymentMethod, pickupNumber, ...(qoinToUse > 0 ? { discount: qoinToUse } : {}) },
+        { approvedAt, now }
+      );
+      tx.set(orderDoc, orderData);
+      tx.set(logDoc, logData);
+      return { duplicate: false as const, pickupNumber };
+    });
+    reservation = null; // 주문이 커밋됐다(또는 동시 호출이 이미 커밋했다) — Qoin 차감은 확정. 이후의 어떤 예외도 롤백하지 않는다.
+    if (txResult.duplicate) {
+      console.log("[verifyTossPayment] idempotency hit inside tx — no new pickup number. orderId:", orderId);
+      return { orderId, status: txResult.status };
+    }
 
     // Layer2 신호 (best-effort, D-6) — 주문 커밋 **후** 별도 write. 실패해도 주문 성공을 뒤집지 않는다 (writeOrderSignal 이 삼킨다).
     await writeOrderSignal(db, deps.signalSalt?.(), {

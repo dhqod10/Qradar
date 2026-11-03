@@ -202,15 +202,20 @@ function memDb(seed = {}, opts = {}) {
     // Firestore 트랜잭션의 직렬화 의미를 모사한다 (충돌 시 재시도 = 결과적으로 한 번에 하나씩).
     runTransaction(fn) {
       const run = async () => {
+        // txCount 는 Qoin 원장 트랜잭션만 센다. 주문 최종 쓰기 트랜잭션(order_pickup_number)은 orders/ 를 읽는 것으로 식별해 제외한다.
         log.txCount++;
-        if (opts.failTxAt && opts.failTxAt === log.txCount) throw new Error('tx boom');
+        const n = log.txCount;
+        let isOrderTx = false;
         const writes = [];
         const t = {
-          get: async (ref) => snap(ref._path),
+          get: async (ref) => { if (ref._path.startsWith('orders/') && !isOrderTx) { isOrderTx = true; log.txCount--; } return snap(ref._path); },
           set: (ref, d) => writes.push(['set', ref, d]),
           update: (ref, d) => { if (!store.has(ref._path)) throw new Error('update of missing doc'); writes.push(['update', ref, d]); },
         };
         const r = await fn(t);
+        if (!isOrderTx && opts.failTxAt && opts.failTxAt === n) throw new Error('tx boom');
+        if (opts.failBatch && isOrderTx) throw new Error('batch boom');
+        if (isOrderTx) log.batchCount++;
         applyWrites(writes);
         return r;
       };

@@ -34,6 +34,9 @@ class OrderModel {
   final DateTime? cancelledAt;
   final DateTime? refundedAt;
 
+  /// 서버 전담 필드 — fromFirestore 로만 읽고 toFirestore 에는 쓰지 않는다.
+  final int? pickupNumber;
+
   const OrderModel({
     required this.id,
     required this.userId,
@@ -57,6 +60,7 @@ class OrderModel {
     this.completedAt,
     this.cancelledAt,
     this.refundedAt,
+    this.pickupNumber,
   });
 
   factory OrderModel.fromFirestore(
@@ -110,6 +114,7 @@ class OrderModel {
       completedAt: toDate(data['completedAt']),
       cancelledAt: toDate(data['cancelledAt']),
       refundedAt: toDate(data['refundedAt']),
+      pickupNumber: (data['pickupNumber'] as num?)?.toInt(),
     );
   }
 
@@ -137,6 +142,7 @@ class OrderModel {
       completedAt: completedAt,
       cancelledAt: cancelledAt,
       refundedAt: refundedAt,
+      pickupNumber: pickupNumber,
     );
   }
 

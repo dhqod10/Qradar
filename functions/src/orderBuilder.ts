@@ -108,7 +108,9 @@ export function buildOrderData<TS>(
   cart: CartSnapshot,
   uid: string,
   paymentInfo: Record<string, unknown>,
-  times: { approvedAt: TS; now: TS }
+  times: { approvedAt: TS; now: TS },
+  /** 서버가 발급한 매장·일별 픽업번호 (order_pickup_number). 없으면 키 자체를 쓰지 않는다. */
+  pickupNumber?: number
 ): Record<string, unknown> {
   return {
     userId: uid,
@@ -128,12 +130,13 @@ export function buildOrderData<TS>(
     acceptedAt: null,
     cancelledAt: null,
     refundedAt: null,
+    ...(pickupNumber !== undefined ? { pickupNumber } : {}),
   };
 }
 
 export function buildOrderLogData<TS>(
   cart: CartSnapshot,
-  args: { logId: string; orderId: string; paymentMethod: string; /** 서버가 검증한 Qoin 사용액. 생략/0 이면 키 없음. */ discount?: number },
+  args: { logId: string; orderId: string; paymentMethod: string; /** 서버가 검증한 Qoin 사용액. 생략/0 이면 키 없음. */ discount?: number; /** orders 와 동일한 픽업번호. 없으면 키 없음. */ pickupNumber?: number },
   times: { approvedAt: TS; now: TS }
 ): Record<string, unknown> {
   return {
@@ -146,6 +149,7 @@ export function buildOrderLogData<TS>(
     totalPrice: cart.totalPrice,
     // Qoin 사용 주문만 (qoin_spend spec §7.3 — 내역 일관성). 호출자가 검증된 값을 명시로 넘길 때만 — 비-Qoin 은 키 자체가 없다.
     ...(args.discount !== undefined && args.discount > 0 ? { discount: args.discount } : {}),
+    ...(args.pickupNumber !== undefined ? { pickupNumber: args.pickupNumber } : {}),
     status: "paid",
     paymentMethod: args.paymentMethod,
     paymentChannel: "toss",

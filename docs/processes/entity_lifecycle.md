@@ -50,6 +50,8 @@ stateDiagram-v2
     completed --> [*]
 ```
 
+> `pickupNumber` (매장·일별 픽업 주문번호) 는 생성 시점(verifyTossPayment 트랜잭션)에 고정되는 **비-status 필드**다. 어떤 전이에서도 수정하지 않는다 (order_pickup_number).
+
 ### 2.2 전이 상세
 
 | 전이 | actor | 메커니즘 | 조건 | 갱신 필드 | Rules 분기 |

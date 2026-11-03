@@ -22,6 +22,9 @@ class OrderLogModel {
   final DateTime paidAt;
   final String paymentMethod;
 
+  /// 서버 전담 필드 — 읽기 전용 (toFirestore 에 쓰지 않는다).
+  final int? pickupNumber;
+
   const OrderLogModel({
     required this.id,
     required this.userId,
@@ -31,6 +34,7 @@ class OrderLogModel {
     required this.total,
     required this.paidAt,
     this.paymentMethod = '',
+    this.pickupNumber,
   });
 
   factory OrderLogModel.fromFirestore(
@@ -51,6 +55,7 @@ class OrderLogModel {
       total: (data['total'] as num?)?.toInt() ?? 0,
       paidAt: ts is Timestamp ? ts.toDate() : DateTime.now(),
       paymentMethod: (data['paymentMethod'] as String?) ?? '',
+      pickupNumber: (data['pickupNumber'] as num?)?.toInt(),
     );
   }
 
@@ -80,6 +85,7 @@ class OrderLogModel {
       total: entity.total,
       paidAt: entity.paidAt,
       paymentMethod: entity.paymentMethod,
+      pickupNumber: entity.pickupNumber,
     );
   }
 
@@ -93,6 +99,7 @@ class OrderLogModel {
       total: total,
       paidAt: paidAt,
       paymentMethod: paymentMethod,
+      pickupNumber: pickupNumber,
     );
   }
 

@@ -39,8 +39,15 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<UserEntity> signUpWithEmail({
     required String email,
     required String password,
+    required String name,
+    required String phone,
   }) async {
-    final model = await _dataSource.signUpWithEmail(email: email, password: password);
+    final model = await _dataSource.signUpWithEmail(
+      email: email,
+      password: password,
+      name: name,
+      phone: phone,
+    );
     return model.toEntity();
   }
 
