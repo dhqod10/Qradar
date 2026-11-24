@@ -8,6 +8,8 @@
 	<string>주변의 Qrator 매장을 찾기 위해 위치 정보가 필요합니다.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>주변의 Qrator 매장을 찾기 위해 위치 정보가 필요합니다.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>문의에 첨부할 사진을 촬영하기 위해 카메라를 사용해요.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

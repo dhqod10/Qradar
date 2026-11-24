@@ -36,6 +36,13 @@ class FirestorePaths {
   static const String stores = 'stores';
   static const String reviews = 'reviews';
 
+  /// 고객센터 문의 컬렉션 `supportInquiries/{inquiryId}` (support_inquiry). 생성·답변·종결은 CF 전담.
+  static const String supportInquiries = 'supportInquiries';
+
+  /// Firebase Storage 고객센터 문의 첨부 prefix — `support_inquiries/{uid}/{inquiryId}/{ts}_{file}`.
+  /// Cloud Function `createSupportInquiry` 의 `SUPPORT_IMAGES_PREFIX` 와 같은 값이어야 한다.
+  static const String supportInquiryImagesStoragePrefix = 'support_inquiries';
+
   /// 글로벌 메인 카테고리 컬렉션 `mainCategories/{id}`.
   static const String mainCategories = 'mainCategories';
 

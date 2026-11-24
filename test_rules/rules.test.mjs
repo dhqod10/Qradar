@@ -1399,6 +1399,65 @@ await run('UM-7b admin create userModerationHistory', 'deny', () => setDoc(doc(a
 await run('UM-7c admin update userModerationHistory', 'deny', () => updateDoc(doc(asAdmin, 'userModerationHistory', 'mh1'), { action: 'unsuspend' }));
 await run('UM-7d admin delete userModerationHistory', 'deny', () => deleteDoc(doc(asAdmin, 'userModerationHistory', 'mh1')));
 
+// ── support_inquiry: supportInquiries / supportInquiryLimits ─────────────────────────────────────
+const SI_OTHER = 'siOtherUser00000000000000000000';
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  const base = { userId: CUSTOMER, category: 'order', title: 't', body: 'b', imageUrls: [], status: 'open', answer: null, answerReadAt: null, authorDeleted: false, createdAt: Timestamp.now(), updatedAt: Timestamp.now() };
+  await setDoc(doc(db, 'supportInquiries', 'si_open'), base);
+  await setDoc(doc(db, 'supportInquiries', 'si_open2'), base);
+  await setDoc(doc(db, 'supportInquiries', 'si_open3'), base);
+  await setDoc(doc(db, 'supportInquiries', 'si_open4'), base);
+  await setDoc(doc(db, 'supportInquiries', 'si_ans'), { ...base, status: 'answered', answer: { body: 'a', answeredBy: 'adm', answeredAt: Timestamp.now() } });
+  await setDoc(doc(db, 'supportInquiries', 'si_ans2'), { ...base, status: 'answered', answer: { body: 'a', answeredBy: 'adm', answeredAt: Timestamp.now() } });
+  await setDoc(doc(db, 'supportInquiries', 'si_closed'), { ...base, status: 'closed' });
+  const ansObj = { body: 'a', answeredBy: 'adm', answeredAt: Timestamp.now() };
+  await setDoc(doc(db, 'supportInquiries', 'si_closed_ans'), { ...base, status: 'closed', answer: ansObj });
+  await setDoc(doc(db, 'supportInquiries', 'si_closed_ans2'), { ...base, status: 'closed', answer: ansObj });
+  await setDoc(doc(db, 'supportInquiries', 'si_wd2'), { ...base, status: 'withdrawn' });
+  await setDoc(doc(db, 'supportInquiries', 'si_wd'), { ...base, status: 'withdrawn' });
+  await setDoc(doc(db, 'supportInquiryLimits', CUSTOMER), { minuteCount: 1 });
+});
+const siWd = (extra = {}) => ({ status: 'withdrawn', withdrawnAt: serverTimestamp(), updatedAt: serverTimestamp(), ...extra });
+const siRead = (extra = {}) => ({ answerReadAt: serverTimestamp(), updatedAt: serverTimestamp(), ...extra });
+await run('SI-1 본인 문의 read', 'allow', () => getDoc(doc(asCustomer, 'supportInquiries', 'si_open')));
+await run('SI-1b 본인 목록 쿼리 (userId==uid orderBy createdAt)', 'allow', () =>
+  getDocs(query(collection(asCustomer, 'supportInquiries'), where('userId', '==', CUSTOMER), orderBy('createdAt', 'desc'), limit(50))));
+await run('SI-2 타인 문의 read', 'deny', () => getDoc(doc(env.authenticatedContext(SI_OTHER).firestore(), 'supportInquiries', 'si_open')));
+await run('SI-2b 비로그인 read', 'deny', () => getDoc(doc(env.unauthenticatedContext().firestore(), 'supportInquiries', 'si_open')));
+await run('SI-2c 타인이 남의 문의 목록 쿼리', 'deny', () =>
+  getDocs(query(collection(env.authenticatedContext(SI_OTHER).firestore(), 'supportInquiries'), where('userId', '==', CUSTOMER))));
+await run('SI-3 admin read', 'allow', () => getDoc(doc(asAdmin, 'supportInquiries', 'si_open')));
+await run('SI-3b admin 상태 필터 쿼리', 'allow', () =>
+  getDocs(query(collection(asAdmin, 'supportInquiries'), where('status', '==', 'open'), orderBy('createdAt', 'desc'), limit(50))));
+await run('SI-4 고객 create', 'deny', () => setDoc(doc(asCustomer, 'supportInquiries', 'si_new'), { userId: CUSTOMER, status: 'open', title: 't', body: 'b' }));
+await run('SI-4b admin create', 'deny', () => setDoc(doc(asAdmin, 'supportInquiries', 'si_new2'), { userId: CUSTOMER, status: 'open' }));
+await run('SI-5 고객 delete', 'deny', () => deleteDoc(doc(asCustomer, 'supportInquiries', 'si_open')));
+await run('SI-5b admin delete (3년 보존)', 'deny', () => deleteDoc(doc(asAdmin, 'supportInquiries', 'si_open')));
+await run('SI-6 철회 정상 (open→withdrawn)', 'allow', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_open'), siWd()));
+await run('SI-6b 철회: 이미 answered', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_ans'), siWd()));
+await run('SI-6c 철회: closed', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_closed'), siWd()));
+await run('SI-6d 철회: 화이트리스트 밖 필드(body) 동반', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_open2'), siWd({ body: '조작' })));
+await run('SI-6e 철회: 다른 status 로 전이(closed)', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_open2'), { status: 'closed', updatedAt: serverTimestamp() }));
+await run('SI-6f 철회: 타인 문의', 'deny', () => updateDoc(doc(env.authenticatedContext(SI_OTHER).firestore(), 'supportInquiries', 'si_open2'), siWd()));
+await run('SI-6g 철회: 시각을 클라이언트 값으로', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_open2'), siWd({ withdrawnAt: Timestamp.fromDate(new Date('2020-01-01')) })));
+await run('SI-6h 철회: answer 위조 동반', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_open2'), siWd({ answer: { body: 'x', answeredBy: CUSTOMER } })));
+await run('SI-6i 철회: 이미 withdrawn 재철회', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_wd'), siWd()));
+await run('SI-7 읽음 정상 (answered)', 'allow', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_ans'), siRead()));
+await run('SI-7b 읽음: open 에서', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_open3'), siRead()));
+await run('SI-7c 읽음: 화이트리스트 밖 필드(status) 동반', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_ans2'), siRead({ status: 'closed' })));
+await run('SI-7d 읽음: answer 변조 동반', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_ans2'), siRead({ answer: { body: '조작' } })));
+await run('SI-7e 읽음: 타인', 'deny', () => updateDoc(doc(env.authenticatedContext(SI_OTHER).firestore(), 'supportInquiries', 'si_ans2'), siRead()));
+await run('SI-7f 읽음: 답변 후 종결(closed)된 건 정상 (D1)', 'allow', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_closed_ans'), siRead()));
+await run('SI-7g 읽음: closed 에서도 화이트리스트 밖 필드 동반 거부', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_closed_ans2'), siRead({ status: 'open' })));
+await run('SI-7h 읽음: closed 에서 타인', 'deny', () => updateDoc(doc(env.authenticatedContext(SI_OTHER).firestore(), 'supportInquiries', 'si_closed_ans2'), siRead()));
+await run('SI-7i 읽음: withdrawn 에서 거부', 'deny', () => updateDoc(doc(asCustomer, 'supportInquiries', 'si_wd2'), siRead()));
+await run('SI-8 admin 직접 update (답변은 CF 전담)', 'deny', () => updateDoc(doc(asAdmin, 'supportInquiries', 'si_open4'), { status: 'answered', answer: { body: 'x', answeredBy: 'adm' } }));
+await run('SI-8b admin 직접 종결', 'deny', () => updateDoc(doc(asAdmin, 'supportInquiries', 'si_open4'), { status: 'closed' }));
+await run('SI-9 supportInquiryLimits 고객 read', 'deny', () => getDoc(doc(asCustomer, 'supportInquiryLimits', CUSTOMER)));
+await run('SI-9b supportInquiryLimits 고객 write (한도 초기화 시도)', 'deny', () => setDoc(doc(asCustomer, 'supportInquiryLimits', CUSTOMER), { minuteCount: 0 }));
+await run('SI-9c supportInquiryLimits admin write', 'deny', () => setDoc(doc(asAdmin, 'supportInquiryLimits', CUSTOMER), { minuteCount: 0 }));
+
 console.log('\n================ Rules 검증 결과 ================');
 let fail = 0;
 for (const [n, e, r] of results) {

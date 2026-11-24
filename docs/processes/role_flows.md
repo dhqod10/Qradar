@@ -126,6 +126,7 @@ stateDiagram-v2
 | 알림 권한 다이얼로그 (진입 시) | `common/notification/notification_permission_prompt_flow.dart` | `나중에` 선택 시 `notificationPermissionLaterCount` +1, 최대 3회까지 재노출. `허용` 선택 시 `notificationPermissionPrompted=true` 후 재노출 없음(설정 화면 경유). OS 권한 허용 상태면 노출 안 함 |
 | 선물하기 | — | **미구현** |
 | 매장 평가 작성 / 수정 | `customer/review/store_review_form_page.dart` (주문 상세 > `매장 평가하기`) | `completed` 주문에서만 진입. **S/A/B/C 등급 선택**(별점 아님) + 선택적 코멘트(300자). 문서 ID `{storeId}_{userId}` 로 **1인 1매장 1표**, 재평가는 같은 문서 update. 14일 기한은 UI 에서만 강제. 작성자는 `Qrator {4자리 해시}` 로 익명 표기 |
+| 고객센터 문의 작성/조회 | `customer/support/**` (더보기 → `고객센터`, 주문 상세 → `이 주문 문의하기`) | `supportInquiries` (self read) + CF `createSupportInquiry` + 철회·읽음은 Rules 직접 update. 미확인 답변은 더보기 타일 dot. 첨부 최대 3장(보관함/카메라), 수정·삭제 불가·답변 전 철회만. 정지 계정은 로그인이 막혀 `kSupportContact` 가 이의 제기 경로 |
 | 매장 평가 조회 | `customer/review/store_reviews_page.dart` (메뉴 헤더 `GradeBadge` 탭) | 등급 + 평가 건수만 표시 (**평균 점수는 점주 화면 전용**). 내 평가는 목록 최상단에 `내 평가` pill 로 분리 |
 
 **핵심 진입점**: `ScaffoldWithNav` (홈 / 카트 / Log / 더보기 등 BottomNav).
@@ -190,6 +191,7 @@ stateDiagram-v2
 | 매장 관리 (목록·삭제) | `admin/store_management/admin_store_list_page.dart` → `admin_store_delete_page.dart` (더보기 → `매장 관리`) | `watchAllStoresForAdmin` + `deleteStore` CF (`dryRun` 영향 범위 → 실행; 진행 중 주문이 있으면 차단; `storeDeletionHistory` 이력) |
 | 가격 감사 (임시, 읽기 전용) | 더보기 → `배포 마이그레이션 (임시)` → `② ⑨ 가격 감사` 카드 (`admin/widgets/admin_price_audit_card.dart`) | `auditOrderPriceIntegrity` CF. 주문 금액 정합성 · self-approved 가격 오버라이드 · store-scope 옵션 참조를 **보고만** 한다. 배포 ⑩ 정리 커밋에서 제거 (payment_price_authority) |
 | 더보기 | `admin/more/admin_more_page.dart` | — |
+| 문의 관리 (답변/종결) | 웹 콘솔 `landing/console` `#/inquiries` (운영 그룹, 미답변 뱃지) | `supportInquiries` (admin read) + CF `moderateSupportInquiry` (답변 1회·수정 불가, 종결 사유 필수) |
 
 **핵심 진입점**: `AdminScaffold` — 2탭 (승인 큐 / 더보기). 회원 정지·매출 종합·공지/배너·쿠폰 등 product_scope 의 다른 admin 기능은 **미구현**.
 

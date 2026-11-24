@@ -37,6 +37,7 @@ function ports({ user, inFlight = 0, failAt = null, history = [] } = {}) {
       u.displayName = ANONYMIZED_NAME; u.deleted = true;
     },
     async deleteFavorites() { maybeFail('fav'); st.favDeletes++; return { favoriteStores: 2, favoriteMenuItems: 1 }; },
+    async markSupportInquiries() { st.inquiryMarks = (st.inquiryMarks ?? 0) + 1; return 3; },
     async deleteAuthUser() { maybeFail('auth'); st.authDeletes++; st.calls.push('auth'); },
   };
 }
@@ -76,7 +77,7 @@ test('deleteMyAccount: 정상 — PII 제거·displayName 치환·deleted, Qoin 
   assert.equal(h.snapshot.phone, '01012345678', '익명화 직전 스냅샷');
   assert.equal(h.deletedBy, 'u1');
   assert.equal(h.forfeitedQoin, 1200);
-  assert.deepEqual(h.affected, { favoriteStores: 2, favoriteMenuItems: 1 });
+  assert.deepEqual(h.affected, { favoriteStores: 2, favoriteMenuItems: 1, supportInquiries: 3 });
   assert.equal(h.phase, 'done');
   assert.ok(p.st.calls.indexOf('h:started') < p.st.calls.indexOf('anon'), '이력이 익명화보다 먼저');
   assert.ok(p.st.calls.indexOf('anon') < p.st.calls.indexOf('auth'), 'Auth 삭제는 Firestore 작업 뒤');
@@ -130,4 +131,12 @@ test('deleteMyAccount: 완료 후 재호출은 no-op (Auth 이중 삭제 없음)
   assert.deepEqual(await run(p), { alreadyDeleted: true });
   assert.equal(p.st.authDeletes, 1);
   assert.equal(p.st.ledger.length, 1);
+});
+
+test('deleteMyAccount: 고객센터 문의 마킹 phase — 건수가 affected 에 남고 재진입 시 중복 호출 없음', async () => {
+  const p = ports({ user: USER, inFlight: 0 });
+  await run(p);
+  assert.equal(p.st.inquiryMarks, 1);
+  const hist = [...p.st.histories.values()].at(-1) ?? {};
+  assert.equal(hist.affected?.supportInquiries, 3);
 });

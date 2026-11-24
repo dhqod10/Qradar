@@ -265,6 +265,24 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 
 ⚠️ **`stores` 는 고객이 직접 쓸 수 없다.** `stores` update 화이트리스트에 `averageScore`/`reviewCount` 가 없고, Rules 를 완화하면 점주가 자기 매장 평점을 조작할 수 있게 된다. 그래서 집계를 Cloud Function 에 전담시켰다 (`stores` 블록은 **변경하지 않았다**).
 
+### 2.10a `supportInquiries/{inquiryId}` · `supportInquiryLimits/{uid}` (support_inquiry)
+
+고객센터 문의. **쓰기는 Cloud Function 전담**, 고객의 직접 쓰기는 철회·읽음 2개뿐이다. 삭제는 admin 포함 누구도 불가(3년 보존 — 전자상거래법 소비자 불만·분쟁 처리 기록).
+
+| 작업 | 허용 |
+|---|---|
+| read | `isSignedIn()` + (`resource.userId == uid()` OR `isAdmin()`) |
+| create | 🔒 `if false` — 🛠 `createSupportInquiry` (rate limit·첨부 경로·주문 소유 검증을 1곳에 모은다) |
+| update (고객) | **C1 철회**: 본인 + `status=='open'` → `'withdrawn'`, 변경 필드 `status`/`withdrawnAt`/`updatedAt`, 시각 = `request.time` · **C2 읽음**: 본인 + `status in ['answered','closed']` (답변 후 종결 건 포함 — FCM 부재로 dot 이 유일한 통지 경로), 변경 필드 `answerReadAt`/`updatedAt` |
+| update (admin) | 🔒 admin 전권 분기 **없음** — 답변·종결은 🛠 `moderateSupportInquiry` 만 (`answeredBy`/`closedBy` 누락 방지, `qoinRateHistory` 와 같은 판단) |
+| delete | 🔒 `if false` (admin 포함) — 만료 정리는 Admin SDK 전용 |
+| **Cloud Function 전담** | 생성(`createSupportInquiry`) · 답변·종결(`moderateSupportInquiry`) · 탈퇴 마킹(`deleteMyAccount` → `authorDeleted` + 열린 문의 `closed(account_deleted)`) |
+
+- `answer` 는 **append-only**(`answer == null` 일 때 1회만). 고객 본문 수정 불가.
+- `supportInquiryLimits/{uid}`: rate limit 카운터(분당 1 / 24h 5). 🔒 read/write 전면 차단, 🛠 `createSupportInquiry` 가 문서 생성과 **같은 트랜잭션**에서 갱신.
+- Storage: `support_inquiries/{uid}/{inquiryId}/*` — read 로그인 사용자 전체, write 자기 uid 경로 + 5MB + `image/*`. 와일드카드 블록에서 이 prefix 를 제외했다 (Storage Rules 는 블록 OR 평가).
+- 복합 인덱스 3개 (`supportInquiries`: userId+createdAt / status+createdAt / status+category+createdAt) — **앱 릴리스 선행 배포**.
+
 ### 2.11 Qoin — 적립률 / 전역 설정 / 변경 이력 / 원장
 
 `qoin`(1차) + `qoin_accrual_rate_hierarchy`(계층화) 의 소유권 정리. **적립률은 발행되는 돈의 계수**이므로 쓰기는 전부 Cloud Function 전담이고, 이력은 admin 에게도 쓰기를 주지 않는다.
@@ -430,7 +448,9 @@ Console 수동 편집은 Rules 를 우회한다 → 오타로 매출이 멈추�
 | `backfillQoinAccrual` | admin (callable) | `{dryRun(기본 true), source(issues\|orderIds\|storeRange\|range), orderIds?\|storeId?+from/to?, overrideRate?, creditDisabledPeriod?, reason?}` | `dryRun` 은 쓰기 0(미리보기). `commit` 은 복원된 **당시 요율**(또는 `overrideRate`)로 누락 적립을 멱등 발행(`earn_{orderId}` 재사용·선존재 가드) + `users.qoinBalance` 절대값 갱신 + 해당 `qoinSettlementIssues` `resolved=true` 마킹 + `qoinBackfillHistory` 1건 | 1) **고객 돈의 사후 발행** — dryRun 기본·commit 명시·감사 이력 필수 2) 라이브와 **동일한 경계 재검증·멱등 가드·자기적립 제외** 재사용(우회로 차단) 3) 요율 복원 불가 시 **fail-closed**(skip), `overrideRate` 있을 때만 적립하고 `admin_override` 로 기록 4) 필터 없는 호출·기간 31일 초과·limit 초과·비admin 거부. 라이브 `onOrderQoinSettled`·Rules·인덱스는 **건드리지 않는다** |
 | `applyBrandQoinRate` | admin (브랜드 일괄) | `{brandId, rate\|clear, mode: preserve\|overwrite, reason?, resumeHistoryId?}` | 브랜드 값 1 write + 이력 선기록(한 트랜잭션) → (overwrite) 산하 매장 개별 설정 청크 삭제 + 매장별 이력 → 이력 마감 | 1) 500 batch 한도·권한 재검증·이력 위조 2) **A 가 쓴 문서로 B 소유 문서를 갱신** (§3 규칙) 3) 재개(`partial`) 멱등 처리 |
 | `setQoinAccrualEnabled` | admin (적립 사용 토글) | `{scope: store\|brand, targetId, enabled: boolean, reason?}` | `stores`/`brands` 의 `qoinAccrualEnabled` 1필드(또는 삭제) + `qoinRateHistory` 1건 (**같은 트랜잭션**) | 1) 클라이언트는 이 필드를 쓸 수 없다(admin 포함) 2) **적립이 발생하는지 자체를 결정**하는 정책 값이므로 적립률과 동급 3) 이력 위조·누락 차단. `scope: 'global'` 은 거부 (전역은 `config/qoin.enabled`) |
-| `deleteMyAccount` | 본인 (customer 만, 서버 재검증) | `{reason?, dryRun}` | `accountDeletionHistory/{uid_millis}` (재진입점) → Qoin 소멸(`users/{uid}/qoinTransactions/forfeit_{id}` 1건 + `qoinBalance` 0, 한 트랜잭션) → `users` 익명화 + `deleted` → favorites 삭제 → `admin.auth().deleteUser` (마지막) → `done`. **진행 중 주문(`paid`/`accepted`/`making`/`ready`)이 있으면 `[ACCOUNT_HAS_INFLIGHT_ORDERS]` 로 차단**. `dryRun` 은 쓰기 0 | 클라이언트가 users/Auth 를 직접 지우면 이력·Qoin 원장이 빠진다. 재실행 멱등 (이력 1건, 원장 1건) |
+| `createSupportInquiry` | 본인 (로그인) | `{inquiryId, category, title, body, imageUrls?, orderId?, appVersion?, platform?}` → `{inquiryId, created}` | `supportInquiries/{id}` create (`status:'open'`) + `supportInquiryLimits/{uid}` 카운터 (**같은 트랜잭션**). 같은 `inquiryId` 재호출은 멱등 성공(`created:false`). `deleted` 계정은 `[SUPPORT_ACCOUNT_DELETED]`, `suspended` 는 허용 | 1) Rules 로 도배(분당 1·일 5)를 못 막는다 2) 첨부 URL 이 `support_inquiries/{uid}/{inquiryId}/` 경로인지 서버 검증 3) 주문 소유 검증 + `orderSnapshot` 박제 (존재/비소유 같은 응답) |
+| `moderateSupportInquiry` | admin | `{inquiryId, action:'answer'\|'close', body?, closedReason?}` → `{changed, status}` | `answer`: `open` 만, `answer` 맵 1회 write + `answered`. `close`: `open\|answered` → `closed` + `closedBy`/`closedReason`. 읽기-검증-쓰기 한 트랜잭션. 재답변 `[SUPPORT_ALREADY_ANSWERED]`, 불가 상태 `[SUPPORT_NOT_OPEN]`, 같은 close 재호출은 no-op | 1) admin 도 Rules 로 쓸 수 없다 — `answeredBy`/`closedBy` 누락 방지 2) 답변은 append-only (감사 추적) |
+| `deleteMyAccount` | 본인 (customer 만, 서버 재검증) | `{reason?, dryRun}` | `accountDeletionHistory/{uid_millis}` (재진입점) → Qoin 소멸(`users/{uid}/qoinTransactions/forfeit_{id}` 1건 + `qoinBalance` 0, 한 트랜잭션) → `users` 익명화 + `deleted` → favorites 삭제 → **고객센터 문의 마킹(`inquiriesMarked` — `supportInquiries` 에 `authorDeleted`, 열린 문의는 `closed(account_deleted)`; 문서·첨부는 보존, 건수는 `affected.supportInquiries`)** → `admin.auth().deleteUser` (마지막) → `done`. **진행 중 주문(`paid`/`accepted`/`making`/`ready`)이 있으면 `[ACCOUNT_HAS_INFLIGHT_ORDERS]` 로 차단**. `dryRun` 은 쓰기 0 | 클라이언트가 users/Auth 를 직접 지우면 이력·Qoin 원장이 빠진다. 재실행 멱등 (이력 1건, 원장 1건) |
 | `setUserSuspension` | admin | `{targetUid, action:'suspend'\|'unsuspend', reason?}` → `{changed, action, historyId}` | Firebase Auth `updateUser({disabled})` + (정지 시) `revokeRefreshTokens` + `users` 정지필드 + `userModerationHistory` 1건 (users·이력은 한 batch). 멱등(같은 상태면 `changed:false`, 이력 생략·Auth 조치만 재적용). 전 역할 대상. 대상이 admin·본인이면 `[CANNOT_MODERATE_ADMIN]` 거부 | 1) 정지 집행은 Auth 레벨이라 클라 우회 불가 2) 정지필드 클라 쓰기 차단(touchesModerationManaged) 3) 이력 위조·누락 차단 |
 | `adminDeleteUser` | admin | `{targetUid, reason?, dryRun}` | `runDeleteMyAccount` 코어 재사용(`actorUid`=admin, `deletedBy`=admin·byAdmin 마커). **customer 전용** — owner/brand 는 `[FORCE_DELETE_CUSTOMER_ONLY]` 거부. 진행주문 가드·phase 멱등·dryRun·accountDeletionHistory 승계 | self-탈퇴와 동일 안전장치. owner/brand 는 소유 매장 고아 처리 때문에 Phase 2 |
 | `lookupBrandByKey` | 로그인 사용자 | `{brandKey}` | 쓰기: rate limit 카운터(`brandKeyLookupLimits/{uid}`) 만. 반환 `{brandId,name,logoUrl}` | 1) `brandKey` 가 비공개(§2.7a)라 클라이언트 쿼리가 불가능 2) 미존재/미승인을 **같은 응답**으로 (열거 오라클 방지) 3) uid 당 분당 10회 |

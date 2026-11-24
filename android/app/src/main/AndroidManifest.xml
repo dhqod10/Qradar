@@ -5,6 +5,8 @@
     <!-- 위치 정보 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- 카메라 (고객센터 문의 사진 촬영 — image_picker) -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <!-- FCM 알림 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application

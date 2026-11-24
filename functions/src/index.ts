@@ -41,6 +41,9 @@ export { deleteMyAccount } from "./deleteMyAccount";
 // admin_user_moderation — 계정 정지/해제 + 관리자 강제탈퇴(customer 전용)
 export { setUserSuspension } from "./setUserSuspension";
 export { adminDeleteUser } from "./adminDeleteUser";
+// support_inquiry — 고객센터 문의 생성(self)·답변/종결(admin). 쓰기는 전부 CF 전담, Rules 는 create/delete 차단.
+export { createSupportInquiry } from "./createSupportInquiry";
+export { moderateSupportInquiry } from "./moderateSupportInquiry";
 // payment_server_authority — 임시 마이그레이션 (완료 후 정리 커밋으로 삭제: 배포 ⑪)
 export { migrateStoreApprovalMeta } from "./migrateStoreApprovalMeta";
 export { migrateBrandPrivateProfile } from "./migrateBrandPrivateProfile";

@@ -15,12 +15,24 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      // read: 모두 허용 (이미지는 앱 내 공개 표시)
-      allow read: if true;
-
-      // write: 인증된 사용자 + 10MB 이하 + image 타입
+    // 고객센터 문의 첨부 (support_inquiry Q5): 로그인 사용자만 read, write 는 자기 uid 경로 + 5MB + image/*.
+    // ⚠️ Storage Rules 는 매칭되는 모든 블록의 OR 이다. 아래 와일드카드 블록이 이 경로를 공개하지 않도록
+    //    와일드카드에서 support_inquiries 를 명시적으로 제외했다 (제외하지 않으면 이 블록이 무력화된다).
+    match /support_inquiries/{uid}/{allPaths=**} {
+      allow read: if request.auth != null;
       allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.size <= 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allPaths=**} {
+      // read: 모두 허용 (이미지는 앱 내 공개 표시) — support_inquiries 경로 제외
+      allow read: if !resource.name.matches('support_inquiries/.*');
+
+      // write: 인증된 사용자 + 10MB 이하 + image 타입 — support_inquiries 경로 제외
+      allow write: if !request.resource.name.matches('support_inquiries/.*')
+                   && request.auth != null
                    && request.resource.size < 10 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }

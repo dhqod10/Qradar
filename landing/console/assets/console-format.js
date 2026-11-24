@@ -538,3 +538,55 @@ export function saveErrorText(err) {
     default: return { ...base, text: '저장되지 않았어요. 잠시 후 다시 시도해주세요.' };
   }
 }
+
+/* ── 고객센터 문의 (support_inquiry) ─────────────────────────────────────────── */
+
+export const INQUIRY_STATUS_LABEL = Object.freeze({ open: '접수', answered: '답변 완료', closed: '종결', withdrawn: '철회' });
+export const INQUIRY_CATEGORY_LABEL = Object.freeze({
+  order: '주문', refund: '환불', qoin: 'Qoin', account: '계정', store: '매장', bug: '앱 오류', etc: '기타',
+});
+export const INQUIRY_CLOSE_REASONS = Object.freeze([
+  ['answered_done', '답변 완료로 종결'], ['spam', '스팸'], ['duplicate', '중복 문의'], ['no_response_needed', '답변 불필요'],
+]);
+export const INQUIRY_CLOSE_REASON_LABEL = Object.freeze({
+  answered_done: '답변 완료로 종결', spam: '스팸', duplicate: '중복 문의', no_response_needed: '답변 불필요', account_deleted: '작성자 탈퇴',
+});
+export const INQUIRY_ANSWER_MAX = 2000;
+/** 모르는 값은 안전한 쪽(종결/기타)으로 읽는다 — 앱 enum 규칙과 같다. */
+export const inquiryStatusOf = (raw) => (Object.prototype.hasOwnProperty.call(INQUIRY_STATUS_LABEL, raw) ? raw : 'closed');
+export const inquiryCategoryOf = (raw) => (Object.prototype.hasOwnProperty.call(INQUIRY_CATEGORY_LABEL, raw) ? raw : 'etc');
+export const inquirySnippet = (body, n = 60) => {
+  const t = String(body ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+
+/**
+ * 문의 callable 오류 분류 — 서버 message 는 화면에 싣지 않고 토큰으로만 가른다.
+ * @returns {'already-answered'|'not-open'|'invalid'|'permission'|'unauthenticated'|'not-found'|'timeout'|'offline'|'other'}
+ */
+export function classifyInquiryError(e) {
+  const msg = typeof e?.message === 'string' ? e.message : '';
+  const reason = e?.details?.reason;
+  const has = (t) => reason === t || msg.includes(`[${t}]`);
+  if (has('SUPPORT_ALREADY_ANSWERED')) return 'already-answered';
+  if (has('SUPPORT_NOT_OPEN')) return 'not-open';
+  if (has('SUPPORT_INVALID_INPUT')) return 'invalid';
+  const k = classifyError(e).kind;
+  if (k === 'permission' || k === 'unauthenticated' || k === 'not-found' || k === 'timeout' || k === 'offline') return k;
+  return 'other';
+}
+
+/** 답변/종결 실패 문구. refresh = 서버 상태를 다시 읽어야 하는 오류, unknown = 반영 여부를 모른다. */
+export function inquiryWriteErrorText(e) {
+  switch (classifyInquiryError(e)) {
+    case 'already-answered': return { text: '이미 답변이 등록된 문의예요. 최신 상태를 불러왔어요.', refresh: true, unknown: false, expired: false };
+    case 'not-open': return { text: '답변할 수 없는 상태예요(철회·종결). 최신 상태를 불러왔어요.', refresh: true, unknown: false, expired: false };
+    case 'invalid': return { text: '입력 내용을 확인해주세요.', refresh: false, unknown: false, expired: false };
+    case 'permission': return { text: '권한이 없어 처리되지 않았어요.', refresh: false, unknown: false, expired: false };
+    case 'unauthenticated': return { text: '로그인이 만료되었어요.', refresh: false, unknown: false, expired: true };
+    case 'not-found': return { text: '문의를 찾을 수 없어요. 목록을 새로고침해주세요.', refresh: false, unknown: false, expired: false };
+    case 'offline': return { text: '저장되지 않았어요. 연결을 확인해주세요.', refresh: false, unknown: false, expired: false };
+    case 'timeout': return { text: '응답을 확인하지 못했어요. 처리됐는지 확실하지 않아요. 새로고침으로 현재 상태를 확인해주세요.', refresh: true, unknown: true, expired: false };
+    default: return { text: '처리하지 못했어요. 잠시 후 다시 시도해주세요.', refresh: false, unknown: false, expired: false };
+  }
+}

@@ -85,6 +85,7 @@ function delPorts({ user, inFlight = 0 }) {
     async forfeitQoin() { return st.user.qoinBalance ?? 0; },
     async anonymizeUser() {},
     async deleteFavorites() { return { favoriteStores: 0, favoriteMenuItems: 0 }; },
+    async markSupportInquiries() { return 0; },
     async deleteAuthUser() { st.authDeletes++; },
   };
 }

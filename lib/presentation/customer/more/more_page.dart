@@ -12,6 +12,8 @@ import 'package:qradar/presentation/customer/auth/providers/user_profile_provide
 import 'package:qradar/presentation/customer/more/account_deletion/account_deletion_page.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_brand_section.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_owner_section.dart';
+import 'package:qradar/presentation/customer/support/providers/support_inquiry_providers.dart';
+import 'package:qradar/presentation/customer/support/support_inquiry_list_page.dart';
 
 class MorePage extends ConsumerWidget {
   const MorePage({super.key});
@@ -36,7 +38,7 @@ class MorePage extends ConsumerWidget {
           const UpgradeToOwnerSection(),
           const UpgradeToBrandSection(),
           const SizedBox(height: 16),
-          _NotificationSettingsTile(
+          _MoreTile(
             icon: Icons.notifications_outlined,
             title: '알림 설정',
             subtitle: '주문 진행 · 픽업 완료 알림을 설정해요',
@@ -45,6 +47,25 @@ class MorePage extends ConsumerWidget {
                 builder: (_) => const NotificationSettingsPage(),
               ),
             ),
+          ),
+          // 고객센터 — 미확인 답변이 있으면 dot + 부제 교체 (판정은 unreadInquiryAnswerCountProvider 한 곳, 실패 시 fail-quiet).
+          Builder(
+            builder: (context) {
+              final hasUnread = ref.watch(unreadInquiryAnswerCountProvider) > 0;
+              return _MoreTile(
+                icon: Icons.support_agent_outlined,
+                title: '고객센터',
+                subtitle: hasUnread ? '새 답변이 도착했어요' : '문의하고 답변을 확인해요',
+                subtitleEmphasis: hasUnread,
+                showDot: hasUnread,
+                semanticsLabel: hasUnread ? '고객센터, 새 답변이 도착했어요' : null,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SupportInquiryListPage(),
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 8),
           Center(
@@ -110,25 +131,60 @@ void _onTapDeleteAccount(BuildContext context, WidgetRef ref) {
 }
 
 /// 더보기 진입 타일. `OwnerMorePage._Tile` 과 시그니처·시각 스펙 동일 (U4).
-class _NotificationSettingsTile extends StatelessWidget {
+class _MoreTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
   final VoidCallback? onTap;
 
-  const _NotificationSettingsTile({
+  /// 우상단 미확인 dot (아이콘 기준). 텍스트 변경([subtitleEmphasis])과 항상 짝으로 쓴다.
+  final bool showDot;
+  final bool subtitleEmphasis;
+  final String? semanticsLabel;
+
+  const _MoreTile({
     required this.icon,
     required this.title,
     this.subtitle,
     this.onTap,
+    this.showDot = false,
+    this.subtitleEmphasis = false,
+    this.semanticsLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    final tile = ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-      leading: Icon(icon, size: 22, color: AppColors.textBody),
+      leading: showDot
+          ? SizedBox(
+              width: 22,
+              height: 22,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon, size: 22, color: AppColors.textBody),
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: AppColors.error,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.background,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : Icon(icon, size: 22, color: AppColors.textBody),
       title: Text(
         title,
         style: const TextStyle(
@@ -141,7 +197,13 @@ class _NotificationSettingsTile extends StatelessWidget {
           ? null
           : Text(
               subtitle!,
-              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              style: subtitleEmphasis
+                  ? const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryBright,
+                    )
+                  : const TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
       trailing: onTap == null
           ? null
@@ -151,5 +213,14 @@ class _NotificationSettingsTile extends StatelessWidget {
               color: AppColors.textMuted,
             ),
     );
+    return semanticsLabel == null
+        ? tile
+        : Semantics(
+            label: semanticsLabel,
+            button: true,
+            excludeSemantics: true,
+            onTap: onTap,
+            child: tile,
+          );
   }
 }

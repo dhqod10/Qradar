@@ -7,6 +7,7 @@
  *   (가드) 진행 중 주문(paid/accepted/making/ready)이 있으면 차단 — 이력도 남기지 않는다
  *   ① 이력 phase:'started' (users 스냅샷 포함 — 익명화로 사라질 PII 의 감사 박제)
  *   ② Qoin 소멸 (원장 1건 + 잔액 0, 한 트랜잭션)  ③ users 익명화 + deleted 플래그  ④ favorites 삭제
+ *   ④-2 고객센터 문의 마킹 (support_inquiry Q6 — authorDeleted 마킹 + 열린 문의 종결. **문서·첨부는 삭제하지 않는다**, 3년 보존)
  *   ⑤ Firebase Auth 계정 삭제 (**마지막** — 삭제 후엔 request.auth 가 무효가 되므로 Firestore 작업을 먼저 끝낸다)
  *   ⑥ phase:'done'
  * 주문·orderLogs·Qoin 원장은 **보존**한다 (정산·감사·전자상거래법, PII 스냅샷 없음).
@@ -25,9 +26,10 @@ export type AccountPhase =
   | "qoinForfeited"
   | "anonymized"
   | "favoritesDeleted"
+  | "inquiriesMarked"
   | "authDeleted"
   | "done";
-const PHASE_ORDER: AccountPhase[] = ["started", "qoinForfeited", "anonymized", "favoritesDeleted", "authDeleted", "done"];
+const PHASE_ORDER: AccountPhase[] = ["started", "qoinForfeited", "anonymized", "favoritesDeleted", "inquiriesMarked", "authDeleted", "done"];
 const atLeast = (p: AccountPhase, q: AccountPhase) => PHASE_ORDER.indexOf(p) >= PHASE_ORDER.indexOf(q);
 
 type RawDoc = Record<string, unknown>;
@@ -36,7 +38,7 @@ export interface AccountHistoryDoc {
   id: string;
   phase: AccountPhase;
   forfeitedQoin?: number;
-  affected?: { favoriteStores: number; favoriteMenuItems: number };
+  affected?: { favoriteStores: number; favoriteMenuItems: number; supportInquiries?: number };
 }
 
 export interface AccountPorts {
@@ -52,6 +54,11 @@ export interface AccountPorts {
   anonymizeUser(uid: string, reason: string | null): Promise<void>;
   /** favoriteStores / favoriteMenuItems 서브컬렉션 삭제. 지운 건수 (이미 없으면 0). */
   deleteFavorites(uid: string): Promise<{ favoriteStores: number; favoriteMenuItems: number }>;
+  /**
+   * 고객센터 문의 마킹 (support_inquiry Q6). userId==uid 문의에 authorDeleted 를 쓰고, open|answered 는 closed(account_deleted) 로 종결.
+   * 문서·첨부는 보존한다. 멱등 (같은 값 재기록). 마킹한 문서 수를 돌려준다.
+   */
+  markSupportInquiries(uid: string): Promise<number>;
   /** Firebase Auth 계정 삭제. 이미 없으면 성공으로 본다. */
   deleteAuthUser(uid: string): Promise<void>;
 }
@@ -144,6 +151,13 @@ export async function runDeleteMyAccount(
     await ports.writeHistory(deletionId, { phase: "favoritesDeleted", affected });
     cur = "favoritesDeleted";
   }
+  // ④-2 고객센터 문의 마킹 (문서·첨부 보존)
+  if (!atLeast(cur, "inquiriesMarked")) {
+    const supportInquiries = await ports.markSupportInquiries(uid);
+    affected = { favoriteStores: 0, favoriteMenuItems: 0, ...(affected ?? {}), supportInquiries };
+    await ports.writeHistory(deletionId, { phase: "inquiriesMarked", affected });
+    cur = "inquiriesMarked";
+  }
   // ⑤ Auth (마지막)
   if (!atLeast(cur, "authDeleted")) {
     await ports.deleteAuthUser(uid);
@@ -222,6 +236,32 @@ export function makeFirestoreAccountPorts(db: admin.firestore.Firestore): Accoun
       await db.recursiveDelete(stores);
       await db.recursiveDelete(items);
       return { favoriteStores, favoriteMenuItems };
+    },
+    async markSupportInquiries(uid) {
+      // 단일 필드 등식 쿼리(인덱스 불요). 500건 청크 batch.
+      const snap = await db.collection("supportInquiries").where("userId", "==", uid).get();
+      let n = 0;
+      for (let i = 0; i < snap.docs.length; i += 400) {
+        const batch = db.batch();
+        for (const d of snap.docs.slice(i, i + 400)) {
+          const status = d.get("status");
+          const patch: Record<string, unknown> = {
+            authorDeleted: true,
+            authorDeletedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          };
+          if (status === "open" || status === "answered") {
+            patch.status = "closed";
+            patch.closedAt = FieldValue.serverTimestamp();
+            patch.closedBy = uid;
+            patch.closedReason = "account_deleted";
+          }
+          batch.update(d.ref, patch);
+          n++;
+        }
+        await batch.commit();
+      }
+      return n;
     },
     async deleteAuthUser(uid) {
       try {

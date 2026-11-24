@@ -10,10 +10,11 @@
    ========================================================================== */
 
 import {
-  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, listQoinHistoryOf, setQoinAccrualRate, setQoinAccrualEnabled, applyBrandQoinRate, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, runBackfillSearchKeywords, findUsersByEmail, findUserByUid, setUserSuspension, adminDeleteUser, LIST_LIMIT,
+  signOutNow, countPending, listPendingBrands, getBrand, getBrandPrivate, loadBrandMap, listPendingStores, getStore, listAllStores, listPendingMenus, listPendingOverrides, getMasterMenu, getQoinConfig, listQoinHistory, listQoinHistoryOf, setQoinAccrualRate, setQoinAccrualEnabled, applyBrandQoinRate, approveBrand, rejectBrand, approveStore, rejectStore, readCurrentStatus, runBackfillGeohash, runBackfillQoinAccrual, runBackfillSearchKeywords, findUsersByEmail, findUserByUid, setUserSuspension, adminDeleteUser, listInquiries, getInquiry, moderateSupportInquiry, LIST_LIMIT,
 } from './console-data.js';
 import {
   esc, safeUrl, fmtDateTime, fmtShortDateTime, fmtClock, shortUid, fmtKrw, fmtRatePct, normalizeStatus, STATUS_LABEL, validateReason, classifyError, writeErrorText, RATE_MIN, RATE_MAX, parseRateCell, parseSwitchCell, resolveEffectiveQoinRate, qoinRateText, toDate,
+  INQUIRY_STATUS_LABEL, INQUIRY_CATEGORY_LABEL, INQUIRY_CLOSE_REASONS, INQUIRY_CLOSE_REASON_LABEL, INQUIRY_ANSWER_MAX, inquiryStatusOf, inquiryCategoryOf, inquirySnippet, inquiryWriteErrorText,
 } from './console-format.js';
 import {
   S, root, hooks, $, skel, letter, banner, openDialog, emptyBlock, errorBlock, statusBadge, uidCell, thumb, kv, tableHtml, skelRows, headHtml, detailSkeleton, flashOnce, makeLoader, toast, field, setFieldError, targetBlock,
@@ -25,6 +26,7 @@ const NAV = [
   { group: '운영', items: [
     { key: 'dashboard', href: '#/dashboard', label: '대시보드' },
     { key: 'users', href: '#/users', label: '회원 관리' },
+    { key: 'inquiries', href: '#/inquiries', label: '문의 관리', count: 'inquiries' },
     { key: 'tools', href: '#/tools', label: '백필 도구' },
   ] },
   { group: '승인 큐', items: [
@@ -45,7 +47,7 @@ export const afterNav = () => renderBadges();
 
 /** S.counts / loadAllCounts 는 admin 일 때만 시작한다 (다른 역할은 이 섹션을 import 하지 않는다). */
 export function start() {
-  S.counts = { brands: { state: 'loading' }, stores: { state: 'loading' }, menus: { state: 'loading' }, overrides: { state: 'loading' } };
+  S.counts = { inquiries: { state: 'loading' }, brands: { state: 'loading' }, stores: { state: 'loading' }, menus: { state: 'loading' }, overrides: { state: 'loading' } };
   hooks.loadAllCounts = loadAllCounts;
   loadAllCounts();
 }
@@ -63,12 +65,13 @@ export function match(parts, alive) {
   if (p0 === 'dashboard') return { key: 'dashboard', run: () => viewDashboard(alive) };
   if (p0 === 'tools') return { key: 'tools', run: () => viewTools(alive) };
   if (p0 === 'users') return { key: 'users', run: () => viewUsers(alive) };
+  if (p0 === 'inquiries') return { key: 'inquiries', run: () => (parts[1] ? viewInquiryDetail(parts[1], alive) : viewInquiryQueue(alive)) };
   return null;
 }
 
 const route = () => hooks.route();
 
-const COUNT_KEYS = ['brands', 'stores', 'menus', 'overrides'];
+const COUNT_KEYS = ['inquiries', 'brands', 'stores', 'menus', 'overrides'];
 
 async function loadCount(key) {
   const sh = S.shell;
@@ -98,6 +101,7 @@ function renderBadges() {
 }
 
 const STAT_META = {
+  inquiries: { title: '미답변 문의', href: '#/inquiries' },
   brands: { title: '브랜드', href: '#/brands' },
   stores: { title: '매장', href: '#/stores/pending' },
   menus: { title: '마스터 메뉴', href: '#/menus', ro: true },
@@ -1501,6 +1505,243 @@ function viewQoin(alive) {
   };
   $('#refresh').onclick = () => { loadCards(); loadHist(); loadBrands(); };
   loadCards(); loadHist(); loadBrands();
+}
+
+/* ============================================================================
+   문의 관리 (support_inquiry) — 목록 / 상세 / 답변·종결 모달
+   - 읽기는 Rules(admin read) 로 직접, 쓰기는 moderateSupportInquiry callable 경유 (콘솔은 supportInquiries 를 직접 쓰지 않는다).
+   - 답변은 1회 · 수정 불가 (append-only). 확정 전에 한 번 더 확인하고, 포커스는 '취소' 에 둔다.
+   - 성공 후에는 낙관적 갱신 없이 서버에서 다시 조회한다.
+   ========================================================================== */
+
+const inqState = { status: '', category: '' };
+const inqBadgeCls = { open: 'pending', answered: 'approved', closed: '', withdrawn: '' };
+const inqBadge = (raw) => { const k = inquiryStatusOf(raw); return `<span class="a-badge ${inqBadgeCls[k]}">${esc(INQUIRY_STATUS_LABEL[k])}</span>`; };
+const inqAuthorFlag = (r) => (r.authorDeleted === true ? ' <span class="a-badge">탈퇴</span>' : '');
+
+function viewInquiryQueue(alive) {
+  const flash = flashOnce();
+  const v = $('#view');
+  const opt = (map, cur, allLabel) => `<option value="">${allLabel}</option>${Object.entries(map).map(([k, l]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}`;
+  v.innerHTML = `${headHtml({ title: '문의 관리', desc: '고객센터로 접수된 문의예요. 최신 문의가 위에 보여요.' })}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <label class="a-sr" for="inq-status">상태</label>
+      <select id="inq-status" class="a-input" style="width:auto;min-width:140px">${opt(INQUIRY_STATUS_LABEL, inqState.status, '상태: 전체')}</select>
+      <label class="a-sr" for="inq-cat">유형</label>
+      <select id="inq-cat" class="a-input" style="width:auto;min-width:140px">${opt(INQUIRY_CATEGORY_LABEL, inqState.category, '유형: 전체')}</select>
+    </div><div id="notice"></div><div id="box"></div>`;
+  const loader = makeLoader({
+    alive, box: $('#box'), notice: $('#notice'), cols: 6,
+    load: () => listInquiries({ status: inqState.status || undefined, category: inqState.category || undefined }),
+    render: ({ rows, truncated }) => (rows.length === 0
+      ? emptyBlock('문의가 없어요', inqState.status || inqState.category ? '필터 조건에 맞는 문의가 없어요.' : '접수된 문의가 여기에 나타나요.')
+      : tableHtml(['상태', '유형', '제목', '작성자 UID', '접수 시각', ''], rows.map((r) => `<tr class="a-hover">
+          <td>${inqBadge(r.status)}</td><td>${esc(INQUIRY_CATEGORY_LABEL[inquiryCategoryOf(r.category)])}</td>
+          <td class="a-ell" title="${esc(r.title)}"><a href="#/inquiries/${encodeURIComponent(r.id)}">${esc(r.title || '(제목 없음)')}</a></td>
+          <td>${uidCell(r.userId)}${inqAuthorFlag(r)}</td><td class="a-num">${esc(fmtDateTime(r.createdAt))}</td>
+          <td><a href="#/inquiries/${encodeURIComponent(r.id)}">자세히 →</a></td></tr>`)) + totalLine(rows.length, truncated)),
+    onData: (d) => { S.order.inquiries = d.rows.map((r) => r.id); },
+  });
+  $('#inq-status').onchange = (e) => { inqState.status = e.target.value; loader.run(false); };
+  $('#inq-cat').onchange = (e) => { inqState.category = e.target.value; loader.run(false); };
+  $('#refresh').onclick = () => { loader.run(true); loadAllCounts(); };
+  loader.run(false).then(() => { if (flash && alive()) toast(flash); });
+}
+
+async function viewInquiryDetail(id, alive) {
+  const v = $('#view');
+  const back = '<a href="#/inquiries">← 문의 목록</a>';
+  const flash = flashOnce();
+  const load = async () => {
+    v.innerHTML = detailSkeleton('#/inquiries', '문의 목록');
+    let q;
+    try { q = await getInquiry(id); } catch (e) {
+      console.error('[admin] 문의 조회 실패', e?.code || e);
+      if (!alive()) return;
+      v.innerHTML = `<div class="a-crumbs">${back}</div>${errorBlock(e)}`;
+      $('[data-retry]', v).onclick = load; return;
+    }
+    if (!alive()) return;
+    if (!q) { v.innerHTML = `<div class="a-crumbs">${back}</div>${emptyBlock('찾을 수 없는 문의예요', '주소가 잘못됐을 수 있어요.', '<br><a class="a-link" href="#/inquiries">목록으로</a>')}`; return; }
+    render(q);
+    if (flash) toast(flash);
+  };
+
+  function render(q) {
+    const st = inquiryStatusOf(q.status);
+    const imgs = Array.isArray(q.imageUrls) ? q.imageUrls.map(safeUrl).filter(Boolean) : [];
+    const snap = q.orderSnapshot && typeof q.orderSnapshot === 'object' ? q.orderSnapshot : null;
+    const ans = q.answer && typeof q.answer === 'object' ? q.answer : null;
+    v.innerHTML = `<div class="a-crumbs">${back}${navButtons('inquiries', id, '#/inquiries')}</div>
+      <div class="a-head"><h1>${esc(q.title || '(제목 없음)')} ${inqBadge(q.status)}</h1></div><div style="height:16px"></div>
+      <div class="a-detail"><div class="a-detail-main">
+        ${q.authorDeleted === true ? banner('warn', '', '탈퇴한 사용자의 문의예요. 답변을 권하지 않아요.') : ''}
+        <div class="a-card"><h2>문의 내용</h2>
+          ${kv([['유형', INQUIRY_CATEGORY_LABEL[inquiryCategoryOf(q.category)]], ['접수 시각', fmtDateTime(q.createdAt)]])}
+          <p style="margin:12px 0 0;white-space:pre-wrap;line-height:1.6">${esc(q.body || '')}</p>
+          ${imgs.length ? `<div class="a-inq-imgs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">${imgs.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" aria-label="첨부 사진 ${i + 1} 원본 보기"><img src="${esc(u)}" alt="첨부 사진 ${i + 1}" loading="lazy" referrerpolicy="no-referrer" style="width:120px;height:120px;object-fit:cover;border-radius:10px;border:1px solid var(--border)"></a>`).join('')}</div>` : ''}
+        </div>
+        ${snap ? `<div class="a-card"><h2>연결 주문 (접수 당시)</h2>${kv([['매장', snap.storeName], ['픽업 번호', snap.pickupNumber != null ? `#${snap.pickupNumber}` : '-'], ['결제 금액', fmtKrw(snap.totalPrice)], ['주문 상태', snap.status], ['주문 시각', fmtDateTime(snap.createdAt)], ['주문 ID', q.orderId || '-']])}</div>` : ''}
+        <div class="a-card"><h2>작성자</h2><div id="inq-author">${kv([['UID', uidCell(q.userId), true], ['접수 당시 역할', roleLabelKo(q.authorRole)], ['탈퇴 여부', q.authorDeleted === true ? '탈퇴함' : '-'], ['앱 환경', [q.platform, q.appVersion].filter(Boolean).join(' / ')]])}</div></div>
+        ${ans ? `<div class="a-card"><h2>답변</h2>${kv([['답변 시각', fmtDateTime(ans.answeredAt)], ['답변자', uidCell(ans.answeredBy), true], ['고객 확인', q.answerReadAt ? fmtDateTime(q.answerReadAt) : '아직 안 읽음']])}<p style="margin:12px 0 0;white-space:pre-wrap;line-height:1.6">${esc(ans.body || '')}</p></div>` : ''}
+        ${st === 'closed' ? `<div class="a-card"><h2>종결</h2>${kv([['사유', INQUIRY_CLOSE_REASON_LABEL[q.closedReason] || q.closedReason], ['종결 시각', fmtDateTime(q.closedAt)], ['처리자', uidCell(q.closedBy), true]])}</div>` : ''}
+        ${st === 'withdrawn' ? `<div class="a-card"><h2>철회</h2>${kv([['철회 시각', fmtDateTime(q.withdrawnAt)]])}</div>` : ''}
+      </div><aside class="a-panel a-card" id="panel"></aside></div>`;
+
+    const p = $('#panel');
+    if (st === 'open') {
+      p.innerHTML = `<h2>처리</h2><div class="a-cap">답변은 한 번만 등록할 수 있고, 등록 후에는 수정할 수 없어요.</div>
+        <div class="a-btns"><button type="button" class="a-btn primary block lg" id="btn-answer">답변 작성…</button>
+        <button type="button" class="a-btn block lg" id="btn-close">종결…</button></div>`;
+      $('#btn-answer').onclick = (e) => openInquiryModal({ mode: 'answer', q, trigger: e.currentTarget, alive });
+      $('#btn-close').onclick = (e) => openInquiryModal({ mode: 'close', q, trigger: e.currentTarget, alive });
+    } else if (st === 'answered') {
+      p.innerHTML = `<h2>처리</h2>${banner('', '', '이미 답변한 문의예요. 답변은 수정할 수 없어요.')}
+        <div class="a-btns"><button type="button" class="a-btn block lg" id="btn-close">종결…</button></div>`;
+      $('#btn-close').onclick = (e) => openInquiryModal({ mode: 'close', q, trigger: e.currentTarget, alive });
+    } else {
+      p.innerHTML = `<h2>처리</h2>${banner('', '', st === 'withdrawn' ? '고객이 철회한 문의예요.' : '종결된 문의예요.')}`;
+    }
+
+    // 작성자 정지 여부 (best-effort — 실패해도 상세는 그대로)
+    findUserByUid(q.userId).then((u) => {
+      if (!alive() || !u) return;
+      const box = $('#inq-author'); if (!box) return;
+      box.innerHTML = kv([['UID', uidCell(q.userId), true], ['현재 역할', roleLabelKo(u.role)], ['계정 상태', u.deleted === true ? '탈퇴함' : (u.suspended === true ? '정지됨' : '정상')], ['접수 당시 역할', roleLabelKo(q.authorRole)], ['앱 환경', [q.platform, q.appVersion].filter(Boolean).join(' / ')]]);
+    }).catch(() => {});
+  }
+  load();
+}
+
+/** 답변 / 종결 모달. 답변은 입력 → 확인(포커스 '취소') 2단계. 실패는 모달 안 배너, 성공은 서버에서 다시 조회. */
+function openInquiryModal({ mode, q, trigger, alive }) {
+  if (S.modal) return;
+  const isAnswer = mode === 'answer';
+  const st = { busy: false, step: 'input', locked: false, text: '' };
+  const ov = document.createElement('div');
+  ov.className = 'a-overlay';
+  const idShort = q.id.length > 8 ? `${q.id.slice(0, 6)}…` : q.id;
+  ov.innerHTML = `<div class="a-modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <h2 id="m-title"></h2>
+    <div class="a-target"><b>${esc(q.title || '(제목 없음)')}</b><small>${esc(INQUIRY_CATEGORY_LABEL[inquiryCategoryOf(q.category)])} · ID ${esc(idShort)}</small></div>
+    <div id="m-body"></div><div id="m-msg" style="margin-top:14px"></div>
+    <div class="a-modal-foot" id="m-foot"></div></div>`;
+  document.body.appendChild(ov);
+  const modal = $('.a-modal', ov);
+  const q$ = (sel) => $(sel, ov);
+  const showMsg = (html) => { q$('#m-msg').innerHTML = html ? `<div id="m-msg-in" tabindex="-1">${html}</div>` : ''; if (html) q$('#m-msg-in').focus(); };
+
+  function renderInput() {
+    st.step = 'input';
+    q$('#m-title').textContent = isAnswer ? '답변 작성' : '문의 종결';
+    q$('#m-body').innerHTML = isAnswer
+      ? `<label class="a-label" for="m-text">답변 내용 (필수)</label>
+         <textarea class="a-textarea" id="m-text" maxlength="${INQUIRY_ANSWER_MAX}" aria-describedby="m-err">${esc(st.text)}</textarea>
+         <div class="a-field-err" id="m-err" hidden>답변 내용을 입력해주세요</div>
+         <div class="a-count-line"><span>고객에게 그대로 보여요. 등록 후 수정할 수 없어요.</span><span class="a-num" id="m-count">${[...st.text].length}/${INQUIRY_ANSWER_MAX}자</span></div>`
+      : `<label class="a-label" for="m-reason">종결 사유 (필수)</label>
+         <select class="a-input" id="m-reason" aria-describedby="m-err"><option value="">선택해주세요</option>${INQUIRY_CLOSE_REASONS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select>
+         <div class="a-field-err" id="m-err" hidden>종결 사유를 선택해주세요</div>
+         <p class="a-cap" style="margin-top:12px">종결하면 더 이상 답변할 수 없어요.</p>`;
+    q$('#m-foot').innerHTML = `<button type="button" class="a-btn lg" id="m-cancel">취소</button>
+      <button type="button" class="a-btn lg primary" id="m-next">${isAnswer ? '다음' : '종결 확인'}</button>`;
+    q$('#m-cancel').onclick = close;
+    q$('#m-next').onclick = toConfirm;
+    const ta = q$('#m-text');
+    if (ta) {
+      ta.addEventListener('input', () => { st.text = ta.value; q$('#m-count').textContent = `${[...ta.value].length}/${INQUIRY_ANSWER_MAX}자`; if (ta.value.trim()) q$('#m-err').hidden = true; });
+      ta.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); toConfirm(); } });
+      ta.focus();
+    } else q$('#m-reason').focus();
+  }
+
+  function toConfirm() {
+    const ta = q$('#m-text'); const sel = q$('#m-reason');
+    if (isAnswer) {
+      st.text = ta.value;
+      if (!validateReason(st.text).ok) { q$('#m-err').hidden = false; ta.setAttribute('aria-invalid', 'true'); ta.focus(); return; }
+    } else {
+      st.reason = sel.value;
+      if (!st.reason) { q$('#m-err').hidden = false; sel.setAttribute('aria-invalid', 'true'); sel.focus(); return; }
+    }
+    st.step = 'confirm';
+    showMsg('');
+    q$('#m-title').textContent = isAnswer ? '답변을 등록할까요?' : '이 문의를 종결할까요?';
+    q$('#m-body').innerHTML = isAnswer
+      ? `<p class="a-ask-sub">등록 후에는 수정할 수 없어요.</p><div class="a-target" style="white-space:pre-wrap;max-height:220px;overflow:auto">${esc(st.text.trim())}</div>`
+      : `<p class="a-ask-sub">사유: <b>${esc(INQUIRY_CLOSE_REASON_LABEL[st.reason])}</b>. 종결 후에는 답변할 수 없어요.</p>`;
+    q$('#m-foot').innerHTML = `<button type="button" class="a-btn lg" id="m-back">돌아가기</button>
+      <button type="button" class="a-btn lg" id="m-cancel2">취소</button>
+      <button type="button" class="a-btn lg primary" id="m-ok">${isAnswer ? '답변 등록 확정' : '종결 확정'}</button>`;
+    q$('#m-back').onclick = renderInput;
+    q$('#m-cancel2').onclick = close;
+    q$('#m-ok').onclick = submit;
+    q$('#m-cancel2').focus(); // 확정 단계 포커스는 '취소' — Enter 한 번에 확정되지 않게
+  }
+
+  function setBusy(b) {
+    st.busy = b; S.busy = b;
+    modal.setAttribute('aria-busy', String(b));
+    ov.querySelectorAll('button, textarea, select').forEach((el) => { el.disabled = b; });
+    const ok = q$('#m-ok'); if (ok) ok.innerHTML = b ? '<span class="a-spin"></span>처리 중…' : (isAnswer ? '답변 등록 확정' : '종결 확정');
+  }
+
+  async function submit() {
+    if (st.busy || st.locked) return;
+    setBusy(true); showMsg('');
+    try {
+      if (isAnswer) await moderateSupportInquiry(q.id, 'answer', { body: st.text.trim() });
+      else await moderateSupportInquiry(q.id, 'close', { closedReason: st.reason });
+    } catch (e) {
+      console.error('[admin] 문의 처리 실패', e?.code || e?.name || e);
+      setBusy(false);
+      const t = inquiryWriteErrorText(e);
+      showMsg(banner('error', '실패', t.text));
+      if (t.expired) { setTimeout(() => { S.loginNotice = '세션이 만료되었어요. 다시 로그인해주세요.'; destroy(); signOutNow(); }, 3000); return; }
+      if (t.refresh) { // 서버 진실을 다시 읽는다 (이미 답변됨 / 상태 변경 / 응답 불확실)
+        st.locked = true;
+        q$('#m-ok').disabled = true;
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'a-btn lg'; b.textContent = '최신 상태 보기';
+        b.onclick = () => { destroy(); route(); };
+        q$('#m-foot').appendChild(b);
+        b.focus();
+      }
+      return;
+    }
+    setBusy(false);
+    S.flash = isAnswer ? '답변을 등록했어요' : '문의를 종결했어요';
+    destroy();
+    loadAllCounts();
+    route(); // 서버에서 다시 조회 (낙관적 갱신 금지)
+  }
+
+  function destroy() {
+    if (!S.modal) return;
+    S.modal = null;
+    ov.remove();
+    document.removeEventListener('keydown', onKey, true);
+    if (trigger && document.contains(trigger)) trigger.focus();
+  }
+  function close() { if (!st.busy) destroy(); }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && st.step === 'confirm') { e.preventDefault(); submit(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...modal.querySelectorAll('button:not([disabled]), textarea:not([disabled]), select:not([disabled])')];
+    if (items.length === 0) { e.preventDefault(); return; }
+    const first = items[0]; const last = items[items.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  }
+  document.addEventListener('keydown', onKey, true);
+  ov.addEventListener('mousedown', (e) => {
+    if (e.target !== ov || st.busy) return;
+    if (st.text.trim()) return; // 입력 손실 방지
+    close();
+  });
+  S.modal = { get busy() { return st.busy; }, close, destroy };
+  renderInput();
 }
 
 /* ============================================================================

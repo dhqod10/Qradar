@@ -136,7 +136,11 @@ const menusPending = () =>
 const overridesPending = () =>
   query(collectionGroup(db, 'menuOverrides'), where('status', '==', 'pending'));
 
+// 문의 관리 뱃지 — 미답변(open) 건수 (support_inquiry). 단일 필드 등식이라 별도 인덱스 불요.
+const inquiriesOpen = () => query(collection(db, 'supportInquiries'), where('status', '==', 'open'));
+
 export const countPending = Object.freeze({
+  inquiries: () => countOf(inquiriesOpen()),
   brands: () => countOf(brandsPending()),
   stores: () => countOf(storesPending()),
   menus: () => countOf(menusPending()),
@@ -390,6 +394,36 @@ export async function findUserByUid(uid) {
 export async function setUserSuspension(targetUid, action, reason) {
   const call = httpsCallable(functions, 'setUserSuspension', { timeout: KEY_TIMEOUT_MS });
   const res = await call({ targetUid, action, reason: reason && reason.length ? reason : undefined });
+  return res?.data ?? null;
+}
+
+/* ── 고객센터 문의 (support_inquiry) ─────────────────────────────────────────────
+   읽기는 Rules(admin read) 로 직접, 쓰기(답변/종결)는 전부 moderateSupportInquiry callable — 콘솔은 supportInquiries 를 직접 쓰지 않는다. */
+
+/**
+ * 문의 목록 (최신순). status / category 필터는 선택.
+ * 복합 인덱스: (status, createdAt) · (status, category, createdAt). status 없이 category 만 고르면 인덱스가 없으므로
+ * 서버에서는 createdAt 순으로 가져오고 category 는 클라이언트에서 거른다 (truncated 는 서버 상한 기준).
+ */
+export async function listInquiries({ status, category } = {}) {
+  const parts = [collection(db, 'supportInquiries')];
+  if (status) parts.push(where('status', '==', status));
+  if (status && category) parts.push(where('category', '==', category));
+  parts.push(orderBy('createdAt', 'desc'), limit(LIST_LIMIT));
+  const r = await getList(query(...parts));
+  if (!status && category) r.rows = r.rows.filter((x) => x.category === category);
+  return r;
+}
+
+export const getInquiry = (id) => getOne(doc(db, 'supportInquiries', id));
+
+/** 문의 답변/종결 — action 'answer'(body) | 'close'(closedReason). 응답 { changed, status }. */
+export async function moderateSupportInquiry(inquiryId, action, { body, closedReason } = {}) {
+  const call = httpsCallable(functions, 'moderateSupportInquiry', { timeout: KEY_TIMEOUT_MS });
+  const payload = { inquiryId, action };
+  if (action === 'answer') payload.body = body;
+  else payload.closedReason = closedReason;
+  const res = await withTimeout(call(payload), KEY_TIMEOUT_MS + 5000);
   return res?.data ?? null;
 }
 

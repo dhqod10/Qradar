@@ -21,6 +21,7 @@
 | StoreOnlyMenuItem (점포 한정) | `EntityApprovalStatus?` (개인 매장은 null, 브랜드 매장은 pending) | `stores/{storeId}/menuItems/{id}` |
 | MenuOverride (가맹점 오버라이드) | `EntityApprovalStatus` | `stores/{storeId}/menuOverrides/{masterMenuItemId}` |
 | RefundRequest (Order 내부 sub-doc) | (deniedAt null vs not-null) | `orders/{orderId}.refundRequest` |
+| SupportInquiry (고객센터 문의) | `SupportInquiryStatus` (open/answered/closed/withdrawn) | `supportInquiries/{inquiryId}` |
 
 **공통 표기**:
 - "✅ Rules" — `firestore.rules` 가 명시적으로 허용/검증
@@ -338,6 +339,35 @@ stateDiagram-v2
 요약:
 - 생성 / 거절 / 환불 승인 모두 별도 actor / 메커니즘.
 - 거절 후 재요청은 현재 차단됨 (확인 필요).
+
+---
+
+## 6a. SupportInquiry Lifecycle (support_inquiry)
+
+```mermaid
+stateDiagram-v2
+    [*] --> open: 고객 작성 (🛠 CF createSupportInquiry)
+    open --> answered: admin 답변 (🛠 CF moderateSupportInquiry answer)
+    open --> withdrawn: 고객 철회 (✅ Rules C1)
+    open --> closed: admin 종결 — 스팸/중복/답변불요 (🛠 CF close)
+    answered --> closed: admin 종결 (🛠 CF close)
+    open --> closed: 작성자 탈퇴 (🛠 CF deleteMyAccount, closedReason=account_deleted)
+    answered --> closed: 작성자 탈퇴 (동일)
+    withdrawn --> [*]
+    closed --> [*]
+```
+
+| 전이 | actor | 메커니즘 | 조건 | 갱신 필드 | Rules 분기 |
+|---|---|---|---|---|---|
+| (없음) → open | customer | 🛠 CF `createSupportInquiry` | 인증 + `deleted != true` + rate limit + 첨부 경로 일치 + (orderId 면) 본인 주문 | 전체 doc create | `create: if false` |
+| open → answered | admin | 🛠 CF `moderateSupportInquiry` | `requireAdmin` + `status=='open'` + `answer == null` | `answer`, `status`, `updatedAt` | 클라 update 차단 |
+| open → withdrawn | customer | ✅ Rules **C1** | `userId==uid` + `status=='open'` | `status`, `withdrawnAt`, `updatedAt` | `isCustomerWithdraw()` |
+| open\|answered → closed | admin | 🛠 CF | `requireAdmin` + `closedReason` enum | `status`, `closedAt`, `closedBy`, `closedReason`, `updatedAt` | 클라 update 차단 |
+| open\|answered → closed | CF(탈퇴) | 🛠 `deleteMyAccount` | 작성자 탈퇴 | 위 + `authorDeleted`, `authorDeletedAt` | — |
+| (전이 아님) answerReadAt | customer | ✅ Rules **C2** | `userId==uid` + `status in ['answered','closed']` (closed 포함: FCM 부재로 dot 이 유일한 통지 경로) | `answerReadAt`, `updatedAt` | `isCustomerAnswerRead()` |
+
+- `answerReadAt` 기록은 status 전이가 아니다. 재오픈·재답변은 1차 없음 — 추가 질문은 **새 문의**가 회복 경로다 (`withdrawn`/`closed` 는 의도된 종착점).
+- 앱은 모르는 `status` 를 `closed` 로 읽는다 (추가 액션 비노출).
 
 ---
 

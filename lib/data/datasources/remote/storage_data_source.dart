@@ -99,6 +99,55 @@ class StorageDataSource {
     return task.ref.getDownloadURL();
   }
 
+  /// 고객센터 문의 첨부 업로드. downloadUrl 반환 (support_inquiry).
+  ///
+  /// 경로: `support_inquiries/{uid}/{inquiryId}/{timestamp}_{filename}`
+  /// Cloud Function `createSupportInquiry` 가 이 경로 prefix 를 검증한다. 크기 검증(5MB) 포함.
+  /// [onProgress] 는 0.0~1.0.
+  Future<String> uploadSupportInquiryImage({
+    required String uid,
+    required String inquiryId,
+    required File file,
+    void Function(double progress)? onProgress,
+  }) async {
+    _validateFileSize(file);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final filename = file.uri.pathSegments.last;
+    final ref = _storage
+        .ref()
+        .child(FirestorePaths.supportInquiryImagesStoragePrefix)
+        .child(uid)
+        .child(inquiryId)
+        .child('${timestamp}_$filename');
+    final task = ref.putFile(file, SettableMetadata(contentType: _contentType(filename)));
+    final sub = task.snapshotEvents.listen((s) {
+      if (s.totalBytes > 0) onProgress?.call(s.bytesTransferred / s.totalBytes);
+    });
+    try {
+      final snap = await task;
+      return await snap.ref.getDownloadURL();
+    } finally {
+      await sub.cancel();
+    }
+  }
+
+  /// Storage Rules 가 `image/*` contentType 을 요구한다 — 확장자로 명시한다 (카메라 임시 파일 포함).
+  String _contentType(String filename) {
+    final ext = filename.contains('.') ? filename.split('.').last.toLowerCase() : '';
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
   /// 파일 크기 검증 (5MB 제한, S7).
   void _validateFileSize(File file) {
     const maxBytes = 5 * 1024 * 1024; // 5MB

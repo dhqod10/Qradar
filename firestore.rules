@@ -939,6 +939,46 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // supportInquiries/{inquiryId} — 고객센터 문의 (support_inquiry).
+    // 생성(createSupportInquiry)·답변/종결(moderateSupportInquiry)은 Cloud Function 전담 → 클라이언트 create 차단.
+    // admin 도 직접 쓸 수 없다 (전권 분기 없음 — 답변·종결이 반드시 CF 를 통과해 answeredBy/closedBy 가 남는다).
+    // 고객 쓰기는 2개뿐: C1 철회(open→withdrawn), C2 답변 읽음 표시. 삭제는 누구도 불가 (3년 보존, 전자상거래법).
+    // ─────────────────────────────────────────────────────────────────────────
+    match /supportInquiries/{inquiryId} {
+      allow read: if isSignedIn() && (resource.data.userId == uid() || isAdmin());
+      allow create: if false;   // 🛠 createSupportInquiry
+      allow delete: if false;
+      allow update: if isCustomerWithdraw() || isCustomerAnswerRead();
+
+      // C1: 답변 전(open) 고객 철회. 변경 필드는 status/withdrawnAt/updatedAt 뿐, 시각은 서버 시각.
+      function isCustomerWithdraw() {
+        return isSignedIn()
+          && resource.data.userId == uid()
+          && resource.data.status == 'open'
+          && request.resource.data.status == 'withdrawn'
+          && onlyChangedFields(['status', 'withdrawnAt', 'updatedAt'])
+          && request.resource.data.withdrawnAt == request.time
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      // C2: 답변 읽음 표시 (status 전이 아님). answered / closed 에서, answerReadAt/updatedAt 만.
+      // closed 포함 이유: 답변 후 읽기 전에 종결돼도 FCM 부재로 dot 이 유일한 통지 경로라 읽음 처리가 가능해야 한다.
+      function isCustomerAnswerRead() {
+        return isSignedIn()
+          && resource.data.userId == uid()
+          && resource.data.status in ['answered', 'closed']
+          && onlyChangedFields(['answerReadAt', 'updatedAt'])
+          && request.resource.data.answerReadAt == request.time
+          && request.resource.data.updatedAt == request.time;
+      }
+    }
+
+    // supportInquiryLimits/{uid} — rate limit 카운터. CF 전담, 클라이언트 전면 차단.
+    match /supportInquiryLimits/{uid} {
+      allow read, write: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // fallback deny — 명시적으로 정의되지 않은 모든 경로 거부
     // ─────────────────────────────────────────────────────────────────────────
     match /{document=**} {

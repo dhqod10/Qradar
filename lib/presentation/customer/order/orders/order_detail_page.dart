@@ -14,6 +14,7 @@ import 'package:qradar/presentation/customer/order/widgets/order_item_row.dart';
 import 'package:qradar/presentation/customer/order/widgets/price_summary.dart';
 import 'package:qradar/presentation/customer/order/widgets/refund_request_sheet.dart';
 import 'package:qradar/presentation/customer/review/widgets/order_review_action.dart';
+import 'package:qradar/presentation/customer/support/support_inquiry_form_page.dart';
 
 class OrderDetailPage extends ConsumerStatefulWidget {
   const OrderDetailPage({super.key, required this.orderId});
@@ -217,6 +218,9 @@ class _OrderDetailBody extends StatelessWidget {
             onCancelOrder: onCancelOrder,
             onRefundRequest: onRefundRequest,
           ),
+          // 고객센터 문의 진입 — 주문 상태와 무관 (_ActionSection 의 status 분기는 건드리지 않는다).
+          const SizedBox(height: 16),
+          _OrderInquiryBlock(order: order),
           const SizedBox(height: 32),
         ],
       ),
@@ -476,6 +480,71 @@ class _PaymentInfoSection extends StatelessWidget {
 }
 
 // ── Action Section ────────────────────────────────────────────────────────────
+
+/// "이 주문 문의하기" — 모든 주문 상태에서 노출되는 낮은 강조의 카드 행 (support_inquiry).
+class _OrderInquiryBlock extends StatelessWidget {
+  const _OrderInquiryBlock({required this.order});
+
+  final OrderEntity order;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surfaceElevated,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SupportInquiryFormPage(presetOrderId: order.id),
+          ),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: const Row(
+            children: [
+              Icon(
+                Icons.help_outline_rounded,
+                size: 22,
+                color: AppColors.textBody,
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '이 주문에 문제가 있나요?',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textHeading,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      '이 주문으로 문의를 남겨 주세요',
+                      style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _ActionSection extends StatelessWidget {
   const _ActionSection({
