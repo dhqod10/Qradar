@@ -81,6 +81,14 @@ cd /Users/Byeonguk/Developer/OrderApp && firebase hosting:channel:deploy preview
 
 ## 페이지 구성
 
+> 🔴 **결제 수단 표기는 앱의 실제 구현과 일치해야 한다.** 현재 앱이 제공하는 수단은
+> **신용 · 체크카드 + 카카오페이 2종**이며(`lib/presentation/customer/checkout/widgets/payment_method_tile.dart`),
+> `index.html` · `terms.html` 제8조 · `refund.html` 제3조 · `privacy.html` 위탁표가 이 기준으로
+> 맞춰져 있다 (2026-11-24 교정). 삼성페이 · 애플페이 등을 추가하면 **4곳을 함께 고칠 것.**
+>
+> 🔴 **결제대행사 전환 시 고칠 곳**: `site.js` 의 `BIZ.pg` (푸터 · index · privacy 자동 반영) +
+> 각 HTML 의 `data-biz="pg"` 정적 텍스트. 토스 → KG이니시스/포트원 전환이 예정되어 있다.
+
 | 파일 | 역할 | 심사 대응 항목 |
 |---|---|---|
 | `index.html` | 랜딩 본문 | 서비스 소개 · 이용 방법 · **판매 상품 및 가격** · 결제 수단 · **상품 제공(배송) 안내** · 환불 요약 · **고객센터** |
@@ -151,9 +159,17 @@ admin / brand / owner / customer 섹션이 갈린다. 작업 문서는 `docs/tas
 
 ### 남은 리스크
 
-- 현재 푸터 · 헤더는 `assets/site.js` 가 **런타임에 주입**한다.
-  심사자가 JS 비활성 상태나 크롤러로 열면 사업자 정보가 보이지 않는다.
-  **서류 값이 확정되면 각 HTML 에 푸터를 직접 박아넣을 것.**
+- ~~푸터 · 헤더 런타임 주입~~ → **해소됨 (2026-11-24).** 푸터와 본문의 사업자 정보는
+  이제 4개 HTML 에 **정적으로 박혀 있다.** JS 를 꺼도 상호 · 대표자 · 사업자등록번호 ·
+  통신판매업 신고번호 · 주소 · 고객센터가 전부 보인다.
+  `site.js` 는 헤더 주입 + `data-biz` / `data-biz-href` / `data-biz-year` **값 보정**만 한다
+  (BIZ 가 단일 진실원으로 남되, JS 없이도 표기는 보장).
+  🔴 **`BIZ` 값을 고치면 각 HTML 의 정적 텍스트도 같이 고칠 것.** JS 가 켜진 화면에서는
+  BIZ 가 덮어쓰므로 어긋남이 눈에 띄지 않는다. 확인:
+  ```bash
+  cd /Users/byeonguk/Developer/OrderApp/landing && grep -c "283-22-00820" index.html terms.html privacy.html refund.html
+  ```
+  (헤더는 심사 필수 표기가 아니라 `site.js` 주입을 유지한다.)
 - `terms.html` · `privacy.html` · `refund.html` 은 표준 양식에 Qradar 실제 구조
   (Firebase 국외이전 · `geolocator` 위치정보 · 소셜 로그인 3종 · FCM · 토스 위탁)를
   반영한 **초안이며, 법률 검토를 받지 않았다.**

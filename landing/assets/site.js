@@ -69,42 +69,13 @@ function renderHeader() {
 </header>`;
 }
 
-/* ── 공통 푸터 (토스 심사 필수 표기 전부) ────────────────────────────────── */
-function renderFooter() {
-  return `
-<footer class="site-foot">
-  <div class="wrap">
-    <nav class="foot-links" aria-label="약관 및 정책">
-      <a href="terms.html">이용약관</a>
-      <a href="privacy.html"><strong>개인정보처리방침</strong></a>
-      <a href="refund.html">취소 · 환불 정책</a>
-      <a href="index.html#support">고객센터</a>
-    </nav>
-
-    <dl class="biz">
-      <div><dt>상호명</dt><dd>${BIZ.company}</dd></div>
-      <div><dt>대표자명</dt><dd>${BIZ.ceo}</dd></div>
-      <div><dt>사업자등록번호</dt><dd>${BIZ.bizNo}</dd></div>
-      <div><dt>통신판매업 신고번호</dt><dd>${BIZ.mailOrderNo}
-        <a class="lookup" href="${MAIL_ORDER_LOOKUP}" target="_blank" rel="noopener noreferrer">사업자정보 확인</a></dd></div>
-      <div class="wide"><dt>사업장 주소</dt><dd>${BIZ.address}</dd></div>
-      <div><dt>고객센터</dt><dd><a href="tel:${BIZ.tel.replace(/[^0-9+]/g, '')}">${BIZ.tel}</a></dd></div>
-      <div><dt>이메일</dt><dd><a href="mailto:${BIZ.email}">${BIZ.email}</a></dd></div>
-      <div class="wide"><dt>운영시간</dt><dd>${BIZ.hours}</dd></div>
-      <div><dt>개인정보보호책임자</dt><dd>${BIZ.privacyOfficer} (${BIZ.privacyOfficerTitle})</dd></div>
-      <div><dt>호스팅서비스 제공자</dt><dd>${BIZ.hosting}</dd></div>
-    </dl>
-
-    <p class="foot-note">
-      ${BIZ.company}는 통신판매중개자가 아닌 통신판매업자로서, Qradar 앱을 통해 주문·결제된
-      상품의 제공 및 환불에 대한 책임을 부담합니다. 결제 대행은 ${BIZ.pg}를 통해 이루어집니다.
-    </p>
-    <p class="copy">© ${new Date().getFullYear()} ${BIZ.company}. All rights reserved.</p>
-  </div>
-</footer>`;
-}
-
-/* ── 본문 내 사업자 정보 치환: <span data-biz="company"></span> ──────────── */
+/* ── 사업자 정보 보정 ─────────────────────────────────────────────────────
+   푸터와 본문의 사업자 정보는 각 HTML 에 **정적으로 박혀 있다** (PG 심사 요건:
+   JS 가 꺼져 있거나 크롤러로 열어도 하단 표기가 보여야 한다).
+   아래 함수들은 BIZ 를 단일 진실원으로 유지하기 위한 보정이다 — BIZ 값을 고치면
+   정적 텍스트가 무엇이든 런타임에 BIZ 값으로 덮어쓴다.
+   ⚠️ BIZ 를 고쳤으면 각 HTML 의 정적 값도 함께 고칠 것 (JS off 대비).
+   ---------------------------------------------------------------------- */
 function fillBiz() {
   document.querySelectorAll('[data-biz]').forEach((el) => {
     const key = el.getAttribute('data-biz');
@@ -112,10 +83,30 @@ function fillBiz() {
   });
 }
 
+/* 링크 href 보정: data-biz-href="tel|email|lookup" */
+function fillBizHref() {
+  const href = {
+    tel:    () => 'tel:' + BIZ.tel.replace(/[^0-9+]/g, ''),
+    email:  () => 'mailto:' + BIZ.email,
+    lookup: () => MAIL_ORDER_LOOKUP,
+  };
+  document.querySelectorAll('[data-biz-href]').forEach((el) => {
+    const key = el.getAttribute('data-biz-href');
+    if (key in href) el.setAttribute('href', href[key]());
+  });
+}
+
+/* 저작권 연도 보정: <span data-biz-year>2026</span> */
+function fillBizYear() {
+  document.querySelectorAll('[data-biz-year]').forEach((el) => {
+    el.textContent = String(new Date().getFullYear());
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const head = document.getElementById('site-header');
-  const foot = document.getElementById('site-footer');
   if (head) head.innerHTML = renderHeader();
-  if (foot) foot.innerHTML = renderFooter();
   fillBiz();
+  fillBizHref();
+  fillBizYear();
 });
