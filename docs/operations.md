@@ -128,6 +128,17 @@ flutter build appbundle --release
 - 위 파일들은 `.gitignore` 에 포함한다 (저장소에 커밋 금지).
 - 환경별 Firebase 프로젝트는 분리한다: `dev` / `prod`.
 
+### 통계 (BigQuery)
+
+Extension "Stream Firestore to BigQuery" 로 `orders` 컬렉션만 내보낸다 (`asia-northeast3`,
+Import existing documents = Yes). `users` 는 내보내지 않는다 — 탈퇴 시 파기 의무와
+changelog 의 append-only 성질이 충돌하기 때문이다. 통계에 필요한 성별·연령대는
+주문 생성 시점에 주문 문서로 복사되므로(`buyerGender` / `buyerAgeRange`) `orders` 만으로 충분하다.
+
+집계 쿼리는 [docs/analytics/order_demographics.sql](analytics/order_demographics.sql) 에 둔다.
+changelog 중복 집계, 연령대 문자 정렬, 미응답(null) 처리를 미리 반영해 둔 것이므로
+새로 짜지 말고 이 파일에서 가져다 쓴다.
+
 ---
 
 ## 5. 환경 변수 / API 키 관리
