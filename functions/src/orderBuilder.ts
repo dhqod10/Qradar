@@ -110,7 +110,17 @@ export function buildOrderData<TS>(
   paymentInfo: Record<string, unknown>,
   times: { approvedAt: TS; now: TS },
   /** 서버가 발급한 매장·일별 픽업번호 (order_pickup_number). 없으면 키 자체를 쓰지 않는다. */
-  pickupNumber?: number
+  pickupNumber?: number,
+  /**
+   * 주문 **시점**의 구매자 인구통계 (선택 수집, 통계 전용). users 문서에서 읽어 **복사**한다.
+   *
+   * 왜 조인하지 않고 복사하는가: ① 2026년에 20대였던 주문은 2032년에도 20대 주문이어야 한다
+   * (users 를 조인하면 과거 통계가 현재 값으로 덮여 틀어진다). ② 탈퇴해 users 가 익명화돼도 통계가 남는다.
+   * ③ 분석(BigQuery)에 orders 만 내보내면 되므로 이메일·전화번호 같은 PII 를 복사하지 않아도 된다.
+   *
+   * 미입력이면 null — "그 주문의 구매자는 밝히지 않았다" 는 사실 자체가 통계값이다.
+   */
+  buyer?: { gender: string | null; ageRange: string | null }
 ): Record<string, unknown> {
   return {
     userId: uid,
@@ -130,7 +140,50 @@ export function buildOrderData<TS>(
     acceptedAt: null,
     cancelledAt: null,
     refundedAt: null,
+    buyerGender: buyer?.gender ?? null,
+    buyerAgeRange: buyer?.ageRange ?? null,
     ...(pickupNumber !== undefined ? { pickupNumber } : {}),
+  };
+}
+
+export const GENDER_CODES = ["male", "female"] as const;
+
+/** 이용약관의 가입 연령 하한. 이보다 어린 값은 통계에 넣지 않는다. */
+export const MIN_SIGNUP_AGE = 14;
+/** 오타(1066 같은 값) 상한. */
+export const MAX_PLAUSIBLE_AGE = 120;
+
+/**
+ * 출생연도 → 통계 구간. **users 에는 연령대가 아니라 출생연도가 저장된다** — 연령대를 저장하면
+ * 값이 늙지 않아 몇 해 뒤 주문에 낡은 구간이 박히기 때문이다. 월·일을 받지 않으므로 연도 차이로만 센다.
+ * 범위 밖이면 null.
+ */
+export function ageRangeFromBirthYear(birthYear: number, nowYear: number): string | null {
+  const age = nowYear - birthYear;
+  if (age < MIN_SIGNUP_AGE || age > MAX_PLAUSIBLE_AGE) return null;
+  if (age < 20) return "teens";
+  if (age < 30) return "twenties";
+  if (age < 40) return "thirties";
+  if (age < 50) return "forties";
+  if (age < 60) return "fifties";
+  return "sixtiesPlus";
+}
+
+/**
+ * users 문서에서 통계용 인구통계만 꺼낸다. **PII 는 꺼내지 않는다** (이름·이메일·전화번호는 주문에 복사되지 않는다).
+ * 모르는 값/부재는 null — 주문 기록이 users 의 쓰레기값을 물려받지 않게 한다.
+ *
+ * 연령대는 **주문 시점 기준으로 계산**한다. 같은 사람이 해를 넘겨 주문하면 구간이 바뀌는 게 정상이다.
+ */
+export function extractBuyerDemographics(
+  userData: Record<string, unknown> | null | undefined,
+  nowYear: number = new Date().getFullYear()
+): { gender: string | null; ageRange: string | null } {
+  const g = userData?.["gender"];
+  const b = userData?.["birthYear"];
+  return {
+    gender: typeof g === "string" && (GENDER_CODES as readonly string[]).includes(g) ? g : null,
+    ageRange: typeof b === "number" && Number.isInteger(b) ? ageRangeFromBirthYear(b, nowYear) : null,
   };
 }
 

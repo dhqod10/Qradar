@@ -9,7 +9,7 @@ import {
   MIN_RATE, MAX_RATE, BULK_STALE_MS, classifyRate, classifySwitch, resolveEffectiveRate, isValidCallableRate, isValidCallableSwitch,
   computeEarnAmount,
 } from '../lib/qoinRate.js';
-import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS, CONSUMED_INPUT_KEYS, CONSUMED_ITEM_KEYS, CONSUMED_OPTION_KEYS } from '../lib/orderBuilder.js';
+import { buildOrderData, buildOrderLogData, CONSUMED_CART_KEYS, CONSUMED_INPUT_KEYS, CONSUMED_ITEM_KEYS, CONSUMED_OPTION_KEYS, extractBuyerDemographics, ageRangeFromBirthYear } from '../lib/orderBuilder.js';
 import { describeRaw, BULK_STATUS } from '../lib/qoinAdmin.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -146,12 +146,57 @@ test('T1 buildOrderData: brandId 는 항상 null — 클라이언트가 보낸 c
 test('T1 buildOrderData: 주문 문서 키 집합 고정 (운영이 쓰는 모양 = 테스트가 쓰는 모양)', () => {
   const order = buildOrderData(sampleCart, 'u1', { method: 'card' }, times);
   assert.deepEqual(Object.keys(order).sort(), [
-    'acceptedAt', 'brandId', 'cancelledAt', 'createdAt', 'discount', 'items', 'paymentInfo', 'refundInfo',
-    'refundRequest', 'refundedAt', 'status', 'storeId', 'storeName', 'subtotal', 'totalPrice', 'updatedAt', 'userId',
+    'acceptedAt', 'brandId', 'buyerAgeRange', 'buyerGender', 'cancelledAt', 'createdAt', 'discount', 'items',
+    'paymentInfo', 'refundInfo', 'refundRequest', 'refundedAt', 'status', 'storeId', 'storeName', 'subtotal',
+    'totalPrice', 'updatedAt', 'userId',
   ]);
   assert.equal(order.status, 'paid');
   assert.equal(order.storeId, 'st1');
   assert.equal(order.userId, 'u1');
+  // 인구통계는 **선택 수집**이다 — 안 넘기면 null 이고, 주문은 그대로 성립한다.
+  assert.equal(order.buyerGender, null);
+  assert.equal(order.buyerAgeRange, null);
+});
+
+test('T1-b buildOrderData: 구매자 인구통계는 주문 시점 값으로 박제된다 (users 조인이 아니다)', () => {
+  const order = buildOrderData(
+    sampleCart, 'u1', { method: 'card' }, times, undefined,
+    { gender: 'female', ageRange: 'thirties' }
+  );
+  assert.equal(order.buyerGender, 'female');
+  assert.equal(order.buyerAgeRange, 'thirties');
+});
+
+test('T1-c extractBuyerDemographics: 모르는 값·부재는 null (users 의 쓰레기값이 주문에 들어가지 않는다)', () => {
+  assert.deepEqual(extractBuyerDemographics(null, 2026), { gender: null, ageRange: null });
+  assert.deepEqual(extractBuyerDemographics({}, 2026), { gender: null, ageRange: null });
+  assert.deepEqual(
+    extractBuyerDemographics({ gender: 'male', birthYear: 2000 }, 2026),
+    { gender: 'male', ageRange: 'twenties' }
+  );
+  // 허용 목록 밖 / 타입 불일치
+  assert.deepEqual(
+    extractBuyerDemographics({ gender: 'X', birthYear: '2000' }, 2026),
+    { gender: null, ageRange: null }
+  );
+  // PII 는 애초에 꺼내지 않는다
+  const out = extractBuyerDemographics({ gender: 'male', email: 'a@b.c', phone: '01012345678' }, 2026);
+  assert.deepEqual(Object.keys(out).sort(), ['ageRange', 'gender']);
+});
+
+test('T1-d 연령대는 저장값이 아니라 출생연도에서 계산된다 — 해가 바뀌면 구간도 따라 바뀐다', () => {
+  // 같은 사람(1996년생)이 29세일 때와 30세일 때
+  assert.equal(ageRangeFromBirthYear(1996, 2025), 'twenties');
+  assert.equal(ageRangeFromBirthYear(1996, 2026), 'thirties');
+  // 경계
+  assert.equal(ageRangeFromBirthYear(2006, 2026), 'twenties'); // 20세
+  assert.equal(ageRangeFromBirthYear(2007, 2026), 'teens');    // 19세
+  assert.equal(ageRangeFromBirthYear(1966, 2026), 'sixtiesPlus');
+  // 약관상 가입 불가 연령(만 14세 미만)과 비현실적인 값은 통계에 넣지 않는다
+  assert.equal(ageRangeFromBirthYear(2013, 2026), null); // 13세
+  assert.equal(ageRangeFromBirthYear(2012, 2026), 'teens'); // 14세 — 하한 통과
+  assert.equal(ageRangeFromBirthYear(1800, 2026), null);
+  assert.equal(ageRangeFromBirthYear(2030, 2026), null); // 미래
 });
 
 test('T2 cart 입력 계약: TS 가 소비하는 키 집합 = test_fixtures/qoin_cart_contract.json (Dart 가 보내는 키 집합과 같은 파일)', () => {

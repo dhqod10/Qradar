@@ -2,24 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/usecases/update_my_display_name_use_case.dart';
+import 'package:qradar/presentation/common/widgets/demographics_picker.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 
-/// 표시 이름 수정 화면.
+/// 내 정보 화면 — 이름(필수) + 성별·출생연도(선택).
 ///
-/// 저장 대상은 `users/{uid}.displayName` 하나다. 홈 인사말·주문 식별이 이 값을 본다.
-/// 가입 화면과 **같은 제약**(필수, 최대 [kDisplayNameMaxLength]자)을 쓴다.
-class DisplayNameEditPage extends ConsumerStatefulWidget {
-  const DisplayNameEditPage({super.key});
+/// 이름은 홈 인사말·주문 식별에 쓰이고, 성별·출생연도는 **통계에만** 쓴다.
+/// 세 값 모두 `users/{uid}` 한 문서에 저장된다.
+class ProfileEditPage extends ConsumerStatefulWidget {
+  const ProfileEditPage({super.key});
 
   @override
-  ConsumerState<DisplayNameEditPage> createState() =>
-      _DisplayNameEditPageState();
+  ConsumerState<ProfileEditPage> createState() => _ProfileEditPageState();
 }
 
-class _DisplayNameEditPageState extends ConsumerState<DisplayNameEditPage> {
+class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
   late final TextEditingController _controller;
+  Gender? _gender;
+  int? _birthYear;
   String? _error;
   bool _saving = false;
   bool _seeded = false;
@@ -36,14 +39,16 @@ class _DisplayNameEditPageState extends ConsumerState<DisplayNameEditPage> {
     super.dispose();
   }
 
-  /// 프로필이 도착하면 현재 이름을 1회만 채운다. 이후 입력 중에는 덮지 않는다
-  /// (프로필 스트림이 다시 흘러도 사용자가 타이핑하던 값이 날아가면 안 된다).
-  void _seedOnce(String current) {
+  /// 프로필이 도착하면 현재 값을 1회만 채운다. 이후 입력 중에는 덮지 않는다
+  /// (프로필 스트림이 다시 흘러도 사용자가 고르던 값이 날아가면 안 된다).
+  void _seedOnce(String name, Gender? gender, int? birthYear) {
     if (_seeded) return;
     _seeded = true;
-    _controller.text = current;
+    _controller.text = name;
     _controller.selection =
         TextSelection.collapsed(offset: _controller.text.length);
+    _gender = gender;
+    _birthYear = birthYear;
   }
 
   Future<void> _save() async {
@@ -67,17 +72,24 @@ class _DisplayNameEditPageState extends ConsumerState<DisplayNameEditPage> {
       await ref
           .read(updateMyDisplayNameUseCaseProvider)
           .call(uid: uid, displayName: name);
+      // 비어 있어도 호출한다 — 값이 아니라 "물어봤다" 를 남기는 게 목적이다.
+      await ref.read(updateMyDemographicsUseCaseProvider).call(
+            uid: uid,
+            gender: _gender,
+            birthYear: _birthYear,
+          );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이름을 변경했어요')),
+        const SnackBar(content: Text('저장했어요')),
       );
       Navigator.of(context).pop();
     } on ArgumentError {
       if (!mounted) return;
       setState(() => _error = '이름은 1~$kDisplayNameMaxLength자로 입력해주세요.');
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[profile.save] $e\n$st');
       if (!mounted) return;
-      await showErrorDialog(context, '이름 변경에 실패했어요. 다시 시도해주세요');
+      await showErrorDialog(context, '저장에 실패했어요. 다시 시도해주세요');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -87,7 +99,7 @@ class _DisplayNameEditPageState extends ConsumerState<DisplayNameEditPage> {
   Widget build(BuildContext context) {
     final profile = ref.watch(currentUserProfileProvider).asData?.value;
     if (profile != null) {
-      _seedOnce(profile.displayName ?? '');
+      _seedOnce(profile.displayName ?? '', profile.gender, profile.birthYear);
     }
 
     return Scaffold(
@@ -105,7 +117,7 @@ class _DisplayNameEditPageState extends ConsumerState<DisplayNameEditPage> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text(
-          '이름 변경',
+          '내 정보',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -114,52 +126,60 @@ class _DisplayNameEditPageState extends ConsumerState<DisplayNameEditPage> {
         ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '앱에서 보이는 이름이에요',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textMuted,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _controller,
-                autofocus: true,
-                maxLength: kDisplayNameMaxLength,
-                inputFormatters: [
-                  LengthLimitingTextInputFormatter(kDisplayNameMaxLength),
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                children: [
+                  const Text(
+                    '이름',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textHeading,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _controller,
+                    maxLength: kDisplayNameMaxLength,
+                    inputFormatters: [
+                      LengthLimitingTextInputFormatter(kDisplayNameMaxLength),
+                    ],
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) {
+                      if (_error != null) setState(() => _error = null);
+                    },
+                    decoration: InputDecoration(
+                      hintText: '앱에서 보이는 이름이에요',
+                      errorText: _error,
+                      filled: true,
+                      fillColor: AppColors.surfaceElevated,
+                      border: _border(AppColors.border),
+                      enabledBorder: _border(AppColors.border),
+                      focusedBorder: _border(AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DemographicsPicker(
+                    gender: _gender,
+                    birthYear: _birthYear,
+                    onGenderChanged: (v) => setState(() => _gender = v),
+                    onBirthYearChanged: (v) => setState(() => _birthYear = v),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '성별과 출생연도는 통계 목적으로만 쓰고, 고르지 않아도 모든 기능을 이용할 수 있어요.\n'
+                    '출생연도는 연령대로만 집계하며 월·일은 받지 않아요.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  ),
                 ],
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _save(),
-                onChanged: (_) {
-                  if (_error != null) setState(() => _error = null);
-                },
-                decoration: InputDecoration(
-                  hintText: '이름을 입력해주세요',
-                  errorText: _error,
-                  filled: true,
-                  fillColor: AppColors.surfaceElevated,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary),
-                  ),
-                ),
               ),
-              const Spacer(),
-              SizedBox(
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: SizedBox(
                 height: 54,
                 width: double.infinity,
                 child: ElevatedButton(
@@ -192,10 +212,15 @@ class _DisplayNameEditPageState extends ConsumerState<DisplayNameEditPage> {
                         ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+
+  static OutlineInputBorder _border(Color color) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: color),
+      );
 }

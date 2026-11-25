@@ -137,4 +137,20 @@ class UserRemoteDataSource {
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
+  /// 본인 성별·출생연도 갱신 (선택 수집). null 은 "밝히지 않음" 이라 **필드를 지운다**.
+  /// 어느 쪽이든 `demographicsAskedAt` 을 찍어 다시 묻지 않게 한다.
+  /// Rules `isSelfProfileUpdate` 화이트리스트(`gender`, `birthYear`, `demographicsAskedAt`, `updatedAt`) 안이다.
+  Future<void> updateMyDemographics({
+    required String uid,
+    String? gender,
+    int? birthYear,
+  }) async {
+    await _doc(uid).update({
+      'gender': gender ?? FieldValue.delete(),
+      'birthYear': birthYear ?? FieldValue.delete(),
+      'demographicsAskedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

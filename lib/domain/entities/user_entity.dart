@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/entities/notification_settings_entity.dart';
 import 'package:qradar/domain/entities/user_role.dart';
 
@@ -14,6 +15,14 @@ abstract class UserEntity with _$UserEntity {
     /// 휴대폰 번호 (숫자만, 예: 01012345678). 이메일 가입 시 입력. 읽기 전용 PII — 화면에 노출/로그 금지.
     String? phone,
     required String provider, // 'google' | 'kakao' | 'naver' | 'email'
+    /// 성별 — **선택 수집**(통계 전용). null = 밝히지 않음.
+    Gender? gender,
+    /// 출생연도 — **선택 수집**(통계 전용). null = 밝히지 않음. 월·일은 받지 않는다.
+    /// 연령대는 이 값에서 **그때그때 계산**한다 (저장된 연령대는 시간이 지나면 틀리기 때문).
+    int? birthYear,
+    /// 성별·출생연도를 **물어본** 시각. null 이면 아직 물어본 적이 없다 — 안내를 띄울 대상이다.
+    /// 값 자체(gender/birthYear)가 null 인 것과 구분된다: 물어봤는데 안 밝힌 경우도 값은 null 이다.
+    DateTime? demographicsAskedAt,
     @Default(UserRole.customer) UserRole role,
     DateTime? createdAt,
     /// role='brand' 일 때만 존재. **Cloud Function `claimSubmittedBrand` 만 쓴다** (클라이언트·Rules 로는 쓸 수 없다 —

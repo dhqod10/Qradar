@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:qradar/domain/entities/notification_category.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/entities/notification_settings_entity.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/entities/user_role.dart';
@@ -51,6 +52,13 @@ abstract class UserModel with _$UserModel {
     @JsonKey(includeFromJson: false, includeToJson: false)
     @Default(false)
     bool suspended,
+    /// 성별 — 선택 수집(통계 전용). Firestore 전용, JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false) Gender? gender,
+    /// 출생연도 — 선택 수집(통계 전용). Firestore 전용, JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false) int? birthYear,
+    /// 인구통계를 물어본 시각. Firestore 전용, JSON 직렬화 제외.
+    @JsonKey(includeFromJson: false, includeToJson: false)
+    DateTime? demographicsAskedAt,
   }) = _UserModel;
 
   factory UserModel.fromJson(Map<String, dynamic> json) =>
@@ -75,6 +83,9 @@ extension UserModelX on UserModel {
         notificationSettings: notificationSettings,
         qoinBalance: qoinBalance,
         suspended: suspended,
+        gender: gender,
+        birthYear: birthYear,
+        demographicsAskedAt: demographicsAskedAt,
       );
 }
 
@@ -89,6 +100,12 @@ extension UserModelFirestoreX on UserModel {
         if (phone != null && phone!.isNotEmpty) 'phone': phone,
         'provider': provider,
         'role': role,
+        if (gender != null) 'gender': gender!.name,
+        if (birthYear != null) 'birthYear': birthYear,
+        // 이메일 가입은 가입 화면에서 물어봤으므로 고르지 않았어도 "물어봤다" 를 남긴다.
+        // 소셜 가입은 물어본 적이 없어 이 값이 없고, 홈에서 한 번 안내한다.
+        if (demographicsAskedAt != null)
+          'demographicsAskedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       };
 }
@@ -125,6 +142,11 @@ class UserModelFactory {
       ),
       qoinBalance: parseQoinBalance(data['qoinBalance']),
       suspended: data['suspended'] == true,
+      gender: Gender.fromCode(data['gender'] as String?),
+      birthYear: data['birthYear'] is int ? data['birthYear'] as int : null,
+      demographicsAskedAt: data['demographicsAskedAt'] is Timestamp
+          ? (data['demographicsAskedAt'] as Timestamp).toDate()
+          : null,
     );
   }
 

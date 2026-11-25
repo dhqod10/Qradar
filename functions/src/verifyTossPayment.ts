@@ -27,7 +27,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { v4 as uuidv4 } from "uuid";
 import { confirmPayment, cancelPayment } from "./tossClient";
-import { applyServerPricing, buildOrderData, buildOrderLogData, CartSnapshot } from "./orderBuilder";
+import { applyServerPricing, buildOrderData, buildOrderLogData, CartSnapshot, extractBuyerDemographics } from "./orderBuilder";
 import { buildRejectionMessage, evaluatePaymentGate, GATE_HTTPS_CODE, GateReader, MAX_CART_ITEMS, resolveGateMode } from "./paymentGate";
 import { evaluatePriceAuthority, resolveMenusForPricing, resolvePriceMode, storeUnreadableResult } from "./priceGate";
 import { MergedMenu } from "./menuVisibility";
@@ -217,11 +217,15 @@ export async function handleVerifyTossPayment(
 
     // 2-0. 유저 상태 가드 (admin_user_moderation) — Toss confirm 전. 결제자 본인이 정지/탈퇴면 거절 (모드 스위치 없이 상시).
     //   정지의 본 집행은 Auth disabled + 토큰 revoke 이고 이건 토큰 잔여창을 닫는 명시적 거절이다. 문서가 없으면 판정 안 함(기존 동작).
+    //   ⚠️ 이 블록이 읽는 users 스냅샷을 주문의 인구통계(buyerGender/buyerAgeRange) 에도 재사용한다 — 추가 read 0.
+    let buyerDemographics: { gender: string | null; ageRange: string | null } = { gender: null, ageRange: null };
     {
       let buyerReason: ReturnType<typeof buyerBlockReason>;
       try {
         const buyerSnap = await db.collection("users").doc(uid).get();
-        buyerReason = buyerBlockReason(buyerSnap.exists ? (buyerSnap.data() as Record<string, unknown>) : null);
+        const buyerData = buyerSnap.exists ? (buyerSnap.data() as Record<string, unknown>) : null;
+        buyerReason = buyerBlockReason(buyerData);
+        buyerDemographics = extractBuyerDemographics(buyerData);
       } catch (e) {
         console.error("[verifyTossPayment] user state read failed", e);
         throw new HttpsError("unavailable", buildRejectionMessage("READ_FAILED"));
@@ -585,7 +589,7 @@ export async function handleVerifyTossPayment(
         return { duplicate: true as const, status: (existing.data()?.status as string | undefined) ?? "paid" };
       }
       const pickupNumber = await allocatePickupNumber(tx, counterRef, now);
-      const orderData = buildOrderData(cartForOrder, uid, paymentInfo, { approvedAt, now }, pickupNumber);
+      const orderData = buildOrderData(cartForOrder, uid, paymentInfo, { approvedAt, now }, pickupNumber, buyerDemographics);
       const logData = buildOrderLogData(
         cartForOrder,
         { logId, orderId, paymentMethod: resolvedPaymentMethod, pickupNumber, ...(qoinToUse > 0 ? { discount: qoinToUse } : {}) },

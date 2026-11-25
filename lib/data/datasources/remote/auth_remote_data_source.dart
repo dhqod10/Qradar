@@ -8,6 +8,7 @@ import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import 'package:qradar/data/models/user_model.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 
 abstract class AuthRemoteDataSource {
   Future<UserModel> signInWithGoogle();
@@ -19,6 +20,8 @@ abstract class AuthRemoteDataSource {
     required String password,
     required String name,
     required String phone,
+    Gender? gender,
+    int? birthYear,
   });
   Future<void> signOut();
   Stream<UserModel?> get authStateChanges;
@@ -230,6 +233,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String password,
     required String name,
     required String phone,
+    Gender? gender,
+    int? birthYear,
   }) async {
     final result = await _firebaseAuth.createUserWithEmailAndPassword(
       email: email,
@@ -243,6 +248,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       photoUrl: user.photoURL,
       phone: phone,
       provider: 'email',
+      gender: gender,
+      birthYear: birthYear,
+      // 가입 화면에서 물어봤다는 표시. 실제 저장값은 서버 타임스탬프다(toFirestoreForCreate).
+      demographicsAskedAt: DateTime.now(),
     );
   }
 

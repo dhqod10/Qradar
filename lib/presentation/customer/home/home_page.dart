@@ -4,6 +4,7 @@ import 'package:qradar/core/dialog/dialog_queue_service.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/domain/entities/location_permission_status.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
+import 'package:qradar/presentation/customer/more/profile/demographics_prompt.dart';
 import 'package:qradar/presentation/customer/auth/login_page.dart';
 import 'package:qradar/presentation/customer/home/providers/home_providers.dart';
 import 'package:qradar/presentation/customer/home/widgets/category_filter_section.dart';
@@ -28,10 +29,13 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || _permissionFlowStarted) return;
       _permissionFlowStarted = true;
-      _resolveLocationPermission();
+      await _resolveLocationPermission();
+      // 위치 권한 흐름이 끝난 뒤에 묻는다. 같은 dialog 큐를 쓰므로 겹치지 않는다.
+      if (!mounted) return;
+      await maybePromptDemographics(context, ref);
     });
   }
 

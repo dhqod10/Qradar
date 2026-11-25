@@ -4,6 +4,8 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/phone_validator.dart';
+import 'package:qradar/domain/entities/demographics.dart';
+import 'package:qradar/presentation/common/widgets/demographics_picker.dart';
 import 'package:qradar/presentation/common/role_router.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/common/widgets/phone_input.dart';
@@ -22,6 +24,9 @@ class EmailSignupPage extends HookConsumerWidget {
     final emailController = useTextEditingController();
     final passwordController = useTextEditingController();
     final passwordConfirmController = useTextEditingController();
+    // 선택 수집(통계 전용) — 고르지 않아도 가입은 그대로 된다.
+    final gender = useState<Gender?>(null);
+    final birthYear = useState<int?>(null);
     final isLoading = useState(false);
 
     ref.listen(authProvider, (previous, next) {
@@ -64,6 +69,10 @@ class EmailSignupPage extends HookConsumerWidget {
             password: passwordController.text,
             name: name,
             phone: phone,
+            // 안 골랐으면 null 이다. 가입 화면에서 물어봤다는 사실은
+            // users 문서의 demographicsAskedAt 이 남기므로 홈에서 또 묻지 않는다.
+            gender: gender.value,
+            birthYear: birthYear.value,
           );
       isLoading.value = false;
     }
@@ -159,10 +168,17 @@ class EmailSignupPage extends HookConsumerWidget {
               ),
               onSubmitted: (_) => onSignUp(),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
+            DemographicsPicker(
+              gender: gender.value,
+              birthYear: birthYear.value,
+              onGenderChanged: (v) => gender.value = v,
+              onBirthYearChanged: (v) => birthYear.value = v,
+            ),
+            const SizedBox(height: 16),
             const Text(
-              '이름과 전화번호는 주문 식별 및 서비스 제공을 위해서만 사용됩니다.',
-              maxLines: 2,
+              '이름과 전화번호는 주문 식별 및 서비스 제공을 위해서만 사용됩니다.\n'
+              '성별과 출생연도는 통계 목적으로만 쓰는 선택 항목이며, 고르지 않아도 모든 기능을 이용할 수 있습니다.',
               style: TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
             const SizedBox(height: 24),

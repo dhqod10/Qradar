@@ -1,3 +1,4 @@
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/entities/notification_category.dart';
 import 'package:qradar/domain/entities/notification_permission_prompt_state.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
@@ -57,5 +58,17 @@ abstract class UserRepository {
   Future<void> updateMyDisplayName({
     required String uid,
     required String displayName,
+  });
+
+  // ── 인구통계 (선택 수집, 통계 전용) ─────────────────────────────────────
+
+  /// 본인 `users/{uid}` 의 성별·출생연도를 갱신하고, "물어봤다" 를 기록한다.
+  ///
+  /// 두 값은 **독립**이며 각각 null(밝히지 않음)일 수 있다. null 이어도 호출해야 한다 —
+  /// `demographicsAskedAt` 이 찍혀야 다시 묻지 않는다.
+  Future<void> updateMyDemographics({
+    required String uid,
+    Gender? gender,
+    int? birthYear,
   });
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/data/datasources/remote/auth_remote_data_source.dart';
 import 'package:qradar/data/repositories/auth_repository_impl.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/repositories/auth_repository.dart';
 import 'package:qradar/domain/usecases/sign_in_with_email_use_case.dart';
@@ -141,6 +142,8 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
     required String password,
     required String name,
     required String phone,
+    Gender? gender,
+    int? birthYear,
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
@@ -149,6 +152,8 @@ class AuthNotifier extends AsyncNotifier<UserEntity?> {
             password: password,
             name: name,
             phone: phone,
+            gender: gender,
+            birthYear: birthYear,
           ),
     );
     await _onSignInSuccess();

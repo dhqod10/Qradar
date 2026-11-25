@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/entities/notification_category.dart';
 import 'package:qradar/domain/entities/notification_permission_prompt_state.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
@@ -57,6 +58,13 @@ class _SpyRepo implements UserRepository {
       throw UnimplementedError();
   @override
   Future<void> updateMyPhone({required String uid, required String phone}) =>
+      throw UnimplementedError();
+  @override
+  Future<void> updateMyDemographics({
+    required String uid,
+    Gender? gender,
+    int? birthYear,
+  }) =>
       throw UnimplementedError();
 }
 

@@ -1,5 +1,6 @@
 import 'package:qradar/data/datasources/remote/user_remote_data_source.dart';
 import 'package:qradar/data/models/user_model.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/entities/notification_category.dart';
 import 'package:qradar/domain/entities/notification_permission_prompt_state.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
@@ -97,4 +98,16 @@ class UserRepositoryImpl implements UserRepository {
     required String displayName,
   }) =>
       _dataSource.updateMyDisplayName(uid: uid, displayName: displayName);
+
+  @override
+  Future<void> updateMyDemographics({
+    required String uid,
+    Gender? gender,
+    int? birthYear,
+  }) =>
+      _dataSource.updateMyDemographics(
+        uid: uid,
+        gender: gender?.name,
+        birthYear: birthYear,
+      );
 }

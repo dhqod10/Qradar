@@ -1,5 +1,6 @@
 import 'package:qradar/data/datasources/remote/auth_remote_data_source.dart';
 import 'package:qradar/data/models/user_model.dart';
+import 'package:qradar/domain/entities/demographics.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/repositories/auth_repository.dart';
 
@@ -41,12 +42,16 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
     required String name,
     required String phone,
+    Gender? gender,
+    int? birthYear,
   }) async {
     final model = await _dataSource.signUpWithEmail(
       email: email,
       password: password,
       name: name,
       phone: phone,
+      gender: gender,
+      birthYear: birthYear,
     );
     return model.toEntity();
   }
