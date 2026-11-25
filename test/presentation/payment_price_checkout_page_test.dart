@@ -9,7 +9,6 @@ import 'package:qradar/domain/entities/option_group_entity.dart';
 import 'package:qradar/domain/entities/option_item_entity.dart';
 import 'package:qradar/domain/entities/option_scope.dart';
 import 'package:qradar/domain/entities/option_selection_type.dart';
-import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/domain/entities/selected_option.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/repositories/checkout_validation_repository.dart';
@@ -100,7 +99,6 @@ class _SpyLaunch implements LaunchPaymentUseCase {
   @override
   Future<PaymentLaunchResult> call({
     required BuildContext context,
-    required PaymentMethod method,
     required String idempotencyKey,
     required int amount,
     required String orderName,
@@ -187,8 +185,7 @@ Future<(ProviderContainer, _Repo, _SpyLaunch)> _pump(
   container.listen(cartPriceChangesProvider, (_, _) {});
   await tester.tap(find.text('go'));
   await tester.pumpAndSettle();
-  // 결제 수단 + 약관 동의 → 결제 가능 상태.
-  await tester.tap(find.text(PaymentMethod.card.label));
+  // 약관 동의만으로 결제 가능 상태 — 결제수단은 앱에서 고르지 않는다 (Toss 결제창이 묻는다).
   await tester.tap(find.byType(Checkbox).first); // 전체 동의
   await tester.pumpAndSettle();
   return (container, repo, spy);

@@ -7,7 +7,6 @@ import 'package:qradar/domain/entities/checkout_validation.dart';
 import 'package:qradar/domain/entities/menu_item_entity.dart';
 import 'package:qradar/domain/entities/option_group_entity.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
-import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/domain/entities/qoin_config_entity.dart';
 import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/repositories/app_config_repository.dart';
@@ -73,7 +72,6 @@ class _SpyLaunch implements LaunchPaymentUseCase {
   @override
   Future<PaymentLaunchResult> call({
     required BuildContext context,
-    required PaymentMethod method,
     required String idempotencyKey,
     required int amount,
     required String orderName,
@@ -104,7 +102,6 @@ class _SpyVerify implements VerifyAndCreateOrderUseCase {
     required int amount,
     required CartEntity cartSnapshot,
     required String uid,
-    required PaymentMethod paymentMethod,
     int qoinToUse = 0,
   }) async {
     calls++;
@@ -203,8 +200,6 @@ Future<(_SpyLaunch, _SpyVerify)> _pump(
 }
 
 Future<void> _agreeAndPickCard(WidgetTester tester) async {
-  await tester.ensureVisible(find.text(PaymentMethod.card.label));
-  await tester.tap(find.text(PaymentMethod.card.label));
   await tester.ensureVisible(find.byType(Checkbox).first);
   await tester.tap(find.byType(Checkbox).first);
   await tester.pumpAndSettle();

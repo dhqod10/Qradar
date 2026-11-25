@@ -49,7 +49,6 @@ class CloudFunctionsRemoteDataSource {
     required int amount,
     required String idempotencyKey,
     required Map<String, dynamic> cartSnapshot,
-    required String paymentMethod,
     required int qoinToUse,
     String? deviceId,
   }) {
@@ -59,7 +58,8 @@ class CloudFunctionsRemoteDataSource {
       'amount': amount,
       'idempotencyKey': idempotencyKey,
       'cart': cartSnapshot,
-      'paymentMethod': paymentMethod,
+      // 'paymentMethod' 는 보내지 않는다 — 앱은 결제수단을 고르지 않는다. 실제 수단은
+      // 서버가 Toss confirm 응답(method/easyPay.provider)으로 기록한다.
       'qoinToUse': qoinToUse,
       // 이 빌드가 금액 재가격(payment_price_authority R9)을 가진 수준이다. 서버는 거절 기록에 남겨 구버전 비율을 잰다.
       'clientLevel': kPaymentClientLevel,
@@ -74,7 +74,6 @@ class CloudFunctionsRemoteDataSource {
     required int amount,
     required String idempotencyKey,
     required Map<String, dynamic> cartSnapshot,
-    required String paymentMethod,
     int qoinToUse = 0,
   }) async {
     try {
@@ -87,7 +86,6 @@ class CloudFunctionsRemoteDataSource {
           amount: amount,
           idempotencyKey: idempotencyKey,
           cartSnapshot: cartSnapshot,
-          paymentMethod: paymentMethod,
           qoinToUse: qoinToUse,
           deviceId: deviceId,
         ),

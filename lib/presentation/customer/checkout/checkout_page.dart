@@ -8,7 +8,6 @@ import 'package:qradar/domain/entities/cart_item_entity.dart';
 import 'package:qradar/domain/entities/checkout_validation.dart';
 import 'package:qradar/domain/entities/order_item_entity.dart';
 import 'package:qradar/domain/entities/payment_failure.dart';
-import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/presentation/customer/cart/providers/checkout_validation_providers.dart';
 import 'package:qradar/presentation/customer/cart/widgets/cart_price_change_banner.dart';
 import 'package:qradar/presentation/customer/checkout/providers/client_update_providers.dart';
@@ -22,7 +21,6 @@ import 'package:qradar/presentation/customer/checkout/payment_result_page.dart'
     show PaymentResultPage, PaymentResultVariant, resolveFailureMenuNames;
 import 'package:qradar/presentation/customer/checkout/providers/qoin_spend_providers.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/checkout_summary_card.dart';
-import 'package:qradar/presentation/customer/checkout/widgets/payment_method_tile.dart';
 import 'package:qradar/presentation/customer/checkout/widgets/qoin_spend_section.dart';
 import 'package:qradar/presentation/customer/order/orders/providers/order_di_providers.dart';
 import 'package:qradar/presentation/customer/order/widgets/price_summary.dart';
@@ -45,18 +43,14 @@ class CheckoutPage extends ConsumerStatefulWidget {
 }
 
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
-  PaymentMethod? _selectedMethod;
   bool _tosAgreed = false;
   bool _privacyAgreed = false;
   bool _processing = false;
 
   bool get _allAgreed => _tosAgreed && _privacyAgreed;
-  bool get _canPay => _selectedMethod != null && _allAgreed && !_processing;
+  bool get _canPay => _allAgreed && !_processing;
 
   Future<void> _handlePay(CartEntity cart) async {
-    final method = _selectedMethod;
-    if (method == null) return;
-
     final profile = ref.read(currentUserProfileProvider).asData?.value;
     if (profile == null) return;
 
@@ -134,7 +128,6 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           .read(launchPaymentUseCaseProvider)
           .call(
             context: context,
-            method: method,
             idempotencyKey: idempotencyKey,
             amount: amount,
             orderName: orderName,
@@ -180,7 +173,6 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
               amount: amount,
               cartSnapshot: cart,
               uid: profile.uid,
-              paymentMethod: method,
               qoinToUse: qoinToUse,
             );
 
@@ -377,34 +369,6 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                             totalPrice: cart.subtotal,
                           ),
                           const QoinSpendSection(),
-                          const SizedBox(height: 24),
-                          _SectionHeader(title: '결제 수단'),
-                          const SizedBox(height: 12),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Column(
-                              children: [
-                                PaymentMethodTile(
-                                  method: PaymentMethod.card,
-                                  selected:
-                                      _selectedMethod == PaymentMethod.card,
-                                  onTap: () => setState(
-                                    () => _selectedMethod = PaymentMethod.card,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                PaymentMethodTile(
-                                  method: PaymentMethod.kakaoPay,
-                                  selected:
-                                      _selectedMethod == PaymentMethod.kakaoPay,
-                                  onTap: () => setState(
-                                    () => _selectedMethod =
-                                        PaymentMethod.kakaoPay,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                           const SizedBox(height: 24),
                           _SectionHeader(title: '약관 동의'),
                           const SizedBox(height: 8),

@@ -30,7 +30,10 @@ enum PaymentMethod {
   mobile,
 
   /// 페이코 (Phase 3b).
-  payco;
+  payco,
+
+  /// 가상계좌. 앱이 고르는 값이 아니라 **Toss 결제창에서 선택됐을 때 서버가 기록**하는 값이다.
+  virtualAccount;
 
   static PaymentMethod fromCode(String? code) {
     return PaymentMethod.values.firstWhere(
@@ -60,6 +63,8 @@ enum PaymentMethod {
         return '휴대폰결제';
       case PaymentMethod.payco:
         return 'PAYCO';
+      case PaymentMethod.virtualAccount:
+        return '가상계좌';
     }
   }
 }

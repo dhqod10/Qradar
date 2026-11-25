@@ -68,7 +68,10 @@ class TossPaymentRemoteDataSource {
   /// Toss 결제창 실행.
   ///
   /// [context] — 결제 페이지를 push 하기 위해 필요한 BuildContext.
-  /// [method] — 'CARD' | 'KAKAO_PAY' 등 Toss SDK PaymentMethod 문자열 (미사용 — SDK 가 위젯에서 선택하게 함).
+  ///
+  /// **결제수단은 인자로 받지 않는다.** 결제위젯 SDK 는 수단을 코드로 지정할 수 없고(옵션이
+  /// `variantKey` 뿐이다), 노출 수단은 Toss 개발자센터 설정이 정한다. 고객이 무엇으로 결제했는지는
+  /// 서버가 confirm 응답으로 기록한다 — 앱이 고른 값을 기록하면 영수증과 어긋난다.
   /// [idempotencyKey] — uuid v4. Toss orderId 로 전달.
   /// [amount] — 결제 금액 (원).
   /// [orderName] — 주문명 (예: "아메리카노 외 2건").
@@ -76,7 +79,6 @@ class TossPaymentRemoteDataSource {
   /// [customerName] — 고객 이름.
   Future<TossPaymentResult> requestPayment({
     required BuildContext context,
-    required String method,
     required String idempotencyKey,
     required int amount,
     required String orderName,
@@ -89,7 +91,6 @@ class TossPaymentRemoteDataSource {
     print('[DIAG] TOSS_CLIENT_KEY in build: $prefix...$suffix (length: ${_clientKey.length})');
     return _requestPaymentImpl(
       context: context,
-      method: method,
       idempotencyKey: idempotencyKey,
       amount: amount,
       orderName: orderName,
@@ -100,7 +101,6 @@ class TossPaymentRemoteDataSource {
 
   Future<TossPaymentResult> _requestPaymentImpl({
     required BuildContext context,
-    required String method,
     required String idempotencyKey,
     required int amount,
     required String orderName,

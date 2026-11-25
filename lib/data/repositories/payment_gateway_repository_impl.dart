@@ -5,7 +5,6 @@ import 'package:qradar/data/datasources/remote/toss_payment_remote_data_source.d
 import 'package:qradar/domain/entities/cart_entity.dart';
 import 'package:qradar/domain/entities/cart_item_entity.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
-import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/domain/repositories/payment_gateway_repository.dart';
 
 /// [PaymentGatewayRepository] 구현체.
@@ -35,13 +34,11 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
 
   /// Toss SDK 결제창 실행 → [PaymentLaunchResult] 반환.
   ///
-  /// [PaymentMethod] → Toss SDK method 문자열 변환:
-  ///   - [PaymentMethod.card]      → 'CARD'
-  ///   - [PaymentMethod.kakaoPay]  → 'KAKAO_PAY'
+  /// **결제수단을 지정하지 않는다.** 어떤 수단을 쓸지는 Toss 결제창이 묻고, 무엇으로
+  /// 결제됐는지는 서버가 confirm 응답으로 기록한다 (`verifyTossPayment`).
   @override
   Future<PaymentLaunchResult> launchPayment({
     required BuildContext context,
-    required PaymentMethod method,
     required String idempotencyKey,
     required int amount,
     required String orderName,
@@ -50,7 +47,6 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
   }) async {
     final tossResult = await _tossDs.requestPayment(
       context: context,
-      method: _toTossMethodString(method),
       idempotencyKey: idempotencyKey,
       amount: amount,
       orderName: orderName,
@@ -91,7 +87,6 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
     required int amount,
     required CartEntity cartSnapshot,
     required String uid,
-    required PaymentMethod paymentMethod,
     int qoinToUse = 0,
   }) async {
     await _functionsDs.verifyTossPayment(
@@ -100,7 +95,6 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
       amount: amount,
       idempotencyKey: orderId,
       cartSnapshot: cartToMap(cartSnapshot, qoinToUse: qoinToUse),
-      paymentMethod: paymentMethod.name,
       qoinToUse: qoinToUse,
     );
 
@@ -142,33 +136,6 @@ class PaymentGatewayRepositoryImpl implements PaymentGatewayRepository {
   }
 
   // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
-
-  /// [PaymentMethod] → Toss SDK method 문자열 변환.
-  ///
-  /// Phase 3a 지원: card, kakaoPay.
-  /// Phase 3b 이후 추가 수단은 아래 주석 케이스를 활성화.
-  String _toTossMethodString(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.card:
-        return 'CARD';
-      case PaymentMethod.kakaoPay:
-        return 'KAKAO_PAY';
-      case PaymentMethod.naverPay:
-        return 'NAVERPAY';
-      case PaymentMethod.tossPay:
-        return 'TOSSPAY';
-      case PaymentMethod.samsungPay:
-        return 'SAMSUNG_PAY';
-      case PaymentMethod.applePay:
-        return 'APPLEPAY';
-      case PaymentMethod.bankTransfer:
-        return 'TRANSFER';
-      case PaymentMethod.mobile:
-        return 'MOBILE_PHONE';
-      case PaymentMethod.payco:
-        return 'PAYCO';
-    }
-  }
 
   /// [CartEntity] → Cloud Functions 전달용 Map 변환.
   ///

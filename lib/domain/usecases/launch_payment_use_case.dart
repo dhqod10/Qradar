@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:qradar/domain/entities/payment_method.dart';
 import 'package:qradar/domain/repositories/payment_gateway_repository.dart';
 
 class LaunchPaymentUseCase {
@@ -8,7 +7,6 @@ class LaunchPaymentUseCase {
 
   Future<PaymentLaunchResult> call({
     required BuildContext context,
-    required PaymentMethod method,
     required String idempotencyKey,
     required int amount,
     required String orderName,
@@ -17,7 +15,6 @@ class LaunchPaymentUseCase {
   }) {
     return _repo.launchPayment(
       context: context,
-      method: method,
       idempotencyKey: idempotencyKey,
       amount: amount,
       orderName: orderName,

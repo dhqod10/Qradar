@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:qradar/domain/entities/cart_entity.dart';
 import 'package:qradar/domain/entities/order_entity.dart';
-import 'package:qradar/domain/entities/payment_method.dart';
 
 /// Toss 결제 런치 결과.
 class PaymentLaunchResult {
@@ -31,7 +30,6 @@ abstract class PaymentGatewayRepository {
   /// Toss SDK 결제창 실행. success/fail/cancel 결과를 [PaymentLaunchResult] 로 반환.
   Future<PaymentLaunchResult> launchPayment({
     required BuildContext context,
-    required PaymentMethod method,
     required String idempotencyKey,
     required int amount,
     required String orderName,
@@ -46,7 +44,6 @@ abstract class PaymentGatewayRepository {
     required int amount,
     required CartEntity cartSnapshot,
     required String uid,
-    required PaymentMethod paymentMethod,
 
     /// 사용할 Qoin (1 Qoin = 1원, qoin_spend). **요청**이다 — 서버(`verifyTossPayment`)가 잔액·정책·서버가 다시 만든 소계로
     /// 검증하고 최종 청구액을 재계산한다. [amount] 는 `cartSnapshot.subtotal - qoinToUse`. 0 이면 기존 결제 흐름과 동일.

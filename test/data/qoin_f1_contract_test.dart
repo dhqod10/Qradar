@@ -139,15 +139,18 @@ void main() {
           amount: cart.subtotal - qoin,
           idempotencyKey: 'o1',
           cartSnapshot: PaymentGatewayRepositoryImpl.cartToMap(cart, qoinToUse: qoin),
-          paymentMethod: 'card',
           qoinToUse: qoin,
           deviceId: deviceId,
         );
 
-    test('verifyTossPayment 최상위 입력 키 집합 = 골든 inputKeys (deviceId 있을 때 전부 / 없으면 requiredInputKeys)', () {
-      expect((payload(deviceId: 'dev').keys.toList()..sort()), inputKeys);
-      expect((payload().keys.toList()..sort()), requiredInputKeys);
+    // 보내는 키 ⊆ inputKeys, requiredInputKeys ⊆ 보내는 키 (골든 _doc 의 계약 그대로).
+    // 등식이 아닌 이유: paymentMethod 는 서버가 구버전 앱 폴백으로 계속 읽어 inputKeys 에 남아 있지만,
+    // 이 앱은 더 이상 결제수단을 고르지 않아 보내지 않는다 (payment_method_authority).
+    test('verifyTossPayment 최상위 입력 키 집합 ⊆ 골든 inputKeys, requiredInputKeys 는 전부 보낸다', () {
+      expect(payload(deviceId: 'dev').keys.toSet().difference(inputKeys.toSet()), isEmpty);
+      expect(requiredInputKeys.toSet().difference(payload().keys.toSet()), isEmpty);
       expect(payload().containsKey('qoinToUse'), isTrue);
+      expect(payload(deviceId: 'dev').containsKey('paymentMethod'), isFalse);
     });
 
     test('qoinToUse 는 cart 밖 최상위 입력이다 (cart 키 골든은 그대로)', () {

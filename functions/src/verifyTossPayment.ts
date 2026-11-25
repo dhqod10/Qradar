@@ -66,7 +66,12 @@ interface VerifyPaymentInput {
   amount: number;
   idempotencyKey: string;
   cart: CartSnapshot;
-  paymentMethod: string;
+  /**
+   * 구버전 앱이 보내던 "앱에서 고른 결제수단". **권위가 아니다** — 실제 수단은 Toss 결제창이
+   * 정하고 confirm 응답(`method` / `easyPay.provider`)이 알려준다. 신버전 앱은 보내지 않는다.
+   * Toss 응답으로 판정이 안 될 때의 마지막 폴백으로만 쓴다.
+   */
+  paymentMethod?: string;
   /** 앱이 싣는 결제 클라이언트 수준 (lib/core/constants/app_client_level.dart). 구버전은 이 키가 없다. 거절 기록에만 쓴다 — 권위가 아니다. */
   clientLevel?: unknown;
   /**
@@ -153,12 +158,11 @@ export async function handleVerifyTossPayment(
       !data.orderId ||
       !data.amount ||
       !data.idempotencyKey ||
-      !data.cart ||
-      !data.paymentMethod
+      !data.cart
     ) {
       throw new HttpsError(
         "invalid-argument",
-        "필수 입력값이 누락되었습니다. (paymentKey, orderId, amount, idempotencyKey, cart, paymentMethod)"
+        "필수 입력값이 누락되었습니다. (paymentKey, orderId, amount, idempotencyKey, cart)"
       );
     }
     // 품목 수 상한 (spec §15.1) — 토큰 절단을 구조적으로 막고 G2 읽기 비용(품목당 최대 3문서)의 뚜껑이 된다. 토큰 없음 → 앱은 갈래 C.
@@ -474,7 +478,12 @@ export async function handleVerifyTossPayment(
           status: "DONE",
           totalAmount: data.amount,
           approvedAt: new Date().toISOString(),
-          method: data.paymentMethod,
+          // Mock 은 Toss 를 타지 않으므로 실제 수단을 알 수 없다. 구버전 앱이 보낸 값이
+          // 있으면 그걸, 없으면 카드로 둔다(docs 공개 키에서만 도는 경로다).
+          method: data.paymentMethod === "kakaoPay" ? "간편결제" : "카드",
+          ...(data.paymentMethod === "kakaoPay"
+            ? { easyPay: { provider: "KAKAOPAY" } }
+            : {}),
         }
       : await deps.confirm(secretKey, {
           paymentKey: data.paymentKey,
@@ -523,15 +532,18 @@ export async function handleVerifyTossPayment(
       new Date(tossResponse.approvedAt)
     );
 
-    // paymentMethod 정규화 (easyPay 제공자 기반)
+    // paymentMethod 정규화 — 권위는 Toss 응답이다 (앱이 고른 값이 아니다).
     const resolvedPaymentMethod = normalizePaymentMethod(
-      data.paymentMethod,
-      tossResponse.easyPay?.provider
+      tossResponse.method,
+      tossResponse.easyPay?.provider,
+      data.paymentMethod
     );
 
     // paymentInfo 맵 구성
     const paymentInfo: Record<string, unknown> = {
       method: resolvedPaymentMethod,
+      /** Toss 가 돌려준 수단 원문("카드" / "간편결제" …). 정규화가 틀렸을 때 역추적용. */
+      tossMethod: tossResponse.method ?? null,
       channel: "toss",
       paymentKey: tossResponse.paymentKey,
       transactionId: tossResponse.transactionKey ?? null,
@@ -675,13 +687,24 @@ async function undoQoinReservation(
   }
 }
 
-/** Toss easyPay provider 기반으로 paymentMethod 정규화. */
+/**
+ * paymentMethod 정규화. **권위는 Toss confirm 응답**이다.
+ *
+ * 앱은 결제수단을 고르지 않는다 — 고르는 곳은 Toss 결제창 하나뿐이고, 무엇으로 결제됐는지는
+ * 승인 응답만이 안다. 앱이 고른 값을 기록하면 "카드를 골라 놓고 결제창에서 계좌이체로 낸"
+ * 주문이 card 로 남는다(= 영수증과 주문 내역이 어긋난다).
+ *
+ * [tossMethod] — confirm 응답의 `method`. 한글 문자열("카드" / "간편결제" / "계좌이체" …).
+ * [easyPayProvider] — 간편결제일 때의 제공자. `method` 보다 구체적이라 먼저 본다.
+ * [requestedMethod] — 구버전 앱이 보낸 값. 위 둘로 못 가릴 때의 마지막 폴백이다.
+ */
 function normalizePaymentMethod(
-  requestedMethod: string,
-  easyPayProvider?: string
+  tossMethod?: string,
+  easyPayProvider?: string,
+  requestedMethod?: string
 ): string {
   if (easyPayProvider) {
-    const provider = easyPayProvider.toUpperCase();
+    const provider = easyPayProvider.toUpperCase().replace(/[\s_-]/g, "");
     if (provider === "KAKAOPAY") return "kakaoPay";
     if (provider === "NAVERPAY") return "naverPay";
     if (provider === "TOSSPAY") return "tossPay";
@@ -689,8 +712,18 @@ function normalizePaymentMethod(
     if (provider === "APPLEPAY") return "applePay";
     if (provider === "PAYCO") return "payco";
   }
-  // 카드 / 계좌이체 등
-  return requestedMethod;
+  switch ((tossMethod ?? "").trim()) {
+    case "카드":
+      return "card";
+    case "계좌이체":
+      return "bankTransfer";
+    case "가상계좌":
+      return "virtualAccount";
+    case "휴대폰":
+      return "mobile";
+  }
+  // "간편결제" 인데 provider 를 못 읽은 경우 등. 구버전 앱 값 → 그래도 없으면 card.
+  return requestedMethod || "card";
 }
 
 /** 카드 번호 마스킹. "1234567812345678" → "1234-****-****-5678". */
