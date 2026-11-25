@@ -258,7 +258,9 @@ class MasterMenuDetailPage extends ConsumerWidget {
                             );
                             Navigator.pop(context);
                           }
-                        } catch (_) {
+                        } catch (e, st) {
+                          // 원인을 삼키지 않는다 — 실패 사유(권한/인덱스/네트워크)는 로그로 남겨야 추적된다.
+                          debugPrint('[masterMenu.delete] $e\n$st');
                           if (context.mounted) {
                             await showErrorDialog(context, '삭제에 실패했어요. 다시 시도해주세요');
                           }
