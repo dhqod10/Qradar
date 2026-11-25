@@ -32,6 +32,8 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
+  # 표시 이름 길이를 grapheme cluster 기준으로 센다 (LengthLimitingTextInputFormatter 와 같은 기준).
+  characters: ^1.4.0
   # Firebase
   firebase_core: ^4.6.0
   firebase_auth: ^6.3.0

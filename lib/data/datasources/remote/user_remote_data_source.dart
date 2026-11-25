@@ -125,4 +125,16 @@ class UserRemoteDataSource {
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
+  /// 본인 표시 이름 갱신. 허용 필드는 Rules `isSelfProfileUpdate` 화이트리스트
+  /// (`displayName`, `updatedAt`) 안에 있다.
+  Future<void> updateMyDisplayName({
+    required String uid,
+    required String displayName,
+  }) async {
+    await _doc(uid).update({
+      'displayName': displayName,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

@@ -47,4 +47,15 @@ abstract class UserRepository {
 
   /// 본인 `users/{uid}.phone` 을 갱신한다 (숫자만 문자열). 값은 로그에 남기지 않는다.
   Future<void> updateMyPhone({required String uid, required String phone});
+
+  // ── 표시 이름 ──────────────────────────────────────────────────────────
+
+  /// 본인 `users/{uid}.displayName` 을 갱신한다.
+  ///
+  /// Firebase Auth 의 displayName 은 건드리지 않는다 — 소셜 로그인이 준 원본이고,
+  /// 화면이 보는 이름은 `users/{uid}.displayName` 이 우선이다 (HomeHeader 참조).
+  Future<void> updateMyDisplayName({
+    required String uid,
+    required String displayName,
+  });
 }

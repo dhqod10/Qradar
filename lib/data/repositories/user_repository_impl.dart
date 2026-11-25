@@ -90,4 +90,11 @@ class UserRepositoryImpl implements UserRepository {
   @override
   Future<void> updateMyPhone({required String uid, required String phone}) =>
       _dataSource.updateMyPhone(uid: uid, phone: phone);
+
+  @override
+  Future<void> updateMyDisplayName({
+    required String uid,
+    required String displayName,
+  }) =>
+      _dataSource.updateMyDisplayName(uid: uid, displayName: displayName);
 }

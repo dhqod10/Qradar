@@ -5,6 +5,7 @@ import 'package:qradar/domain/entities/user_entity.dart';
 import 'package:qradar/domain/repositories/user_repository.dart';
 import 'package:qradar/domain/usecases/downgrade_to_customer_use_case.dart';
 import 'package:qradar/domain/usecases/get_or_create_user_profile_use_case.dart';
+import 'package:qradar/domain/usecases/update_my_display_name_use_case.dart';
 import 'package:qradar/domain/usecases/update_my_phone_use_case.dart';
 import 'package:qradar/domain/usecases/upgrade_to_brand_use_case.dart';
 import 'package:qradar/domain/usecases/upgrade_to_owner_use_case.dart';
@@ -35,6 +36,11 @@ final watchUserProfileUseCaseProvider =
 
 final updateMyPhoneUseCaseProvider = Provider<UpdateMyPhoneUseCase>((ref) {
   return UpdateMyPhoneUseCase(ref.watch(userRepositoryProvider));
+});
+
+final updateMyDisplayNameUseCaseProvider =
+    Provider<UpdateMyDisplayNameUseCase>((ref) {
+  return UpdateMyDisplayNameUseCase(ref.watch(userRepositoryProvider));
 });
 
 final upgradeToOwnerUseCaseProvider = Provider<UpgradeToOwnerUseCase>((ref) {

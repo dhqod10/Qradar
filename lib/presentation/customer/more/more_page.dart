@@ -10,6 +10,7 @@ import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/customer/auth/auth_provider.dart';
 import 'package:qradar/presentation/customer/auth/providers/user_profile_provider.dart';
 import 'package:qradar/presentation/customer/more/account_deletion/account_deletion_page.dart';
+import 'package:qradar/presentation/customer/more/profile/display_name_edit_page.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_brand_section.dart';
 import 'package:qradar/presentation/customer/more/widgets/upgrade_to_owner_section.dart';
 import 'package:qradar/presentation/customer/support/providers/support_inquiry_providers.dart';
@@ -38,6 +39,23 @@ class MorePage extends ConsumerWidget {
           const UpgradeToOwnerSection(),
           const UpgradeToBrandSection(),
           const SizedBox(height: 16),
+          // 이름 변경 — 가입 때 받은 이름(users/{uid}.displayName)을 바꾼다. 부제에 현재 이름을 보여준다.
+          Builder(
+            builder: (context) {
+              final name =
+                  ref.watch(currentUserProfileProvider).asData?.value?.displayName ?? '';
+              return _MoreTile(
+                icon: Icons.person_outline_rounded,
+                title: '이름 변경',
+                subtitle: name.isEmpty ? '앱에서 보이는 이름을 설정해요' : name,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DisplayNameEditPage(),
+                  ),
+                ),
+              );
+            },
+          ),
           _MoreTile(
             icon: Icons.notifications_outlined,
             title: '알림 설정',
