@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qradar/core/theme/app_colors.dart';
 import 'package:qradar/core/utils/distance_calculator.dart';
 import 'package:qradar/core/utils/store_sellability.dart';
@@ -292,20 +293,28 @@ class _StoreImage extends StatelessWidget {
 /// 홈 카드 영업상태 배지 (store_business_schedule Q5). 공용 [StoreOpenState] 재사용.
 ///
 /// 임시 휴업(error) / 정기 휴무·영업시간 아님(중립 어두운 pill) / 영업 중(success 점). 스케줄 미설정이면 표시 없음.
-/// 목록 전체에 분 타이머를 걸지 않는다 — 카드가 그려질 때(진입·재빌드) 한 번 계산한다.
-class StoreOpenBadge extends StatelessWidget {
+///
+/// 상세 화면들과 **같은** [watchStoreOpenState] 를 쓴다 — 분 틱을 구독하므로 개점·폐점 시각을
+/// 넘기는 순간 배지가 스스로 바뀐다. 예전에는 `DateTime.now()` 로 한 번만 계산했는데,
+/// "홈에 다시 들어오면 다시 그려진다" 는 전제가 깨져 있었다. 하단 탭 전환은 위젯을 살려 두므로
+/// 홈을 들락거려도 재빌드가 없고, 앱을 켜 둔 채 개점 시각을 넘긴 손님에게는 열린 매장이
+/// `영업시간 아님` 으로 계속 보였다.
+///
+/// 목록 전체에 타이머가 걸리지는 않는다 — [watchStoreOpenState] 가 영업시간·휴무일이 설정된
+/// 매장일 때만 틱을 구독하고, 틱 provider 는 하나뿐이라 1분에 한 번 이 배지들만 다시 그려진다.
+class StoreOpenBadge extends ConsumerWidget {
   final StoreEntity store;
   const StoreOpenBadge({super.key, required this.store});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final String label;
     final Color bg;
     if (store.temporaryClosed) {
       label = '임시 휴업';
       bg = AppColors.error;
     } else {
-      final state = storeOpenStateOf(store, DateTime.now());
+      final state = watchStoreOpenState(ref, store);
       switch (state.kind) {
         case StoreOpenKind.unrestricted:
           return const SizedBox.shrink();

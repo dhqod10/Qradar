@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:qradar/domain/entities/business_hours.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/domain/entities/store_grade.dart';
 import 'package:qradar/domain/entities/user_location.dart';
+import 'package:qradar/presentation/common/store_open_state.dart';
 import 'package:qradar/presentation/customer/cart/cart_line_availability.dart';
 import 'package:qradar/presentation/customer/cart/widgets/cart_availability_banner.dart';
 import 'package:qradar/presentation/customer/home/widgets/store_card.dart';
@@ -34,6 +37,23 @@ final _always = BusinessHours(
   },
 );
 const _never = BusinessHours(weeklyHours: {});
+
+/// 개점·폐점 경계를 넘기는 상황을 만들기 위한 보통의 영업 스케줄 (매일 09:00~18:00).
+final _nineToSix = BusinessHours(
+  weeklyHours: {
+    for (var d = 1; d <= 7; d++)
+      d: const BusinessDayHours(open: '09:00', close: '18:00'),
+  },
+);
+
+/// 분 틱을 한 번 흘리고 화면에 반영될 때까지 기다린다.
+/// StreamProvider 가 새 값을 AsyncData 로 바꾸는 데 한 프레임, 그걸 받아 다시 그리는 데
+/// 또 한 프레임이 든다 — pump 한 번만 하면 직전 값이 그대로 보인다.
+Future<void> _emitTick(WidgetTester t, StreamController<DateTime> tick, DateTime at) async {
+  tick.add(at);
+  await t.pump();
+  await t.pump();
+}
 
 Future<void> _pumpHeader(WidgetTester t, StoreEntity s) async {
   await t.pumpWidget(
@@ -85,7 +105,9 @@ void main() {
 
   group('홈 카드 영업상태 배지 (Q5)', () {
     Future<void> pump(WidgetTester t, StoreEntity s) => t.pumpWidget(
-      MaterialApp(home: Scaffold(body: StoreOpenBadge(store: s))),
+      ProviderScope(
+        child: MaterialApp(home: Scaffold(body: StoreOpenBadge(store: s))),
+      ),
     );
 
     testWidgets('미설정 = 표시 없음', (t) async {
@@ -99,6 +121,60 @@ void main() {
       expect(find.text('임시 휴업'), findsOneWidget);
       await pump(t, _store(hours: _always));
       expect(find.text('영업 중'), findsOneWidget);
+    });
+
+    // 회귀: 예전에는 배지가 `DateTime.now()` 로 한 번만 계산해, 앱을 켜 둔 채 개점 시각을
+    // 넘기면 열린 매장이 계속 `영업시간 아님` 으로 보였다. 하단 탭 전환이 위젯을 살려 두는
+    // 탓에 홈을 들락거려도 다시 그려지지 않았다. 이제 상세 화면들과 같은 분 틱을 구독한다.
+    testWidgets('개점 시각을 넘기면 다시 그리지 않아도 배지가 바뀐다', (t) async {
+      final tick = StreamController<DateTime>.broadcast();
+      addTearDown(tick.close);
+
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [minuteTickProvider.overrideWith((ref) => tick.stream)],
+          child: MaterialApp(
+            home: Scaffold(body: StoreOpenBadge(store: _store(hours: _nineToSix))),
+          ),
+        ),
+      );
+
+      // 개점 1분 전 — 닫혀 있다.
+      await _emitTick(t, tick, DateTime(2026, 11, 26, 8, 59));
+      expect(find.text('영업시간 아님'), findsOneWidget);
+      expect(find.text('영업 중'), findsNothing);
+
+      // 09:00 을 넘기면 **같은 위젯이** 스스로 바뀐다 (pumpWidget 을 다시 부르지 않는다).
+      await _emitTick(t, tick, DateTime(2026, 11, 26, 9, 1));
+      expect(find.text('영업 중'), findsOneWidget);
+      expect(find.text('영업시간 아님'), findsNothing);
+
+      // 폐점도 마찬가지다.
+      await _emitTick(t, tick, DateTime(2026, 11, 26, 18, 1));
+      expect(find.text('영업시간 아님'), findsOneWidget);
+      expect(find.text('영업 중'), findsNothing);
+    });
+
+    testWidgets('임시 휴업은 틱과 무관하게 우선한다', (t) async {
+      final tick = StreamController<DateTime>.broadcast();
+      addTearDown(tick.close);
+
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [minuteTickProvider.overrideWith((ref) => tick.stream)],
+          child: MaterialApp(
+            home: Scaffold(
+              body: StoreOpenBadge(
+                store: _store(hours: _nineToSix, tempClosed: true),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await _emitTick(t, tick, DateTime(2026, 11, 26, 12, 0)); // 영업시간 한복판
+      expect(find.text('임시 휴업'), findsOneWidget);
+      expect(find.text('영업 중'), findsNothing);
     });
   });
 
