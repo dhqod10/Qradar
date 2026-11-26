@@ -6,6 +6,7 @@ import 'package:qradar/domain/usecases/bulk_reject_master_menu_items_use_case.da
 import 'package:qradar/domain/usecases/reject_master_menu_item_use_case.dart';
 import 'package:qradar/domain/usecases/watch_pending_master_menu_items_use_case.dart';
 import 'package:qradar/presentation/admin/providers/admin_di_providers.dart';
+import 'package:qradar/presentation/admin/providers/admin_queue_session.dart';
 
 // ── UseCase Provider ───────────────────────────────────────────────────────
 
@@ -44,6 +45,8 @@ final bulkRejectMasterMenuItemsUseCaseProvider =
 /// admin 승인 큐: 마스터 메뉴 pending 목록 (collectionGroup query).
 final pendingMasterMenuItemsProvider =
     StreamProvider<List<MenuItemEntity>>((ref) {
+  // 로그아웃으로 죽은 스트림을 들고 있지 않도록 세션에 묶는다 — admin_queue_session.dart 참조.
+  ref.watch(adminQueueSessionUidProvider);
   return ref.read(watchPendingMasterMenuItemsUseCaseProvider).call();
 });
 

@@ -62,6 +62,11 @@ class MasterMenuItemRemoteDataSource {
         '[MasterMenuItemRemoteDataSource] collectionGroup query 실패. '
         'Firestore 인덱스 설정이 필요할 수 있습니다. error=$e',
       );
+      // 로그만 찍고 삼키면 **승인 큐가 "검토 대기 중인 메뉴가 없어요" 로 보인다.**
+      // 인덱스 누락도 권한 거부도 똑같이 "할 일 없음" 으로 위장되어, 관리자가
+      // 승인을 못 하고 있다는 사실이 화면 어디에도 드러나지 않는다.
+      // 화면에는 에러 뷰가 이미 있다 — 에러를 그대로 흘려보낸다.
+      Error.throwWithStackTrace(e, st);
     }).map(
           (snap) => snap.docs
               .map((doc) =>

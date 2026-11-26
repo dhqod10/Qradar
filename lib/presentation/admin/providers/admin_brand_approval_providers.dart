@@ -5,6 +5,7 @@ import 'package:qradar/domain/usecases/reject_brand_use_case.dart';
 import 'package:qradar/domain/usecases/watch_all_brands_for_admin_use_case.dart';
 import 'package:qradar/domain/usecases/watch_pending_brands_use_case.dart';
 import 'package:qradar/presentation/admin/providers/admin_di_providers.dart';
+import 'package:qradar/presentation/admin/providers/admin_queue_session.dart';
 
 // ── UseCase Provider ───────────────────────────────────────────────────────
 
@@ -32,5 +33,7 @@ final adminRejectBrandUseCaseProvider = Provider<RejectBrandUseCase>((ref) {
 
 /// admin 승인 큐: 브랜드 pending 목록.
 final pendingBrandsProvider = StreamProvider<List<BrandEntity>>((ref) {
+  // 로그아웃으로 죽은 스트림을 들고 있지 않도록 세션에 묶는다 — admin_queue_session.dart 참조.
+  ref.watch(adminQueueSessionUidProvider);
   return ref.read(watchPendingBrandsUseCaseProvider).call();
 });

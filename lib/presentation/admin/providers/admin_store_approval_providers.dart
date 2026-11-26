@@ -5,6 +5,7 @@ import 'package:qradar/domain/usecases/reject_store_use_case.dart';
 import 'package:qradar/domain/usecases/watch_all_stores_for_admin_use_case.dart';
 import 'package:qradar/domain/usecases/watch_pending_stores_for_admin_use_case.dart';
 import 'package:qradar/presentation/owner/providers/owner_providers.dart';
+import 'package:qradar/presentation/admin/providers/admin_queue_session.dart';
 
 // ── UseCase Provider ───────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ final adminRejectStoreUseCaseProvider = Provider<RejectStoreUseCase>((ref) {
 
 /// admin 승인 큐: 매장 pending 목록.
 final adminPendingStoresProvider = StreamProvider<List<StoreEntity>>((ref) {
+  // 로그아웃으로 죽은 스트림을 들고 있지 않도록 세션에 묶는다 — admin_queue_session.dart 참조.
+  ref.watch(adminQueueSessionUidProvider);
   return ref.read(adminWatchPendingStoresUseCaseProvider).call();
 });
 
