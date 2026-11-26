@@ -23,7 +23,22 @@ import os
 import subprocess
 import sys
 
-IDB = os.path.expanduser("~/Library/Python/3.9/bin/idb")
+def _find_idb():
+    """idb 실행 파일 위치. 맥마다 설치 경로가 달라 후보를 차례로 본다."""
+    cands = [
+        os.environ.get("IDB_PATH"),
+        os.path.expanduser("~/.local/bin/idb"),
+        os.path.expanduser("~/Library/Python/3.9/bin/idb"),
+        "/opt/homebrew/bin/idb",
+        "/usr/local/bin/idb",
+    ]
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    return "idb"  # PATH 에 있기를 기대
+
+
+IDB = _find_idb()
 
 
 def _run(args, **kw):
