@@ -48,6 +48,10 @@ class OptionGroupSelector extends StatelessWidget {
   /// 항목 ON/OFF 토글 시 변경된 목록 전체를 전달하는 콜백.
   final ValueChanged<List<String>> onDisabledItemsChanged;
 
+  /// 목록을 **불러오지 못한** 스코프. 빈 목록("정말 없음")과 구분해 보여 준다.
+  /// 둘을 같은 화면으로 처리하면 인덱스 누락 같은 고장이 평범한 빈 상태로 보인다.
+  final Set<OptionScope> failedScopes;
+
   const OptionGroupSelector({
     super.key,
     // legacy: optionGroups 파라미터로 전달 시 masterGroups 로 처리
@@ -62,6 +66,7 @@ class OptionGroupSelector extends StatelessWidget {
     this.onNavigateToStoreOptionGroups,
     this.disabledOptionItemIds = const [],
     this.onDisabledItemsChanged = _noopDisabledItemsChanged,
+    this.failedScopes = const {},
   }) : masterGroups = optionGroups;
 
   static void _noopDisabledItemsChanged(List<String> _) {}
@@ -83,8 +88,10 @@ class OptionGroupSelector extends StatelessWidget {
     final hasStore = storeGroups.isNotEmpty;
     final hasMaster = masterGroups.isNotEmpty;
 
-    // master only (BrandMorePage 진입 전 레거시 동작)
-    if (!hasBrand && !hasStore) {
+    // master only (BrandMorePage 진입 전 레거시 동작).
+    // 실패가 하나라도 있으면 이 단축 경로로 가지 않는다 — 여기서는 master 섹션 하나만
+    // 그리므로, brand/store 가 **못 불러온** 상태였어도 "옵션 그룹이 없어요" 로 덮인다.
+    if (!hasBrand && !hasStore && failedScopes.isEmpty) {
       if (!hasMaster) {
         return _emptySection(
           scope: OptionScope.master,
@@ -110,7 +117,9 @@ class OptionGroupSelector extends StatelessWidget {
         const SizedBox(height: 8),
 
         // brand 섹션
-        if (hasBrand || onNavigateToBrandOptionGroups != null) ...[
+        if (hasBrand ||
+            failedScopes.contains(OptionScope.brand) ||
+            onNavigateToBrandOptionGroups != null) ...[
           _SectionBlock(
             header: _sectionHeader(OptionScope.brand),
             child: hasBrand
@@ -124,7 +133,9 @@ class OptionGroupSelector extends StatelessWidget {
         ],
 
         // store 섹션
-        if (hasStore || onNavigateToStoreOptionGroups != null)
+        if (hasStore ||
+            failedScopes.contains(OptionScope.store) ||
+            onNavigateToStoreOptionGroups != null)
           _SectionBlock(
             header: _sectionHeader(OptionScope.store),
             child: hasStore
@@ -135,6 +146,42 @@ class OptionGroupSelector extends StatelessWidget {
                   ),
           ),
       ],
+    );
+  }
+
+  /// 불러오기 실패. "없음" 과 다른 문구를 쓴다 — 사용자가 새로 만들려 해도 소용없고,
+  /// 고장을 빈 상태로 오인하면 원인을 찾는 데 한참 걸린다.
+  Widget _failedSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline_rounded,
+              size: 18, color: AppColors.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  '옵션 그룹을 불러오지 못했어요',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.error,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '잠시 후 다시 시도해주세요. 계속되면 고객센터로 알려주세요.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -161,6 +208,7 @@ class OptionGroupSelector extends StatelessWidget {
     required OptionScope scope,
     VoidCallback? onNavigate,
   }) {
+    if (failedScopes.contains(scope)) return _failedSection();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(

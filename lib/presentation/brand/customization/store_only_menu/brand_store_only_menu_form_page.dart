@@ -8,6 +8,7 @@ import 'package:qradar/domain/entities/menu_item_scope.dart';
 import 'package:qradar/domain/entities/option_group_entity.dart';
 import 'package:qradar/domain/entities/option_scope.dart';
 import 'package:qradar/presentation/brand/master_menu/widgets/option_group_selector.dart';
+import 'package:qradar/presentation/common/async_value_log.dart';
 import 'package:qradar/presentation/brand/option_groups/providers/brand_option_group_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_di_providers.dart';
 import 'package:qradar/presentation/brand/providers/brand_master_menu_providers.dart';
@@ -461,22 +462,24 @@ class _BrandStoreOnlyMenuFormPageState
             _sectionLabel('옵션 그룹'),
             const SizedBox(height: 8),
             Builder(builder: (context) {
-              final master = ref
-                      .watch(brandMasterOptionGroupsProvider)
-                      .asData
-                      ?.value ??
-                  const <OptionGroupEntity>[];
-              final brand = widget.brandId.isEmpty
+              // 실패를 빈 목록으로 뭉개지 않는다 — null 이면 "불러오지 못함" 이다.
+              final masterOrNull = asDataOrLog(
+                  ref.watch(brandMasterOptionGroupsProvider),
+                  'storeOnlyMenuForm.masterOptionGroups');
+              final brandOrNull = widget.brandId.isEmpty
                   ? const <OptionGroupEntity>[]
-                  : ref
-                          .watch(brandOptionGroupsActiveByIdProvider(
-                              widget.brandId))
-                          .asData
-                          ?.value ??
-                      const <OptionGroupEntity>[];
+                  : asDataOrLog(
+                      ref.watch(brandOptionGroupsActiveByIdProvider(
+                          widget.brandId)),
+                      'storeOnlyMenuForm.brandOptionGroups');
+              final failed = <OptionScope>{
+                if (masterOrNull == null) OptionScope.master,
+                if (brandOrNull == null) OptionScope.brand,
+              };
               return OptionGroupSelector(
-                optionGroups: master,
-                brandGroups: brand,
+                optionGroups: masterOrNull ?? const <OptionGroupEntity>[],
+                brandGroups: brandOrNull ?? const <OptionGroupEntity>[],
+                failedScopes: failed,
                 selectedIds: _selectedOptionGroupIds,
                 onChanged: (ids) =>
                     setState(() => _selectedOptionGroupIds = ids),

@@ -9,6 +9,7 @@ import 'package:qradar/domain/entities/option_group_entity.dart';
 import 'package:qradar/domain/entities/option_scope.dart';
 import 'package:qradar/domain/entities/store_entity.dart';
 import 'package:qradar/presentation/brand/master_menu/widgets/option_group_selector.dart';
+import 'package:qradar/presentation/common/async_value_log.dart';
 import 'package:qradar/presentation/common/widgets/error_dialog.dart';
 import 'package:qradar/presentation/common/widgets/image_upload_field.dart';
 import 'package:qradar/presentation/common/widgets/inactive_category_warning_banner.dart';
@@ -298,11 +299,18 @@ class _OwnerStoreMenuFormPageState
 
   @override
   Widget build(BuildContext context) {
-    final masterGroups =
-        ref.watch(masterOptionGroupsProvider).asData?.value ?? [];
-    final storeGroups =
-        ref.watch(storeOptionGroupsProvider(widget.store.id)).asData?.value ??
-            [];
+    // 실패를 빈 목록으로 뭉개지 않는다 — null 이면 "불러오지 못함" 이다.
+    final masterOrNull = asDataOrLog(
+        ref.watch(masterOptionGroupsProvider), 'storeMenuForm.masterOptionGroups');
+    final storeOrNull = asDataOrLog(
+        ref.watch(storeOptionGroupsProvider(widget.store.id)),
+        'storeMenuForm.storeOptionGroups');
+    final masterGroups = masterOrNull ?? const <OptionGroupEntity>[];
+    final storeGroups = storeOrNull ?? const <OptionGroupEntity>[];
+    final failedOptionScopes = <OptionScope>{
+      if (masterOrNull == null) OptionScope.master,
+      if (storeOrNull == null) OptionScope.store,
+    };
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -524,6 +532,7 @@ class _OwnerStoreMenuFormPageState
             OptionGroupSelector(
               optionGroups: masterGroups,
               storeGroups: storeGroups,
+              failedScopes: failedOptionScopes,
               storeId: widget.store.id,
               selectedIds: _selectedOptionGroupIds,
               onChanged: (ids) =>

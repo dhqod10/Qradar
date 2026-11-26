@@ -14,6 +14,10 @@ Flutter 앱은 화면의 Text 위젯이 접근성 라벨(AXLabel)로 자동 노�
   python3 tools/ios_sim.py list                 # 현재 화면 요소 전체
   python3 tools/ios_sim.py find "준비"           # 라벨 부분 검색
   python3 tools/ios_sim.py tap "준비 완료"        # 라벨로 찾아 탭
+  python3 tools/ios_sim.py wait "홈"            # 라벨이 뜰 때까지 대기
+  python3 tools/ios_sim.py tapwait "로그인" "홈"  # 탭 후 다음 화면까지 대기
+  python3 tools/ios_sim.py type "이메일" a@b.com # 필드 탭 + ASCII 입력
+  python3 tools/ios_sim.py paste "이름"          # 클립보드 붙여넣기 (한글)
   python3 tools/ios_sim.py shot out.png         # 스크린샷
   python3 tools/ios_sim.py udid                 # Booted Simulator UDID
 """
@@ -22,6 +26,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 def _find_idb():
     """idb 실행 파일 위치. 맥마다 설치 경로가 달라 후보를 차례로 본다."""
@@ -113,6 +118,66 @@ def cmd_tap(udid, keyword):
     print(f"[OK] tap '{_label(el)}' at ({x}, {y})")
 
 
+def cmd_wait(udid, keyword, timeout=15.0):
+    """라벨이 화면에 나타날 때까지 기다린다.
+
+    탭 직후 곧바로 다음 탭을 보내면 아직 이전 화면이라 엉뚱한 곳이 눌린다.
+    화면 전환 시간은 기기·네트워크마다 달라 고정 sleep 으로는 맞출 수 없다.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if any(keyword in _label(el) for el in describe_all(udid)):
+                print(f"[OK] '{keyword}' 도착")
+                return
+        except SystemExit:
+            pass  # 전환 중에는 트리를 못 읽는다 — 계속 기다린다.
+        time.sleep(0.6)
+    print(f"[TIMEOUT] {timeout}초 안에 '{keyword}' 가 나타나지 않음. 현재 화면:")
+    cmd_list(udid)
+    sys.exit(1)
+
+
+def cmd_tap_wait(udid, keyword, expect):
+    """탭한 뒤 기대 화면이 뜰 때까지 기다린다."""
+    cmd_tap(udid, keyword)
+    cmd_wait(udid, expect)
+
+
+def cmd_type(udid, keyword, text):
+    """라벨로 필드를 찾아 탭하고 ASCII 텍스트를 입력한다.
+
+    ⚠️ 한글은 idb 가 입력하지 못한다 — 맥 `pbcopy` 로 복사한 뒤 `paste` 명령을 쓴다.
+    """
+    cmd_tap(udid, keyword)
+    time.sleep(0.6)
+    _run(["ui", "text", "--udid", udid, text])
+    print(f"[OK] type into '{keyword}'")
+
+
+def cmd_paste(udid, keyword):
+    """라벨로 필드를 찾아 길게 눌러 클립보드 내용을 붙여넣는다 (한글 입력용).
+
+    맥 클립보드를 거친다 — `simctl pbcopy` 로 시뮬레이터 클립보드에 직접 넣으면
+    Paste 항목이 뜨지 않는다.
+    """
+    hits = [el for el in describe_all(udid) if keyword in _label(el)]
+    if not hits:
+        print(f"[FAIL] '{keyword}' 없음")
+        sys.exit(1)
+    el = min(hits, key=lambda e: e["frame"]["width"] * e["frame"]["height"])
+    x, y = _center(el)
+    _run(["ui", "tap", "--udid", udid, str(x), str(y), "--duration", "1.5"])
+    time.sleep(1.2)
+    paste = [e for e in describe_all(udid) if _label(e) == "Paste"]
+    if not paste:
+        print("[FAIL] Paste 팝업이 뜨지 않음 (클립보드가 비었거나 롱프레스 실패)")
+        sys.exit(1)
+    px, py = _center(paste[0])
+    _run(["ui", "tap", "--udid", udid, str(px), str(py)])
+    print(f"[OK] paste into '{keyword}'")
+
+
 def cmd_shot(udid, path):
     _run(["screenshot", "--udid", udid, path])
     size = os.path.getsize(path) if os.path.exists(path) else 0
@@ -134,6 +199,15 @@ def main():
         cmd_find(udid, sys.argv[2])
     elif cmd == "tap":
         cmd_tap(udid, sys.argv[2])
+    elif cmd == "wait":
+        cmd_wait(udid, sys.argv[2],
+                 float(sys.argv[3]) if len(sys.argv) > 3 else 15.0)
+    elif cmd == "tapwait":
+        cmd_tap_wait(udid, sys.argv[2], sys.argv[3])
+    elif cmd == "type":
+        cmd_type(udid, sys.argv[2], sys.argv[3])
+    elif cmd == "paste":
+        cmd_paste(udid, sys.argv[2])
     elif cmd == "shot":
         cmd_shot(udid, sys.argv[2] if len(sys.argv) > 2 else "ios_shot.png")
     else:
